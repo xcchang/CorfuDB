@@ -9,6 +9,7 @@ import org.corfudb.universe.group.Group;
 import org.corfudb.universe.node.Node;
 import org.corfudb.universe.node.Node.NodeParams;
 import org.corfudb.universe.node.NodeException;
+import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.LocalCorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.node.server.CorfuServerParams;
@@ -163,6 +164,7 @@ public abstract class AbstractCorfuCluster<P extends CorfuClusterParams, U exten
     @Override
     public LocalCorfuClient getLocalCorfuClient() {
         return LocalCorfuClient.builder()
+                .params(ClientParams.builder().build())
                 .serverEndpoints(getClusterLayoutServers())
                 .build()
                 .deploy();
