@@ -1,17 +1,14 @@
 package org.corfudb.universe.dynamic.events;
 
-import com.spotify.docker.client.DockerClient;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.collections.CorfuTable;
-import org.corfudb.runtime.view.ClusterStatusReport;
-import org.corfudb.universe.dynamic.ContainerStats;
+import org.corfudb.runtime.view.ClusterStatusReport.ClusterStatus;
+import org.corfudb.universe.dynamic.CorfuClientInstance;
 import org.corfudb.universe.dynamic.Dynamic;
-import org.corfudb.universe.dynamic.PhaseState;
-import org.corfudb.universe.dynamic.PhaseState.ServerPhaseState;
+import org.corfudb.universe.dynamic.state.State;
+import org.corfudb.universe.dynamic.state.TableStreamStatus;
 
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -21,7 +18,7 @@ import java.util.Map;
  * Created by edilmo on 11/06/18.
  */
 @Slf4j
-public class GetDataEvent extends DataPathEvent {
+public class GetDataEvent implements UniverseEvent {
 
     /**
      * Snapshot of the data generation function used.
@@ -31,7 +28,7 @@ public class GetDataEvent extends DataPathEvent {
     /**
      * Corfu client to use.
      */
-    private Dynamic.CorfuClientInstance corfuClientInstance;
+    private CorfuClientInstance corfuClientInstance;
 
     /**
      * Get the name of the stream table where the data generarted will be saved in corfu.
@@ -43,10 +40,7 @@ public class GetDataEvent extends DataPathEvent {
     }
 
     public GetDataEvent(CorfuTableDataGenerationFunction<String, String> generator,
-                        Dynamic.CorfuClientInstance corfuClientInstance,
-                        DockerClient docker,
-                        Collection<ServerPhaseState> servers) {
-        super(docker, servers);
+                        CorfuClientInstance corfuClientInstance) {
         try{
             this.generatorSnapshot = generator.getSnapshot();
         }catch (CloneNotSupportedException cne){
@@ -74,16 +68,21 @@ public class GetDataEvent extends DataPathEvent {
      * @return Desire-state of the universe after this event happened.
      */
     @Override
-    public void applyDesirePartialTransition(PhaseState currentDesireState) {
-        if(currentDesireState.getClusterStatus() != ClusterStatusReport.ClusterStatus.UNAVAILABLE) {
+    public void applyDesirePartialTransition(State currentDesireState) {
+        ClusterStatus clusterStatus = currentDesireState.getClients().get(this.corfuClientInstance.getName()).
+                getClusterStatus();
+        if(clusterStatus != ClusterStatus.UNAVAILABLE) {
             currentDesireState.updateStatusOfTableStream(this.generatorSnapshot.getTableStreamName(),
-                    PhaseState.TableStreamStatus.CORRECT);
+                    TableStreamStatus.CORRECT);
             currentDesireState.updateClientGetThroughput(this.corfuClientInstance.getName(),
-                    this.corfuClientInstance.getLastMeasuredGetThroughput());
+                    this.generatorSnapshot.getTableStreamName(),
+                    this.corfuClientInstance.getLastMeasuredGetThroughputPerTable().
+                            get(this.generatorSnapshot.getTableStreamName()));
         }else {
             currentDesireState.updateStatusOfTableStream(this.generatorSnapshot.getTableStreamName(),
-                    PhaseState.TableStreamStatus.UNAVAILABLE);
-            currentDesireState.updateClientGetThroughput(this.corfuClientInstance.getName(), 0);
+                    TableStreamStatus.UNAVAILABLE);
+            currentDesireState.updateClientGetThroughput(this.corfuClientInstance.getName(),
+                    this.generatorSnapshot.getTableStreamName(), 0.0);
         }
     }
 
@@ -94,7 +93,7 @@ public class GetDataEvent extends DataPathEvent {
      * @param currentRealState Real-state of the universe before this event happened.
      */
     @Override
-    public void executeRealPartialTransition(PhaseState currentRealState) {
+    public void executeRealPartialTransition(State currentRealState) {
         CorfuTable table = this.corfuClientInstance.getCorfuClient().
                 createDefaultCorfuTable(this.generatorSnapshot.getTableStreamName());
         Map<String, String> dataToRead = this.generatorSnapshot.get();
@@ -102,21 +101,21 @@ public class GetDataEvent extends DataPathEvent {
         double throughput = 0;
         try{
             long ts1 = System.nanoTime();
-            startCollectStats();
             for (String fieldName : dataToRead.keySet()) {
                 tableDataRead.put(fieldName, table.get(fieldName));
             }
-            stopCollectStats();
             long ts2 = System.nanoTime();
-            double td = (ts2 - ts1);
-            throughput = dataToRead.size() / (td * 1.0) * 1000000;
+            double tdMs = (ts2 - ts1) / 1000000d;
+            throughput = dataToRead.size() / tdMs;
         }catch (Exception ex){
             log.error(String.format("Unexpected error while getting Data for %s generatorSnapshot",
                     this.generatorSnapshot.getName()),
                     ex);
         }
-        this.corfuClientInstance.setLastMeasuredGetThroughput(throughput);
-        currentRealState.updateClientGetThroughput(this.corfuClientInstance.getName(), throughput);
+        this.corfuClientInstance.getLastMeasuredGetThroughputPerTable().
+                put(this.generatorSnapshot.getTableStreamName(), throughput);
+        currentRealState.updateClientGetThroughput(this.corfuClientInstance.getName(),
+                this.generatorSnapshot.getTableStreamName(), throughput);
         boolean dataInTableStreamIsTheExpected = true;
         for (Map.Entry<String, String> entry : dataToRead.entrySet()) {
             if(!tableDataRead.containsKey(entry.getKey()) || !tableDataRead.get(entry.getKey()).equals(entry.getValue())){
@@ -127,13 +126,13 @@ public class GetDataEvent extends DataPathEvent {
         if(throughput == 0){
             //throughput equal to zero means that we were unable to retrieve all the data from the table
             currentRealState.updateStatusOfTableStream(this.generatorSnapshot.getTableStreamName(),
-                    PhaseState.TableStreamStatus.UNAVAILABLE);
+                    TableStreamStatus.UNAVAILABLE);
         }else if(!dataInTableStreamIsTheExpected){
             currentRealState.updateStatusOfTableStream(this.generatorSnapshot.getTableStreamName(),
-                    PhaseState.TableStreamStatus.INCORRECT);
+                    TableStreamStatus.INCORRECT);
         }else {
             currentRealState.updateStatusOfTableStream(this.generatorSnapshot.getTableStreamName(),
-                    PhaseState.TableStreamStatus.CORRECT);
+                    TableStreamStatus.CORRECT);
         }
     }
 }
