@@ -1,51 +1,79 @@
 package org.corfudb.universe.dynamic;
 
 import com.spotify.docker.client.exceptions.DockerCertificateException;
-import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.view.ClusterStatusReport;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.universe.LongevityListener;
 import org.corfudb.universe.dynamic.events.*;
+import org.corfudb.universe.dynamic.rules.UniverseRule;
+import org.corfudb.universe.dynamic.state.*;
 import org.corfudb.universe.group.cluster.CorfuCluster;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.util.Sleep;
 
-import java.text.SimpleDateFormat;
-import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.function.Supplier;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static org.corfudb.universe.dynamic.PhaseState.*;
+import static org.corfudb.universe.dynamic.state.State.*;
 
 /**
  * Simulates the behavior of a corfu cluster and its clients during a period of time given.
  * General speaking, any dynamical system (including finite state machines) can be approximated with:
- *      - Events
- *      - Operator that combine events to produce complex events
- *      - Rules over the events and its combinations
- *      - State that describe the system as whole
- *      - Dynamic that generate the events (or combinations of them), ensure the rules and
- *      produce transitions over the state based in the events.
+ * - Events
+ * - Operator that combine events to produce complex events
+ * - Rules over the events and its combinations
+ * - State that describe the system as whole
+ * - Dynamic that generate the events (or combinations of them), ensure the rules and
+ * produce transitions over the state based in the events.
  * This is the approach follow here, the method {@link Dynamic::run} implements a event loop with
  * logic described above.
+ *
+ * Created by edilmo on 11/06/18.
  */
 @Slf4j
 public abstract class Dynamic extends UniverseInitializer {
 
     /**
+     * Minimum amount of nodes that must be up in each iteration of the dynamic
+     */
+    public static final int MINIMUM_NODES_UP = 1;
+
+    /**
+     * Default period for the system metrics monitor
+     */
+    public static final long DEFAULT_MONITORING_PERIOD = 1000;
+
+    /**
+     * Default time units of the period for the system metrics monitor
+     */
+    public static final TimeUnit DEFAULT_TIME_UNITS = TimeUnit.MILLISECONDS;
+
+    /**
      * Amount of corfu tables handle for each client in the universe.
      */
-    private static final int DEFAULT_AMOUNT_OF_CORFU_CLIENTS = 3;
+    public static final int DEFAULT_AMOUNT_OF_CORFU_CLIENTS = 3;
 
     /**
      * Random number generator used for the creation of
      * random intervals of time and generation of events.
      */
     protected final Random randomNumberGenerator = new Random(210580);
+
+    /**
+     * Name of the CSV file where all details are stored.
+     */
+    private Path outputFilePath;
 
     /**
      * The cluster of corfu nodes to use.
@@ -68,8 +96,19 @@ public abstract class Dynamic extends UniverseInitializer {
     protected final long longevity;
 
     /**
+     * Indicates whether save the result of iterations made before a listener is registered
+     */
+    protected boolean waitForListener = false;
+
+    /**
+     * List of results of iterations made.
+     * It's used only before a listener is registered.
+     */
+    protected Map<Long, List<String>> savedIterations = new HashMap<>();
+
+    /**
      * Clients used during the life of the dynamic.
-     *
+     * <p>
      * Clients are created during the initialization and keep it fixed up to the end.
      */
     protected final List<CorfuClientInstance> corfuClients = new ArrayList<>();
@@ -79,30 +118,56 @@ public abstract class Dynamic extends UniverseInitializer {
      */
     protected final LinkedHashMap<String, CorfuServer> corfuServers = new LinkedHashMap<>();
 
-    protected final List<String> containers = new ArrayList<>();
-
     /**
      * Represents the expected state of the universe in a point of time.
      */
-    protected PhaseState desireState = new PhaseState();
+    protected State desireState = new State();
 
     /**
      * Represents the real state of the universe in a point of time.
      */
-    protected final PhaseState realState = new PhaseState();
+    protected final State realState = new State();
 
-    public static final String SHEET_USER_ID = "945458289386-dn1ce2g502av9i7l5oldf2ms8nl41hl5.apps.googleusercontent.com";
+    /**
+     * The amount correctness errors seen
+     */
+    protected long correctnessErrors = 0;
 
-    public static final String SPREED_SHEET_ID = "10sZf9SOtSEdSIpa8A1gh6URYgbqMqKycGr4NRdAQHys";
+    /**
+     * The amount liveness errors seen
+     */
+    protected long livenessErrors = 0;
 
-    public static String sheetTitle;
+    /**
+     * The time when the test starts
+     */
+    protected long startTime = System.currentTimeMillis();
 
-    /**s
+    /**
+     * List of object to call back with the report of each iteration of the dynamics
+     */
+    private List<LongevityListener> listeners = new ArrayList<LongevityListener>();
+
+    private List<String> reportColumns = new ArrayList<String>();
+
+    public void registerListener(LongevityListener listener) {
+        this.listeners.add(listener);
+        List<List<String>> data = this.savedIterations.values().stream().collect(Collectors.toList());
+        listener.setReportColumns(this.reportColumns, data);
+        this.savedIterations.clear();
+        this.waitForListener = false;
+    }
+
+    public void unregisterListener(LongevityListener listener){
+        this.listeners.removeIf(e -> e.getId().equals(listener.getId()));
+    }
+
+    /**
      * Time in milliseconds before update the state.
      */
     protected abstract long getDelayForStateUpdate();
 
-    /**s
+    /**
      * Time in milliseconds between the composite event that just happened and the next one.
      */
     protected abstract long getIntervalBetweenEvents();
@@ -112,40 +177,53 @@ public abstract class Dynamic extends UniverseInitializer {
      * The events generated have not guaranty of execution. They are allowed
      * to execute if they are compliant with the {@link UniverseRule}.
      *
-     * @return  Composite event generated.
+     * @return Composite event generated.
      */
     protected abstract UniverseEventOperator generateCompositeEvent();
 
     /**
      * Materialize the execution of a composite event if it is compliant with the {@link UniverseRule}.
      *
-     * @param compositeEvent    Composite event to materialize.
-     * @return                  Whether the composite event was materialized or not.
+     * @param compositeEvent Composite event to materialize.
+     * @return Whether the composite event was materialized or not.
      */
     private boolean materializeCompositeEvent(UniverseEventOperator compositeEvent) {
+        //Check the pre rules that any composite event must be compliant with
         boolean isPreRulesCompliant = true;
-        for(UniverseRule preRule: UniverseRule.getPreCompositeEventRules()){
-            if(!preRule.check(compositeEvent, this.desireState, this.realState)){
+        for (UniverseRule preRule : UniverseRule.getPreCompositeEventRules()) {
+            if (!preRule.check(compositeEvent, this.desireState, this.realState)) {
                 isPreRulesCompliant = false;
                 break;
             }
         }
-        if(!isPreRulesCompliant)
+        if (!isPreRulesCompliant)
             return false;
         //The next desire state is based in changes over the current real state
-        PhaseState desireStateCopy = (PhaseState)this.realState.clone();
+        State desireStateCopy = (State) this.realState.clone();
         compositeEvent.applyDesirePartialTransition(desireStateCopy);
+        //Check the post rules that any composite event must be compliant with
         boolean isPostRulesCompliant = true;
-        for(UniverseRule postRule: UniverseRule.getPostCompositeEventRules()){
-            if(!postRule.check(compositeEvent, desireStateCopy, this.realState)){
+        for (UniverseRule postRule : UniverseRule.getPostCompositeEventRules()) {
+            if (!postRule.check(compositeEvent, desireStateCopy, this.realState)) {
                 isPostRulesCompliant = false;
                 break;
             }
         }
-        if(!isPostRulesCompliant)
+        if (!isPostRulesCompliant)
             return false;
+        //Make the desire state equal to the computed desired state
         this.desireState = desireStateCopy;
+        //StartServerEvent the system metrics monitor for each responsive server in the desire state
+        for (String serverName : this.desireState.getResponsiveServers()){
+            this.realState.getServers().get(serverName).startMetricsRecording();
+        }
+        //Run the composite event
         compositeEvent.executeRealPartialTransition(this.realState);
+        //StopServerEvent the monitoring of the system metrics
+        for (String serverName : this.desireState.getResponsiveServers()){
+            this.realState.getServers().get(serverName).stopMetricsRecording();
+        }
+        //update the real state
         this.updateRealState();
         return true;
     }
@@ -156,175 +234,258 @@ public abstract class Dynamic extends UniverseInitializer {
     private void updateRealState() {
         try {
             Sleep.MILLISECONDS.sleepUninterruptibly(this.getDelayForStateUpdate());
+        } catch (Exception ex) {
+            log.error("Error invoking Thread.sleep.", ex);
         }
-        catch (Exception ex){
-            log.error("Error invoking Thread.sleep." , ex);
-        }
-        Layout layout = this.corfuClients.get(0).corfuClient.getLayout();
-        ClusterStatusReport clusterStatusReport = this.corfuClients.get(0).corfuClient.
-                getManagementView().getClusterStatus();
-        this.realState.setClusterStatus(clusterStatusReport.getClusterStatus());
-        Map<String, ClusterStatusReport.NodeStatus> statusMap = clusterStatusReport.getClientServerConnectivityStatusMap();
-        for(ServerPhaseState serverState : this.realState.getServers().values()) {
-            String endpoint = serverState.getNodeEndpoint();
-            if(statusMap.containsKey(endpoint)) {
-                serverState.setStatus(statusMap.get(endpoint));
-                serverState.setLayoutServer(layout.getLayoutServers().contains(endpoint));
-                serverState.setLogUnitServer(layout.getSegments().stream()
-                        .flatMap(seg -> seg.getAllLogServers().stream())
-                        .anyMatch(s -> s.equals(endpoint)));
-                serverState.setPrimarySequencer(layout.getPrimarySequencer().equals(endpoint));
-            }
-            else {
-                log.error(String.format("Expected server not found in cluster status report. Node Name: %s - Node Endpoint: %s",
-                        serverState.getNodeName(), endpoint));
+        for (CorfuClientInstance cci : this.corfuClients) {
+            //Update all client related fields
+            ClientState clientState = this.realState.getClients().get(cci.getName());
+            Layout layout = cci.getCorfuClient().getLayout();
+            ClusterStatusReport clusterStatusReport = cci.getCorfuClient().
+                    getManagementView().getClusterStatus();
+            clientState.setClusterStatus(clusterStatusReport.getClusterStatus());
+            Map<String, ClusterStatusReport.NodeStatus> statusMap = clusterStatusReport.getClientServerConnectivityStatusMap();
+            for (ClientServerState clientServerState : clientState.getServers().values()) {
+                String endpoint = clientServerState.getNodeEndpoint();
+                if (statusMap.containsKey(endpoint)) {
+                    clientServerState.setStatus(statusMap.get(endpoint));
+                    clientServerState.setLayoutServer(layout.getLayoutServers().contains(endpoint));
+                    clientServerState.setLogUnitServer(layout.getSegments().stream()
+                            .flatMap(seg -> seg.getAllLogServers().stream())
+                            .anyMatch(s -> s.equals(endpoint)));
+                    clientServerState.setPrimarySequencer(layout.getPrimarySequencer().equals(endpoint));
+                } else {
+                    log.error(String.format("Expected server not found in cluster status report. Node Name: %s - Node Endpoint: %s",
+                            clientServerState.getServerName(), endpoint));
+                }
             }
         }
     }
 
     public static final String REPORT_FIELD_EVENT = "Event";
     public static final String REPORT_FIELD_DISCARDED_EVENTS = "Discarded Events";
+    public static final String REPORT_REAL_STATE_PREFIX = "Real";
+    public static final String REPORT_DESIRE_STATE_PREFIX = "Desire";
 
     /**
      * Report the the desire state and real state after each iteration of the event generation loop.
      *
-     * @param compositeEvent    Composite event that change the states.
+     * @param compositeEvent Composite event that change the states.
      */
-    private void reportStateDifference(UniverseEventOperator compositeEvent, int discardedEvents) {
-        Map<String, String> report = new HashMap<>();
+    private void reportStateDifference(UniverseEventOperator compositeEvent, int discardedEvents, boolean writeColumns) {
+        long realTablesIncorrect = 0;
+        long desireTablesIncorrect = 0;
+        long realUnavailableClusterStatus = 0;
+        long desireUnavailableClusterStatus = 0;
+        LinkedHashMap<String, String> realStatePrintableFlatStats = Stats.getPrintableFlatStats(REPORT_REAL_STATE_PREFIX,
+                this.realState);
+        LinkedHashMap<String, String> desireStatePrintableFlatStats = Stats.getPrintableFlatStats(REPORT_DESIRE_STATE_PREFIX,
+                this.desireState);
+        LinkedHashMap<String, String> report = new LinkedHashMap<>();
+        long elapsedTime = System.currentTimeMillis() - this.startTime;
+        report.put(Stats.ELAPSED_TIME, Long.toString(elapsedTime));
         String eventDescription = compositeEvent.getObservationDescription();
         log.info(eventDescription);
         report.put(REPORT_FIELD_EVENT, eventDescription);
         log.info("Real state summary:");
-        Map<String, String> summaryRealState = this.realState.getSummary("Real");
-        for(Map.Entry<String, String> entry: summaryRealState.entrySet()){
-            log.info(String.format("%s: %s", entry.getKey(), entry.getValue()));
+        for (Map.Entry<String, String> entry : realStatePrintableFlatStats.entrySet()) {
+            boolean show = Stats.SHOW_LIST.stream().anyMatch(s -> entry.getKey().endsWith(s));
+            if(show)
+                log.info(String.format("%s: %s", entry.getKey(), entry.getValue()));
+            if(entry.getKey().endsWith(INCORRECT_TABLES))
+                realTablesIncorrect = Long.parseLong(entry.getValue());
+            else if(entry.getKey().endsWith(UNAVAILABLE_CLUSTER_STATUS))
+                realUnavailableClusterStatus = Long.parseLong(entry.getValue());
+            report.put(entry.getKey(), entry.getValue());
         }
-        report.putAll(summaryRealState);
         log.info("Desire state summary:");
-        Map<String, String> summaryDesireState = this.desireState.getSummary("Desire");
-        for(Map.Entry<String, String> entry: summaryDesireState.entrySet()){
-            log.info(String.format("%s: %s", entry.getKey(), entry.getValue()));
+        for (Map.Entry<String, String> entry : desireStatePrintableFlatStats.entrySet()) {
+            boolean show = Stats.SHOW_LIST.stream().anyMatch(s -> entry.getKey().endsWith(s));
+            String statNameInRealState = entry.getKey().replaceFirst(REPORT_DESIRE_STATE_PREFIX, REPORT_REAL_STATE_PREFIX);
+            if(show && realStatePrintableFlatStats.containsKey(statNameInRealState)){
+                String statName = entry.getKey().substring(entry.getKey().lastIndexOf(Stats.SEPARATOR));
+                String valueInRealState = realStatePrintableFlatStats.get(statNameInRealState);
+                String valueComparison = Stats.compareStats(statName, valueInRealState, entry.getValue());
+                log.info(String.format("Deviation for %s: %s", statName, valueComparison));
+            }
+            if(entry.getKey().endsWith(INCORRECT_TABLES))
+                desireTablesIncorrect = Long.parseLong(entry.getValue());
+            else if(entry.getKey().endsWith(UNAVAILABLE_CLUSTER_STATUS))
+                desireUnavailableClusterStatus = Long.parseLong(entry.getValue());
+            report.put(entry.getKey(), entry.getValue());
         }
-        report.putAll(summaryDesireState);
-        log.info(String.format("%s: %s", REPORT_FIELD_DISCARDED_EVENTS, discardedEvents));
+        if(discardedEvents > 0)
+            log.info(String.format("%s: %s", REPORT_FIELD_DISCARDED_EVENTS, discardedEvents));
         report.put(REPORT_FIELD_DISCARDED_EVENTS, Integer.toString(discardedEvents));
-
-        WriteReportToSheet();
+        report.put(Stats.SERVERS_TOTAL, Integer.toString(corfuServers.size()));
+        report.put(Stats.CLIENTS_TOTAL, Integer.toString(corfuClients.size()));
+        report.put(Stats.TABLES_TOTAL, Integer.toString(realState.getData().size()));
+        this.correctnessErrors += Math.abs(realTablesIncorrect - desireTablesIncorrect);
+        this.livenessErrors += Math.abs(realUnavailableClusterStatus - desireUnavailableClusterStatus);
+        String elapsedTimeStr = "";
+        long elapsedDays = TimeUnit.MILLISECONDS.toDays(elapsedTime);
+        if(elapsedDays > 0)
+            elapsedTimeStr = Long.toString(elapsedDays) + " days ";
+        long elapsedHours = TimeUnit.MILLISECONDS.toHours(elapsedTime) - TimeUnit.DAYS.toHours(elapsedDays);
+        if(elapsedHours > 0 || !elapsedTimeStr.isEmpty())
+            elapsedTimeStr = elapsedTimeStr + Long.toString(elapsedHours) + " hours ";
+        long elapsedMinutes = TimeUnit.MILLISECONDS.toMinutes(elapsedTime) - TimeUnit.DAYS.toMinutes(elapsedDays) -
+                TimeUnit.HOURS.toMinutes(elapsedHours);
+        if(elapsedMinutes > 0 || !elapsedTimeStr.isEmpty())
+            elapsedTimeStr = elapsedTimeStr + Long.toString(elapsedMinutes) + " minutes ";
+        long elapsedSeconds = TimeUnit.MILLISECONDS.toSeconds(elapsedTime) - TimeUnit.DAYS.toSeconds(elapsedDays) -
+                TimeUnit.HOURS.toSeconds(elapsedHours) - TimeUnit.MINUTES.toSeconds(elapsedMinutes);
+        if(elapsedSeconds > 0 || !elapsedTimeStr.isEmpty())
+            elapsedTimeStr = elapsedTimeStr + Long.toString(elapsedSeconds) + " seconds ";
+        log.info(String.format("Time elapsed: %s", elapsedTimeStr));
+        log.info(String.format("Correctness errors: %d", this.correctnessErrors));
+        log.info(String.format("Liveness errors: %d", this.livenessErrors));
+        WriteReportToSheet(report, writeColumns);
+        if(writeColumns){
+            this.reportColumns = report.keySet().stream().collect(Collectors.toList());
+            this.listeners.forEach(l -> {
+                try{
+                    List<List<String>> data = this.savedIterations.values().stream().collect(Collectors.toList());
+                    l.setReportColumns(this.reportColumns, data);
+                }
+                catch (Exception ex){
+                    log.error("Error setting report columns to listener", ex);
+                }
+            });
+        }
+        List<String> reportValues = report.values().stream().collect(Collectors.toList());
+        this.listeners.forEach(l -> {
+            try{
+                l.reportIteration(reportValues);
+            }
+            catch (Exception ex){
+                log.error("Error reporting iteration to listener", ex);
+            }
+        });
+        if(this.waitForListener && this.listeners.isEmpty()){
+            this.savedIterations.put(elapsedTime, reportValues);
+        }
     }
 
-    private void WriteReportToSheet() {
-        List<ServerPhaseState> servers = new ArrayList<>(realState.getServers().values());
-        servers.sort(Comparator.comparing(ServerPhaseState::getHostName));
-        List<ClientPhaseState> clients = new ArrayList<>(realState.getClients().values());
-        clients.sort(Comparator.comparing(ClientPhaseState::getClientName));
-
-        List<Object> columns = new ArrayList<>();
-        columns.add(realState.getClusterStatus().name());
-
-        columns.addAll(clients.stream()
-                .map(c -> new Object[]{c.getGetThroughput(), c.getPutThroughput()})
-                .flatMap(Arrays::stream)
-                .collect(Collectors.toList()));
-
-        columns.addAll(servers
-                .stream()
-                .map(s -> new Object[]{s.getStatus().name(), s.isLayoutServer(),
-                        s.isLogUnitServer(), s.isPrimarySequencer(), s.getServerStats().cpuUsage})
-                .flatMap(Arrays::stream)
-                .collect(Collectors.toList()));
-
-        Sheets.append(Arrays.asList(columns), sheetTitle);
-    }
-
-    private void createSheet() {
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd-HH-mm-ss");
-        Date date = new Date();
-        sheetTitle = "Longevity-v1-" + formatter.format(date);
-        Sheets.create(sheetTitle);
-
-        List<Object> columns = new ArrayList<>();
-        columns.add("cluster_status");
-
-        for (int i = 1; i <= DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++) {
-            columns.add("client" + i + "_get_throughput");
-            columns.add("client" + i + "_put_throughput");
+    private void WriteReportToSheet(LinkedHashMap<String, String> report, boolean writeColumns) {
+        List<String> linesToFile = new ArrayList<>();
+        if(writeColumns){
+            String header = report.keySet().stream().collect(Collectors.joining(","));
+            linesToFile.add(header);
         }
-
-        for (int i = 1; i <= numNodes; i++) {
-            columns.add("server" + i + "_status");
-            columns.add("server" + i + "_layout");
-            columns.add("server" + i + "_logunit");
-            columns.add("server" + i + "_primary_sequencer");
-            columns.add("server" + i + "_cpu");
+        String row = report.values().stream().collect(Collectors.joining(","));
+        linesToFile.add(row);
+        try{
+            Files.write(outputFilePath, linesToFile, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        }catch (Exception ex){
+            log.error("Error writing row to output file.", ex);
         }
-
-        Sheets.append(Arrays.asList(columns), sheetTitle);
     }
 
     /**
      * Run the dynamic defined during the time specified, using a event loop.
-     *
      */
     public void run() {
+        //check if output file exist
+        String outputFilename = "longevity-" +
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"));
+        outputFilePath = Paths.get(outputFilename + ".csv");
+        int counter = 0;
+        while(Files.exists(outputFilePath)){
+            counter++;
+            outputFilePath = Paths.get(outputFilename + counter + ".csv");
+        }
         getScenario().describe((fixture, testCase) -> {
+            boolean firstIteration = true;
             this.numNodes = fixture.getNumNodes();
             this.clientFixture = fixture.getClient();
             this.corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
-            createSheet();
 
-            for(int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++){
+            for (int i = 0; i < this.numNodes; i++) {
+                String nodeName = "node" + (9000 + i);
+                CorfuServer nodeServer = (CorfuServer) corfuCluster.getNode(nodeName);
+                String nodeEndpoint = nodeServer.getEndpoint();
+                String nodeServerHostName = nodeServer.getParams().getName();
+                this.corfuServers.put(nodeName, nodeServer);
+                //Update desire state
+                ServerState desireServerState =
+                        new ServerState(nodeName, nodeEndpoint, nodeServerHostName, docker, DEFAULT_MONITORING_PERIOD,
+                                DEFAULT_TIME_UNITS);
+                this.desireState.getServers().put(nodeName, desireServerState);
+                //Update desire state
+                ServerState realServerState =
+                        new ServerState(nodeName, nodeEndpoint, nodeServerHostName, docker, DEFAULT_MONITORING_PERIOD,
+                                DEFAULT_TIME_UNITS);
+                this.realState.getServers().put(nodeName, realServerState);
+            }
+            for (int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++) {
                 CorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
                 String clientName = corfuClient.getParams().getName() + i;
                 CorfuClientInstance corfuClientInstance = new CorfuClientInstance(i, clientName, corfuClient);
                 this.corfuClients.add(corfuClientInstance);
-                ClientPhaseState desireClientState = new ClientPhaseState(clientName);
+                ClientState desireClientState = new ClientState(clientName, clientName, docker,
+                        DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
                 this.desireState.getClients().put(clientName, desireClientState);
-                ClientPhaseState realClientState = new ClientPhaseState(clientName);
+                for(ServerState ss: this.desireState.getServers().values()){
+                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint(), ss.getHostName());
+                    desireClientState.getServers().put(ss.getName(), clientServerState);
+                }
+                ClientState realClientState = new ClientState(clientName, clientName, docker,
+                        DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
                 this.realState.getClients().put(clientName, realClientState);
-                for(CorfuTableDataGenerationFunction corfuTableDataGenerator: corfuClientInstance.corfuTables){
-                    TableStreamPhaseState desireTableState =
-                            new TableStreamPhaseState(corfuTableDataGenerator.getTableStreamName());
+                for(ServerState ss: this.realState.getServers().values()){
+                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint(), ss.getHostName());
+                    realClientState.getServers().put(ss.getName(), clientServerState);
+                }
+                for (CorfuTableDataGenerationFunction corfuTableDataGenerator : corfuClientInstance.getCorfuTables()) {
+                    TableState desireTableState =
+                            new TableState(corfuTableDataGenerator.getTableStreamName());
                     this.desireState.getData().put(desireTableState.getTableStreamName(), desireTableState);
-                    TableStreamPhaseState realTableState =
-                            new TableStreamPhaseState(corfuTableDataGenerator.getTableStreamName());
+                    ClientTableAccessStats desireClientTableAccessStats =
+                            new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
+                    desireClientState.getTableAccessStats().put(desireClientTableAccessStats.getTableStreamName(),
+                            desireClientTableAccessStats);
+                    TableState realTableState =
+                            new TableState(corfuTableDataGenerator.getTableStreamName());
                     this.realState.getData().put(desireTableState.getTableStreamName(), realTableState);
+                    ClientTableAccessStats realClientTableAccessStats =
+                            new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
+                    realClientState.getTableAccessStats().put(realClientTableAccessStats.getTableStreamName(),
+                            realClientTableAccessStats);
                 }
             }
-            for(int i = 0; i < this.numNodes; i ++){
-                String nodeName = "node" + (9000 + i);
-                CorfuServer nodeServer = (CorfuServer)corfuCluster.getNode(nodeName);
-                this.corfuServers.put(nodeName, nodeServer);
-                this.containers.add(nodeServer.getParams().getName());
-                ServerPhaseState desireServerState =
-                        new ServerPhaseState(nodeName, nodeServer.getEndpoint(), nodeServer.getParams().getName());
-                this.desireState.getServers().put(nodeName, desireServerState);
-                ServerPhaseState realServerState =
-                        new ServerPhaseState(nodeName, nodeServer.getEndpoint(), nodeServer.getParams().getName());
-                this.realState.getServers().put(nodeName, realServerState);
-            }
             int discardedEvents = 0;
-            long startTime = System.currentTimeMillis();
-            while ( (System.currentTimeMillis() - startTime) < this.longevity){
+            this.startTime = System.currentTimeMillis();
+            while ((System.currentTimeMillis() - this.startTime) < this.longevity) {
                 UniverseEventOperator compositeEvent = this.generateCompositeEvent();
-                if(this.materializeCompositeEvent(compositeEvent)){
-                    this.reportStateDifference(compositeEvent, discardedEvents);
+                if (this.materializeCompositeEvent(compositeEvent)) {
+                    this.reportStateDifference(compositeEvent, discardedEvents, firstIteration);
+                    firstIteration = false;
                     discardedEvents = 0;
                     try {
                         Sleep.MILLISECONDS.sleepUninterruptibly(this.getIntervalBetweenEvents());
+                    } catch (Exception ex) {
+                        log.error("Error invoking Thread.sleep.", ex);
                     }
-                    catch (Exception ex){
-                        log.error("Error invoking Thread.sleep." , ex);
-                    }
-                }else{
+                } else {
                     discardedEvents++;
                 }
             }
+            this.listeners.forEach(l -> {
+                try{
+                    l.finish();
+                }
+                catch (Exception ex){
+                    log.error("Error reporting end of test to listener", ex);
+                }
+            });
         });
     }
 
     /**
      * Initialize the universe and the dynamic.
+     *
      * @throws DockerCertificateException
      */
     @Override
@@ -340,362 +501,9 @@ public abstract class Dynamic extends UniverseInitializer {
         super.shutdown();
     }
 
-    public Dynamic(long longevity) {
+    public Dynamic(long longevity, boolean waitForListener) {
         super("LongevityTest");
         this.longevity = longevity;
-    }
-
-    /**
-     * Describe and holds a specific instance of a corfu client implementation
-     * that is used in a {@link Dynamic}.
-     */
-    @Getter
-    @Setter
-    public class CorfuClientInstance {
-        /**
-         * Amount of corfu tables handle for each client in the universe.
-         */
-        private static final int DEFAULT_AMOUNT_OF_CORFU_TABLES_PER_CLIENT = 3;
-
-        /**
-         * Amount of corfu tables handle for each client in the universe.
-         */
-        private static final int DEFAULT_AMOUNT_OF_FIELDS_PER_CORFU_TABLE = 500;
-
-        /**
-         * Integer id that is used as a simple seed to make each data generation function different
-         * in a deterministic a reproducible way.
-         */
-        protected int id;
-
-        /**
-         * Name of the client, it must be unique.
-         */
-        private final String name;
-
-        /**
-         * Throughput that the client see when is writing data to corfu.
-         */
-        private double lastMeasuredPutThroughput = 0;
-
-        /**
-         * Throughput that the client see when is getting data from corfu.
-         */
-        private double lastMeasuredGetThroughput = 0;
-
-        /**
-         * Data generators for each corfu table handle by this client.
-         */
-        private final List<CorfuTableDataGenerationFunction> corfuTables = new ArrayList<>();
-
-        /**
-         * Corfu client implementation to use.
-         */
-        private final CorfuClient corfuClient;
-
-        public CorfuClientInstance(int id, String name, CorfuClient corfuClient){
-            this.id = id;
-            this.name = name;
-            this.corfuClient = corfuClient;
-            for(int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_TABLES_PER_CLIENT; i++){
-                int generatorId = (this.id * DEFAULT_AMOUNT_OF_CORFU_TABLES_PER_CLIENT) + i;
-                if((i%2) == 0){
-                    this.corfuTables.add(new CorfuTableDataGenerationFunction.IntegerSequence(generatorId,
-                            DEFAULT_AMOUNT_OF_FIELDS_PER_CORFU_TABLE));
-                }
-                else{
-                    this.corfuTables.add(new CorfuTableDataGenerationFunction.SinusoidalStrings(generatorId,
-                            DEFAULT_AMOUNT_OF_FIELDS_PER_CORFU_TABLE));
-                }
-            }
-        }
-    }
-
-    /**
-     * Dynamic that sequentially alternate between PutData and GetData events, both over
-     * a different stream table each time. Intended for basic troubleshooting.
-     */
-    public static class SimplePutGetDataDynamic extends Dynamic {
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_DELAY_FOR_STATE_UPDATE = 500;
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_INTERVAL_BETWEEN_EVENTS = 10000;
-
-        /**
-         * Whether the next event to generate is a put data event or not.
-         */
-        private boolean generatePut = true;
-
-        /**
-         * Index of the client to use for the next put data event to generate.
-         */
-        private int clientIndexForPutData = 0;
-
-        /**
-         * Index table to use for the next put data event to generate.
-         */
-        private int tableIndexForPutData = 0;
-
-        /**
-         * Generate a put data event using a different corfu table each time that is invoked.
-         * @return
-         */
-        protected PutDataEvent generatePutDataEvent() {
-            PutDataEvent event = new PutDataEvent(
-                    this.corfuClients.get(clientIndexForPutData).corfuTables.get(tableIndexForPutData),
-                    this.corfuClients.get(clientIndexForPutData),
-                    docker,
-                    this.realState.getServers().values());
-            tableIndexForPutData++;
-            if(tableIndexForPutData >= this.corfuClients.get(clientIndexForPutData).corfuTables.size()){
-                tableIndexForPutData = 0;
-                clientIndexForPutData++;
-                if(clientIndexForPutData >= this.corfuClients.size()){
-                    clientIndexForPutData = 0;
-                }
-            }
-            return event;
-        }
-
-        /**
-         * Index of the client to use for the next get data event to generate.
-         */
-        private int clientIndexForGetData = 0;
-
-        /**
-         * Index table to use for the next get data event to generate.
-         */
-        private int tableIndexForGetData = 0;
-
-        /**
-         * Generate a get data event using a different corfu table each time that is invoked.
-         * @return
-         */
-        protected GetDataEvent generateGetDataEvent() {
-            GetDataEvent event = new GetDataEvent(
-                    this.corfuClients.get(clientIndexForGetData).corfuTables.get(tableIndexForGetData),
-                    this.corfuClients.get(clientIndexForGetData),
-                    docker,
-                    this.realState.getServers().values());
-            tableIndexForGetData++;
-            if(tableIndexForGetData >= this.corfuClients.get(clientIndexForGetData).corfuTables.size()){
-                tableIndexForGetData = 0;
-                clientIndexForGetData++;
-                if(clientIndexForGetData >= this.corfuClients.size()){
-                    clientIndexForGetData = 0;
-                }
-            }
-            return event;
-        }
-
-        /**
-         * Time in milliseconds before update the state.
-         */
-        @Override
-        protected long getDelayForStateUpdate() {
-            return DEFAULT_DELAY_FOR_STATE_UPDATE;
-        }
-
-        /**
-         * Time in milliseconds between the composite event that just happened and the next one.
-         */
-        @Override
-        protected long getIntervalBetweenEvents() {
-            return (long)(DEFAULT_INTERVAL_BETWEEN_EVENTS * this.randomNumberGenerator.nextDouble());
-        }
-
-        /**
-         * Generate a composite event to materialize in the universe.
-         * The events generated have not guaranty of execution. They are allowed
-         * to execute if they are compliant with the {@link UniverseRule}.
-         *
-         * @return Composite event generated.
-         */
-        @Override
-        protected UniverseEventOperator generateCompositeEvent() {
-            UniverseEvent event = generatePut ? this.generatePutDataEvent() : this.generateGetDataEvent();
-            generatePut = !generatePut;
-            return new UniverseEventOperator.Single(event);
-        }
-
-        public SimplePutGetDataDynamic(long longevity){
-            super(longevity);
-        }
-    }
-
-
-    /**
-     * Dynamic that sequentially alternate between Stop Server and Start Server events, with
-     * PutData and GetData events between them. In each iteration, a different server is
-     * stop/start. Intended for basic troubleshooting.
-     */
-    public static class SimpleStopStartDynamic extends SimplePutGetDataDynamic {
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_DELAY_FOR_STATE_UPDATE = 500;
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_INTERVAL_BETWEEN_EVENTS = 10000;
-
-        /**
-         * Duration for stop server events generated.
-         */
-        private static Duration DEFAULT_STOP_NODE_DURATION = Duration.ofSeconds(10);
-
-        /**
-         * Whether the next event to generate is a stop event or not.
-         */
-        private boolean generateStop = true;
-
-
-        /**
-         * Index of the server over which execute the next action.
-         */
-        private int serverIndex = 0;
-
-        /**
-         * Generate a put data event using a different corfu table each time that is invoked.
-         * @return
-         */
-        protected ServerNodeEvent generateServerNodeEvent() {
-            Set<Map.Entry<String, CorfuServer>> mapSet = this.corfuServers.entrySet();
-            Map.Entry<String, CorfuServer> server = (Map.Entry<String, CorfuServer>)mapSet.toArray()[serverIndex];
-            ServerNodeEvent event;
-            if(generateStop){
-                event = new ServerNodeEvent.Stop(server.getKey(), server.getValue(), DEFAULT_STOP_NODE_DURATION);
-            }else{
-                event = new ServerNodeEvent.Start(server.getKey(), server.getValue());
-                serverIndex++;
-                if(serverIndex >= this.corfuServers.size()){
-                    serverIndex = 0;
-                }
-            }
-            generateStop = !generateStop;
-            return event;
-        }
-
-        /**
-         * Time in milliseconds before update the state.
-         */
-        @Override
-        protected long getDelayForStateUpdate() {
-            return DEFAULT_DELAY_FOR_STATE_UPDATE;
-        }
-
-        /**
-         * Time in milliseconds between the composite event that just happened and the next one.
-         */
-        @Override
-        protected long getIntervalBetweenEvents() {
-            return (long)(DEFAULT_INTERVAL_BETWEEN_EVENTS * this.randomNumberGenerator.nextDouble());
-        }
-
-        /**
-         * Amount of data events generated since the last server node event.
-         */
-        private int dataEventsGenerated = MAX_CONSECUTIVE_DATA_EVENTS;
-
-        /**
-         * Max amount of data events between server node events.
-         */
-        private static int MAX_CONSECUTIVE_DATA_EVENTS = 4;
-
-        /**
-         * Generate a composite event to materialize in the universe.
-         * The events generated have not guaranty of execution. They are allowed
-         * to execute if they are compliant with the {@link UniverseRule}.
-         *
-         * @return Composite event generated.
-         */
-        @Override
-        protected UniverseEventOperator generateCompositeEvent() {
-            UniverseEventOperator event;
-            if(this.dataEventsGenerated >= MAX_CONSECUTIVE_DATA_EVENTS){
-                event = new UniverseEventOperator.Single(this.generateServerNodeEvent());
-                this.dataEventsGenerated = 0;
-            }
-            else{
-                event = super.generateCompositeEvent();
-                this.dataEventsGenerated++;
-            }
-            return event;
-        }
-
-        public SimpleStopStartDynamic(long longevity){
-            super(longevity);
-        }
-    }
-
-    /**
-     * Dynamic that randomly generate composite events
-     */
-    public static class PseudoRandomDynamic extends SimpleStopStartDynamic {
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_DELAY_FOR_STATE_UPDATE = 500;
-
-        /**
-         * Default time between two composite events in milliseconds.
-         */
-        private static int DEFAULT_INTERVAL_BETWEEN_EVENTS = 10000;
-
-        /**
-         * Time in milliseconds before update the state.
-         */
-        @Override
-        protected long getDelayForStateUpdate() {
-            return DEFAULT_DELAY_FOR_STATE_UPDATE;
-        }
-
-        /**
-         * Time in milliseconds between the composite event that just happened and the next one.
-         */
-        @Override
-        protected long getIntervalBetweenEvents() {
-            return (long)(DEFAULT_INTERVAL_BETWEEN_EVENTS * this.randomNumberGenerator.nextDouble());
-        }
-
-        private final List<Supplier<UniverseEvent>> possibleEvents = new ArrayList<>();
-        /**
-         * Generate a composite event to materialize in the universe.
-         * The events generated have not guaranty of execution. They are allowed
-         * to execute if they are compliant with the {@link UniverseRule}.
-         *
-         * @return Composite event generated.
-         */
-        @Override
-        protected UniverseEventOperator generateCompositeEvent() {
-            List<UniverseEvent> actualEvents = new ArrayList<>();
-            int i = 0;
-            while ( i < this.possibleEvents.size() || actualEvents.isEmpty() ){
-                if(this.randomNumberGenerator.nextBoolean()){
-                    actualEvents.add(this.possibleEvents.get(i % 3).get());
-                }
-                i++;
-            }
-            UniverseEventOperator event = this.randomNumberGenerator.nextBoolean() ?
-                    new UniverseEventOperator.Sequential(actualEvents) :
-                    new UniverseEventOperator.Concurrent(actualEvents);
-            return event;
-        }
-
-        public PseudoRandomDynamic(long longevity){
-            super(longevity);
-            this.possibleEvents.add(this::generatePutDataEvent);
-            this.possibleEvents.add(this::generateGetDataEvent);
-            this.possibleEvents.add(this::generateServerNodeEvent);
-        }
+        this.waitForListener = waitForListener;
     }
 }

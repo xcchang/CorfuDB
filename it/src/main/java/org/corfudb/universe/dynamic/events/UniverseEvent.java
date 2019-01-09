@@ -1,7 +1,6 @@
 package org.corfudb.universe.dynamic.events;
 
-import org.corfudb.universe.dynamic.Dynamic;
-import org.corfudb.universe.dynamic.PhaseState;
+import org.corfudb.universe.dynamic.state.State;
 
 /**
  * Defines the contract to follow by any event that can happened in the universe.
@@ -13,14 +12,14 @@ import org.corfudb.universe.dynamic.PhaseState;
  *          - Add Node
  *          - Force Remove Node (hand of god)
  *      Data tasks:
- *          - Put Data
- *          - Get Data
+ *          - Put Data (supported)
+ *          - Get Data (supported)
  *      IT Tasks:
  *          - Kill Node
- *          - Stop Node
- *          - Start Node
- *          - Disconnect Node
- *          - Reconnect Node
+ *          - StopServerEvent Node (supported)
+ *          - StartServerEvent Node (supported)
+ *          - Disconnect Node (supported)
+ *          - Reconnect Node (supported)
  *          - Pause Node
  *          - Resume Node
  *          - Wait for unresponsive nodes
@@ -43,7 +42,7 @@ public interface UniverseEvent {
      * @param currentDesireState    Desire-state of the universe before this event happened.
      * @return                      Desire-state of the universe after this event happened.
      */
-    void applyDesirePartialTransition(PhaseState currentDesireState);
+    void applyDesirePartialTransition(State currentDesireState);
 
     /**
      * Execute the transition of the universe that materialize the occurrence of the event.
@@ -51,5 +50,5 @@ public interface UniverseEvent {
      *
      * @param currentRealState  Real-state of the universe before this event happened.
      */
-    void executeRealPartialTransition(PhaseState currentRealState);
+    void executeRealPartialTransition(State currentRealState);
 }

@@ -1,16 +1,13 @@
 package org.corfudb.universe.dynamic.events;
 
-import com.spotify.docker.client.DockerClient;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.collections.CorfuTable;
-import org.corfudb.runtime.view.ClusterStatusReport;
-import org.corfudb.universe.dynamic.ContainerStats;
+import org.corfudb.runtime.view.ClusterStatusReport.ClusterStatus;
+import org.corfudb.universe.dynamic.CorfuClientInstance;
 import org.corfudb.universe.dynamic.Dynamic;
-import org.corfudb.universe.dynamic.PhaseState;
-import org.corfudb.universe.dynamic.PhaseState.ServerPhaseState;
+import org.corfudb.universe.dynamic.state.State;
+import org.corfudb.universe.dynamic.state.TableStreamStatus;
 
-import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,7 +17,7 @@ import java.util.Map;
  * Created by edilmo on 11/06/18.
  */
 @Slf4j
-public class PutDataEvent extends DataPathEvent {
+public class PutDataEvent implements UniverseEvent {
 
     /**
      * Data generation function to use.
@@ -30,7 +27,7 @@ public class PutDataEvent extends DataPathEvent {
     /**
      * Corfu client to use.
      */
-    private Dynamic.CorfuClientInstance corfuClientInstance;
+    private CorfuClientInstance corfuClientInstance;
 
     /**
      * Get the name of the stream table where the data generarted will be saved in corfu.
@@ -42,10 +39,7 @@ public class PutDataEvent extends DataPathEvent {
     }
 
     public PutDataEvent(CorfuTableDataGenerationFunction<String, String> generator,
-                        Dynamic.CorfuClientInstance corfuClientInstance,
-                        DockerClient docker,
-                        Collection<ServerPhaseState> servers) {
-        super(docker, servers);
+                        CorfuClientInstance corfuClientInstance) {
         this.generator = generator;
         this.corfuClientInstance = corfuClientInstance;
     }
@@ -67,17 +61,23 @@ public class PutDataEvent extends DataPathEvent {
      * @return Desire-state of the universe after this event happened.
      */
     @Override
-    public void applyDesirePartialTransition(PhaseState currentDesireState) {
+    public void applyDesirePartialTransition(State currentDesireState) {
         try{
-            if(currentDesireState.getClusterStatus() != ClusterStatusReport.ClusterStatus.UNAVAILABLE) {
+            ClusterStatus clusterStatus = currentDesireState.getClients().get(this.corfuClientInstance.getName()).
+                    getClusterStatus();
+            if(clusterStatus != ClusterStatus.UNAVAILABLE) {
                 currentDesireState.updateClientPutThroughput(this.corfuClientInstance.getName(),
-                        this.corfuClientInstance.getLastMeasuredPutThroughput());
+                        this.generator.getTableStreamName(),
+                        this.corfuClientInstance.getLastMeasuredPutThroughputPerTable().
+                                get(this.generator.getTableStreamName()));
                 this.generator.changeValues();
                 currentDesireState.putDataToTableStream(this.generator.getTableStreamName(), this.generator);
             }else {
-                currentDesireState.updateClientPutThroughput(this.corfuClientInstance.getName(), 0);
+                currentDesireState.updateClientPutThroughput(this.corfuClientInstance.getName(),
+                        this.generator.getTableStreamName(),
+                        0.0);
                 currentDesireState.updateStatusOfTableStream(this.generator.getTableStreamName(),
-                        PhaseState.TableStreamStatus.UNAVAILABLE);
+                        TableStreamStatus.UNAVAILABLE);
             }
 
         }catch (CloneNotSupportedException cne){
@@ -93,31 +93,32 @@ public class PutDataEvent extends DataPathEvent {
      * @param currentRealState Real-state of the universe before this event happened.
      */
     @Override
-    public void executeRealPartialTransition(PhaseState currentRealState) {
+    public void executeRealPartialTransition(State currentRealState) {
         CorfuTable table = this.corfuClientInstance.getCorfuClient().
                 createDefaultCorfuTable(this.generator.getTableStreamName());
         Map<String, String> dataToPut = this.generator.get();
         double throughput = 0;
         try{
             long ts1 = System.nanoTime();
-            startCollectStats();
             for (Map.Entry<String, String> entry : dataToPut.entrySet()) {
                 table.put(entry.getKey(), entry.getValue());
             }
-            stopCollectStats();
             long ts2 = System.nanoTime();
-            double td = (ts2 - ts1);
-            throughput = dataToPut.size() / (td * 1.0) * 1000000;
+            double tdMs = (ts2 - ts1) / 1000000d;
+            throughput = dataToPut.size() / tdMs;
             currentRealState.putDataToTableStream(this.generator.getTableStreamName(), this.generator);
         }catch (Exception ex){
             currentRealState.updateStatusOfTableStream(this.generator.getTableStreamName(),
-                    PhaseState.TableStreamStatus.UNAVAILABLE);
+                    TableStreamStatus.UNAVAILABLE);
             log.error(String.format("Unexpected error while putting Data for %s generatorSnapshot",
                     this.generator.getName()),
                     ex);
             this.generator.undoChangeValues();
         }
-        this.corfuClientInstance.setLastMeasuredPutThroughput(throughput);
-        currentRealState.updateClientPutThroughput(this.corfuClientInstance.getName(), throughput);
+        this.corfuClientInstance.getLastMeasuredPutThroughputPerTable().
+                put(this.generator.getTableStreamName(), throughput);
+        currentRealState.updateClientPutThroughput(this.corfuClientInstance.getName(),
+                this.generator.getTableStreamName(),
+                throughput);
     }
 }

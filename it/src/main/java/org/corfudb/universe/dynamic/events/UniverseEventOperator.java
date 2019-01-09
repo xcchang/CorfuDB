@@ -1,7 +1,7 @@
 package org.corfudb.universe.dynamic.events;
 
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.universe.dynamic.PhaseState;
+import org.corfudb.universe.dynamic.state.State;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,7 +40,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
      * @return Desire-state of the universe after this event happened.
      */
     @Override
-    public void applyDesirePartialTransition(PhaseState currentDesireState) {
+    public void applyDesirePartialTransition(State currentDesireState) {
         for(UniverseEvent simpleEvent: this.getSimpleEventsToCompose()){
             simpleEvent.applyDesirePartialTransition(currentDesireState);
         }
@@ -75,7 +75,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
         @Override
         public String getObservationDescription() {
             StringBuilder builder = new StringBuilder();
-            builder.append("Single event:\n");
+            builder.append("Single ");
             builder.append(this.simpleEvent.getObservationDescription());
             return builder.toString();
         }
@@ -87,7 +87,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
          * @param currentRealState Real-state of the universe before this event happened.
          */
         @Override
-        public void executeRealPartialTransition(PhaseState currentRealState) {
+        public void executeRealPartialTransition(State currentRealState) {
             this.simpleEvent.executeRealPartialTransition(currentRealState);
         }
 
@@ -132,9 +132,8 @@ public abstract class UniverseEventOperator implements UniverseEvent {
         public String getObservationDescription() {
             StringBuilder builder = new StringBuilder();
             builder.append(this.getShortObservationDescription());
-            builder.append(":");
             for(UniverseEvent simpleEvent: this.simpleEvents){
-                builder.append("\n");
+                builder.append(" ");
                 builder.append(simpleEvent.getObservationDescription());
             }
             return builder.toString();
@@ -158,7 +157,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
          */
         @Override
         protected String getShortObservationDescription() {
-            return "Sequential execution";
+            return "Sequential";
         }
 
         /**
@@ -168,7 +167,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
          * @param currentRealState Real-state of the universe before this event happened.
          */
         @Override
-        public void executeRealPartialTransition(PhaseState currentRealState) {
+        public void executeRealPartialTransition(State currentRealState) {
             for(UniverseEvent simpleEvent: this.simpleEvents){
                 simpleEvent.executeRealPartialTransition(currentRealState);
             }
@@ -192,7 +191,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
          */
         @Override
         protected String getShortObservationDescription() {
-            return "Concurrent execution";
+            return "Concurrent";
         }
 
         /**
@@ -202,7 +201,7 @@ public abstract class UniverseEventOperator implements UniverseEvent {
          * @param currentRealState Real-state of the universe before this event happened.
          */
         @Override
-        public void executeRealPartialTransition(PhaseState currentRealState) {
+        public void executeRealPartialTransition(State currentRealState) {
             try {
                 CountDownLatch latch = new CountDownLatch(this.simpleEvents.size());
                 ExecutorService executor = Executors.newFixedThreadPool(this.simpleEvents.size());
