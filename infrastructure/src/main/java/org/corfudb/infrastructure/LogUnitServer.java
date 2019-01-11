@@ -117,7 +117,8 @@ public class LogUnitServer extends AbstractServer {
                 .writer(batchWriter)
                 .build(this::handleRetrieval);
 
-        logCleaner = new StreamLogCompaction(streamLog, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER);
+        logCleaner = new StreamLogCompaction(streamLog, 10, 20,
+                TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER, dataCache);
     }
 
     /**
@@ -226,6 +227,7 @@ public class LogUnitServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.PREFIX_TRIM)
     private void prefixTrim(CorfuPayloadMsg<TrimRequest> msg, ChannelHandlerContext ctx,
                             IServerRouter r) {
+        log.debug("prefixTrim: prefixTrim address {}, epoch {}", msg.getPayload(), msg.getEpoch());
         try {
             TrimRequest req = msg.getPayload();
             batchWriter.prefixTrim(req.getAddress());
@@ -250,6 +252,7 @@ public class LogUnitServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.FLUSH_CACHE)
     private void flushCache(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
         try {
+            log.debug("flushCache: flushing server cache {}", dataCache.stats());
             dataCache.invalidateAll();
         } catch (RuntimeException e) {
             log.error("Encountered error while flushing cache {}", e);
@@ -321,7 +324,7 @@ public class LogUnitServer extends AbstractServer {
      */
     public synchronized ILogData handleRetrieval(long address) {
         LogData entry = streamLog.read(address);
-        log.trace("Retrieved[{} : {}]", address, entry);
+        log.debug("Retrieved[{} : {}]", address, entry);
         return entry;
     }
 

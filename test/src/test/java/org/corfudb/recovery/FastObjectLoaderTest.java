@@ -371,8 +371,7 @@ public class FastObjectLoaderTest extends AbstractViewTest {
                 .build()
                 .begin();
         try {
-            cpw.startCheckpoint();
-            cpw.appendObjectState();
+            cpw.appendCheckpoint();
         } finally {
             getDefaultRuntime().getObjectsView().TXEnd();
         }

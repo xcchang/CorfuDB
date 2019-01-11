@@ -17,11 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 
@@ -75,6 +73,7 @@ public class FastObjectLoader {
     static final int DEFAULT_TIMEOUT_MINUTES_FAST_LOADING = 30;
     static final int NUMBER_OF_ATTEMPT = 3;
     static final int STATUS_UPDATE_PACE = 10000;
+    static final int CONCURRENT_FUTURES_THRESHOLD = 1000;
 
     private CorfuRuntime runtime;
 
@@ -187,7 +186,7 @@ public class FastObjectLoader {
     private int retryIteration = 0;
     private long nextRead;
 
-    private List<Future> futureList;
+    private List<CompletableFuture> futureList;
 
     public FastObjectLoader(@Nonnull final CorfuRuntime corfuRuntime) {
         this.runtime = corfuRuntime;
@@ -222,11 +221,27 @@ public class FastObjectLoader {
     }
 
     private void invokeNecromancer(Map<Long, ILogData> logDataMap, BiConsumer<Long, ILogData> resurrectionSpell) {
-        futureList.add(necromancer.submit(() -> {
+        futureList.add(CompletableFuture.runAsync(() -> {
             logDataMap.forEach((address, logData) -> {
                 resurrectionSpell.accept(address, logData);
             });
-        }));
+        }, necromancer));
+        //In order to not use excessive memory, clean up the futures as they are done.
+        futureList = futureList.stream().filter(f -> !f.isDone()).collect(Collectors.toList());
+        // Wait till the number of concurrently active futures is below the threshold.
+        while (futureList.size() > CONCURRENT_FUTURES_THRESHOLD) {
+            //log.info("Clearing up futureList size {}", futureList.size());
+            try {
+                CompletableFuture.anyOf(futureList.stream().toArray(CompletableFuture[]::new)).get();
+            } catch (Exception e) {
+                log.error("Exception while executing necromancer ", e);
+                if (e.getCause() instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new RuntimeException(e);
+            }
+            futureList = futureList.stream().filter(f -> !f.isDone()).collect(Collectors.toList());
+        }
     }
 
     private void killNecromancer() {

@@ -160,7 +160,11 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
     @Override
     protected ILogData read(final long address) {
         try {
-            return runtime.getAddressSpaceView().read(address);
+            if (options.cacheReads) {
+                return runtime.getAddressSpaceView().read(address);
+            } else {
+                return runtime.getAddressSpaceView().cacheFetch(address);
+            }
         } catch (TrimmedException te) {
             processTrimmedException(te);
             throw te;
@@ -171,11 +175,19 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
     @Override
     protected List<ILogData> readAll(@Nonnull List<Long> addresses) {
         try {
-            Map<Long, ILogData> dataMap =
-                    runtime.getAddressSpaceView().read(addresses);
-            return addresses.stream()
-                    .map(x -> dataMap.get(x))
-                    .collect(Collectors.toList());
+            if (options.cacheReads) {
+                Map<Long, ILogData> dataMap =
+                        runtime.getAddressSpaceView().read(addresses);
+                return addresses.stream()
+                        .map(x -> dataMap.get(x))
+                        .collect(Collectors.toList());
+            } else {
+                Map<Long, ILogData> dataMap =
+                        runtime.getAddressSpaceView().cacheFetch(addresses);
+                return addresses.stream()
+                        .map(x -> dataMap.get(x))
+                        .collect(Collectors.toList());
+            }
         } catch (TrimmedException te) {
             processTrimmedException(te);
             throw te;
@@ -251,7 +263,7 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
             ILogData d;
             try {
                 log.trace("followBackPointers: readAddress[{}]", currentAddress);
-                d = read(currentAddress);
+                    d = read(currentAddress);
             } catch (TrimmedException e) {
                 if (options.ignoreTrimmed) {
                     log.warn("followBackpointers: Ignoring trimmed exception for address[{}]," +

@@ -211,6 +211,7 @@ public abstract class AbstractQueuedStreamView extends
      * @return              A list of ILogData in the same order as the
      *                      addresses given.
      */
+
     protected @Nonnull List<ILogData> readAll(@Nonnull final List<Long> addresses) {
         return addresses.parallelStream()
                         .map(this::read)

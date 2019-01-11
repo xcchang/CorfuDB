@@ -1,9 +1,11 @@
 package org.corfudb.infrastructure.log;
 
 import com.codahale.metrics.Timer;
+import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.ServerContext;
+import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.MetricsUtils;
 
@@ -41,10 +43,11 @@ public class StreamLogCompaction {
     private final Duration shutdownTimer;
 
     public StreamLogCompaction(StreamLog streamLog, long initialDelay, long period, TimeUnit timeUnit,
-                               Duration shutdownTimer) {
+                               Duration shutdownTimer, LoadingCache<Long, ILogData> loadingCache) {
         this.shutdownTimer = shutdownTimer;
         Runnable task = () -> {
             log.debug("Start log compaction.");
+            log.debug("StreamLogCompaction: compaction stats {}", loadingCache.stats());
             try (Timer.Context context = MetricsUtils.getConditionalContext(compactionTimer)){
                 streamLog.compact();
             } catch (Exception ex) {

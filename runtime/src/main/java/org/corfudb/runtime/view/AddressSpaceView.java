@@ -407,7 +407,7 @@ public class AddressSpaceView extends AbstractView {
      * @return A result to be cached. If the readresult is empty,
      *         This entry will be scheduled to self invalidate.
      */
-    private @Nonnull ILogData cacheFetch(long address) {
+    public  @Nonnull ILogData cacheFetch(long address) {
         log.trace("CacheMiss[{}]", address);
         ILogData result = fetch(address);
         if (result.getType() == DataType.EMPTY) {
@@ -474,7 +474,7 @@ public class AddressSpaceView extends AbstractView {
     }
 
     @VisibleForTesting
-    LoadingCache<Long, ILogData> getReadCache() {
+    public LoadingCache<Long, ILogData> getReadCache() {
         return readCache;
     }
 }
