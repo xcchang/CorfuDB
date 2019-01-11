@@ -37,16 +37,19 @@ public class ScenarioUtils {
      * @param corfuClient corfu client.
      */
     public static void waitForLayoutChange(Predicate<Layout> verifier, CorfuClient corfuClient) {
-        corfuClient.invalidateLayout();
-        Layout refreshedLayout = corfuClient.getLayout();
+        Layout refreshedLayout = null;
 
         for (int i = 0; i < TestFixtureConst.DEFAULT_WAIT_POLL_ITER; i++) {
-            if (verifier.test(refreshedLayout)) {
-                break;
+            try {
+                Sleep.sleepUninterruptibly(Duration.ofSeconds(DEFAULT_WAIT_TIME));
+                corfuClient.invalidateLayout();
+                refreshedLayout = corfuClient.getLayout();
+                if (verifier.test(refreshedLayout)) {
+                    break;
+                }
+            }catch (Exception ex){
+                log.warn("Exception while waiting for layout change.", ex);
             }
-            corfuClient.invalidateLayout();
-            refreshedLayout = corfuClient.getLayout();
-            Sleep.sleepUninterruptibly(Duration.ofSeconds(DEFAULT_WAIT_TIME));
         }
 
         assertThat(verifier.test(refreshedLayout)).isTrue();

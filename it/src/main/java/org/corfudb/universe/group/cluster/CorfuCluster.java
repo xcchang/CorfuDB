@@ -1,6 +1,7 @@
 package org.corfudb.universe.group.cluster;
 
 import org.corfudb.universe.node.NodeException;
+import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.LocalCorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 
@@ -15,6 +16,13 @@ public interface CorfuCluster extends Cluster {
      * @return local corfu client
      */
     LocalCorfuClient getLocalCorfuClient();
+
+    /**
+     * Provides a corfu client running on local machine
+     *
+     * @return local corfu client
+     */
+    LocalCorfuClient getLocalCorfuClient(ClientParams params);
 
     /**
      * Find a corfu server by index in the cluster:

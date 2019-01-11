@@ -42,11 +42,19 @@ public class LocalCorfuClient implements CorfuClient {
                 .map(NodeLocator::parseString)
                 .collect(Collectors.toList());
 
-        CorfuRuntimeParameters runtimeParams = CorfuRuntimeParameters
+        CorfuRuntimeParameters.CorfuRuntimeParametersBuilder runtimeParamsBuilder = CorfuRuntimeParameters
                 .builder()
                 .layoutServers(layoutServers)
-                .systemDownHandler(this::systemDownHandler)
-                .build();
+                .systemDownHandler(this::systemDownHandler);
+        if(this.params != null) {
+            runtimeParamsBuilder = runtimeParamsBuilder
+                    .systemDownHandlerTriggerLimit(this.params.getSystemDownHandlerTriggerLimit())
+                    .requestTimeout(this.params.getRequestTimeout())
+                    .idleConnectionTimeout(this.params.getIdleConnectionTimeout())
+                    .connectionTimeout(this.params.getConnectionTimeout())
+                    .connectionRetryRate(this.params.getConnectionRetryRate());
+        }
+        CorfuRuntimeParameters runtimeParams = runtimeParamsBuilder.build();
 
         this.runtime = fromParameters(runtimeParams);
     }

@@ -5,11 +5,11 @@ import org.junit.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class AllNodesPartitionedIT extends AllNodesBaseIT {
+public class AllNodesDownIT extends AllNodesBaseIT {
 
     @Override
     protected FailureType getFailureType(int corfuServerIndex){
-        return FailureType.DISCONNECT_NODE;
+        return FailureType.STOP_NODE;
     }
 
     @Override
@@ -28,9 +28,8 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is UNAVAILABLE and the data path
      * operations failed with UnreachableClusterException
      */
-    //@Ignore("Fix iptables for travis")
     @Test(timeout = (3 * 300 * 1000))
-    public void allNodesDisconnectedOneNodeReconnectedTest() {
+    public void allNodesDownOneNodeUpTest() {
         testAllNodesAllRecoverCombinations(true, 1);
     }
 
@@ -45,9 +44,8 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    //@Ignore("Fix iptables for travis")
     @Test(timeout = (3 * 300 * 1000))
-    public void allNodesDisconnectedQuorumNodesReconnectedSequentiallyTest() {
+    public void allNodesDownQuorumNodesUpSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, QUORUM_AMOUNT_OF_NODES);
     }
 
@@ -62,9 +60,8 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    //@Ignore("Fix iptables for travis")
     @Test(timeout = (3 * 300 * 1000))
-    public void allNodesDisconnectedQuorumNodesReconnectedConcurrentlyTest() {
+    public void allNodesDownQuorumNodesUpConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, QUORUM_AMOUNT_OF_NODES);
     }
 
@@ -74,14 +71,13 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
      * 3) Verify cluster status is unavailable, node status are down and data path is not available
-     * 4) Restart all servers Concurrently
+     * 4) Restart all servers sequentially
      * 5) Wait for the new layout is available
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    //@Ignore("Fix iptables for travis")
     @Test(timeout = (3 * 300 * 1000))
-    public void allNodesDisconnectedAllNodesReconnectedSequentiallyTest() {
+    public void allNodesDownAllNodesUpSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, DEFAULT_AMOUNT_OF_NODES);
     }
 
@@ -96,9 +92,8 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    //@Ignore("Fix iptables for travis")
     @Test(timeout = (3 * 300 * 1000))
-    public void allNodesDisconnectedAllNodesReconnectedConcurrentlyTest() {
+    public void allNodesDownAllNodesUpConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, DEFAULT_AMOUNT_OF_NODES);
     }
 }
