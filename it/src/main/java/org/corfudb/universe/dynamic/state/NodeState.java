@@ -114,7 +114,7 @@ public abstract class NodeState implements Cloneable, Stats {
             this.monitorExecutor = Executors.newSingleThreadScheduledExecutor();
             this.monitorExecutor.scheduleAtFixedRate(() -> {
                 try {
-                    ContainerStats containerStats = hostController.stats(this.getHostName());
+                    ContainerStats containerStats = hostController.stats(this.getName());
                     //Cpu metrics
                     totalCpuUsageRecords.add(containerStats.cpuStats().cpuUsage().totalUsage());
                     cpuUsageInKernelmodeRecords.add(containerStats.cpuStats().cpuUsage().usageInKernelmode());
@@ -258,13 +258,6 @@ public abstract class NodeState implements Cloneable, Stats {
      * @return Name of the node
      */
     public abstract String getName();
-
-    /**
-     * Name of the node in the host
-     *
-     * @return Name of the host of the node
-     */
-    public abstract String getHostName();
 
     /**
      * Aggregates every metric of each node in one single map

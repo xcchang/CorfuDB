@@ -9,6 +9,7 @@ import org.corfudb.universe.dynamic.events.*;
 import org.corfudb.universe.dynamic.rules.UniverseRule;
 import org.corfudb.universe.dynamic.state.*;
 import org.corfudb.universe.group.cluster.CorfuCluster;
+import org.corfudb.universe.node.Node;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
@@ -402,22 +403,21 @@ public abstract class Dynamic extends UniverseInitializer {
             this.clientFixture = fixture.getClient();
             this.corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
 
-            for (int i = 0; i < this.numNodes; i++) {
-                String nodeName = "node" + (9000 + i);
-                CorfuServer nodeServer = (CorfuServer) corfuCluster.getNode(nodeName);
+            for (Node node: corfuCluster.nodes().values()) {
+                CorfuServer nodeServer = (CorfuServer) node;
                 String nodeEndpoint = nodeServer.getEndpoint();
                 String nodeServerHostName = nodeServer.getParams().getName();
-                this.corfuServers.put(nodeName, nodeServer);
+                this.corfuServers.put(nodeServerHostName, nodeServer);
                 //Update desire state
                 ServerState desireServerState =
-                        new ServerState(nodeName, nodeEndpoint, nodeServerHostName, docker, DEFAULT_MONITORING_PERIOD,
+                        new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
                                 DEFAULT_TIME_UNITS);
-                this.desireState.getServers().put(nodeName, desireServerState);
+                this.desireState.getServers().put(nodeServerHostName, desireServerState);
                 //Update desire state
                 ServerState realServerState =
-                        new ServerState(nodeName, nodeEndpoint, nodeServerHostName, docker, DEFAULT_MONITORING_PERIOD,
+                        new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
                                 DEFAULT_TIME_UNITS);
-                this.realState.getServers().put(nodeName, realServerState);
+                this.realState.getServers().put(nodeServerHostName, realServerState);
             }
             for (int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++) {
                 CorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
@@ -428,14 +428,14 @@ public abstract class Dynamic extends UniverseInitializer {
                         DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
                 this.desireState.getClients().put(clientName, desireClientState);
                 for(ServerState ss: this.desireState.getServers().values()){
-                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint(), ss.getHostName());
+                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
                     desireClientState.getServers().put(ss.getName(), clientServerState);
                 }
                 ClientState realClientState = new ClientState(clientName, clientName, docker,
                         DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
                 this.realState.getClients().put(clientName, realClientState);
                 for(ServerState ss: this.realState.getServers().values()){
-                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint(), ss.getHostName());
+                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
                     realClientState.getServers().put(ss.getName(), clientServerState);
                 }
                 for (CorfuTableDataGenerationFunction corfuTableDataGenerator : corfuClientInstance.getCorfuTables()) {

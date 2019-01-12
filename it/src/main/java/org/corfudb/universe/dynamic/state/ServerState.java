@@ -2,6 +2,7 @@ package org.corfudb.universe.dynamic.state;
 
 import com.spotify.docker.client.DockerClient;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
 import java.util.LinkedHashMap;
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
  */
 @Data
 @ToString
+@EqualsAndHashCode(callSuper = false)
 public class ServerState extends NodeState {
 
     /**
@@ -28,13 +30,8 @@ public class ServerState extends NodeState {
      */
     private final String nodeEndpoint;
 
-    /**
-     * Name of the server on the host
-     */
-    private final String hostName;
-
     public Object clone(){
-        ServerState clone = new ServerState(this.name, this.nodeEndpoint, this.hostName,
+        ServerState clone = new ServerState(this.name, this.nodeEndpoint,
                 this.getHostController(), this.getMonitorPeriod(), this.getMonitorPeriodUnit());
         updateClone(clone);
         return clone;
@@ -50,11 +47,10 @@ public class ServerState extends NodeState {
                 collect(Collectors.toList()));
     }
 
-    public ServerState(String name, String nodeEndpoint, String hostName, DockerClient hostController,
+    public ServerState(String name, String nodeEndpoint, DockerClient hostController,
                        long monitorPeriod, TimeUnit monitorPeriodUnit) {
         super(hostController, monitorPeriod, monitorPeriodUnit);
         this.name = name;
         this.nodeEndpoint = nodeEndpoint;
-        this.hostName = hostName;
     }
 }

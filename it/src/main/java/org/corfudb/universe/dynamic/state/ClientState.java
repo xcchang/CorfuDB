@@ -2,6 +2,7 @@ package org.corfudb.universe.dynamic.state;
 
 import com.spotify.docker.client.DockerClient;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import org.corfudb.runtime.view.ClusterStatusReport;
 
@@ -16,6 +17,7 @@ import java.util.stream.Collectors;
  */
 @ToString
 @Data
+@EqualsAndHashCode(callSuper = false)
 public class ClientState extends NodeState {
 
     /**

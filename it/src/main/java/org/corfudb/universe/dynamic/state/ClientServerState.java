@@ -29,8 +29,6 @@ public class ClientServerState implements Cloneable {
      */
     private final String nodeEndpoint;
 
-    private final String hostName;
-
     /**
      * Whether the server is see it as layout or not.
      */
@@ -52,7 +50,7 @@ public class ClientServerState implements Cloneable {
     private ClusterStatusReport.NodeStatus status = ClusterStatusReport.NodeStatus.UP;
 
     public Object clone(){
-        ClientServerState clone = new ClientServerState(this.serverName, this.nodeEndpoint, this.hostName);
+        ClientServerState clone = new ClientServerState(this.serverName, this.nodeEndpoint);
         clone.isLayoutServer = this.isLayoutServer;
         clone.isLogUnitServer = this.isLogUnitServer;
         clone.isPrimarySequencer = this.isPrimarySequencer;
