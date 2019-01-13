@@ -6,6 +6,7 @@ import org.corfudb.universe.dynamic.events.UniverseEvent;
 import org.corfudb.universe.dynamic.events.UniverseEventOperator;
 import org.corfudb.universe.dynamic.state.State;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,7 +68,7 @@ public class GetDataThatExistRule extends UniverseRule {
         if((!invalidGetDataEvents.isEmpty() || !invalidPutDataEvents.isEmpty()) && compositeEvent instanceof UniverseEventOperator.Sequential){
             //lets check if the previous invalid gets are executed over data that is being put
             //by the composite event itself
-            for(Map.Entry<Integer, GetDataEvent> getDataEntry: invalidGetDataEvents.entrySet()){
+            for(Map.Entry<Integer, GetDataEvent> getDataEntry: (new ArrayList<>(invalidGetDataEvents.entrySet()))){
                 List<Map.Entry<Integer, PutDataEvent>> filteredPutDataEvents = putDataEvents.entrySet().stream().
                         filter(pde -> pde.getValue().getTableStreamName().equals(getDataEntry.getValue().getTableStreamName())).
                         collect(Collectors.toList());

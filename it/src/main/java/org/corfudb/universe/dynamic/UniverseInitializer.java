@@ -34,7 +34,7 @@ public abstract class UniverseInitializer {
     public LoggingParams getDockerLoggingParams() {
         return LoggingParams.builder()
                 .testName(this.testName)
-                .enabled(false)
+                .enabled(true)
                 .build();
     }
 

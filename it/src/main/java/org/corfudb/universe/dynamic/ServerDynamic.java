@@ -53,6 +53,11 @@ public class ServerDynamic extends PutGetDataDynamic {
     private int nextEventTypeIndex = 0;
 
     /**
+     * List of server events that this dynamic can provide
+     */
+    protected List<Function<Map.Entry<String, CorfuServer>, ServerEvent>> possibleServeEvents = new ArrayList<>();
+
+    /**
      * Generate a server event using a different combination of server and type of event, each time that is invoked.
      * The type of events alternates between stop-start-disconnect-connect.
      *
@@ -61,14 +66,9 @@ public class ServerDynamic extends PutGetDataDynamic {
     protected ServerEvent generateNextServerEvent() {
         Set<Map.Entry<String, CorfuServer>> mapSet = this.corfuServers.entrySet();
         Map.Entry<String, CorfuServer> server = (Map.Entry<String, CorfuServer>) mapSet.toArray()[nextServerIndex];
-        List<Function<Map.Entry<String, CorfuServer>, ServerEvent>> possibleEvents = new ArrayList<>();
-        possibleEvents.add(this::generateStopServerEvent);
-        possibleEvents.add(this::generateStartServerEvent);
-        possibleEvents.add(this::generateDisconnectServerEvent);
-        possibleEvents.add(this::generateReconnectServerEvent);
-        ServerEvent event = possibleEvents.get(nextEventTypeIndex).apply(server);
+        ServerEvent event = possibleServeEvents.get(nextEventTypeIndex).apply(server);
         nextEventTypeIndex++;
-        if (nextEventTypeIndex >= possibleEvents.size()) {
+        if (nextEventTypeIndex >= possibleServeEvents.size()) {
             nextEventTypeIndex = 0;
             nextServerIndex++;
             if (nextServerIndex >= this.corfuServers.size()) {
@@ -234,5 +234,9 @@ public class ServerDynamic extends PutGetDataDynamic {
 
     public ServerDynamic(long longevity, boolean waitForListener) {
         super(longevity, waitForListener);
+        possibleServeEvents.add(this::generateStopServerEvent);
+        possibleServeEvents.add(this::generateStartServerEvent);
+        possibleServeEvents.add(this::generateDisconnectServerEvent);
+        possibleServeEvents.add(this::generateReconnectServerEvent);
     }
 }
