@@ -219,8 +219,7 @@ public class ServerDynamic extends PutGetDataDynamic {
      *
      * @return Composite event generated.
      */
-    @Override
-    protected UniverseEventOperator generateCompositeEvent() {
+    protected UniverseEventOperator generateServerOrDataEvent() {
         UniverseEventOperator event;
         if (this.dataEventsGenerated >= MAX_CONSECUTIVE_DATA_EVENTS) {
             event = new UniverseEventOperator.Single(this.generateNextServerEvent());
@@ -230,6 +229,19 @@ public class ServerDynamic extends PutGetDataDynamic {
             this.dataEventsGenerated++;
         }
         return event;
+    }
+
+    /**
+     * Generate a server event after a amount of data events specified by
+     * the constant MAX_CONSECUTIVE_DATA_EVENTS.
+     * The events generated have not guaranty of execution. They are allowed
+     * to execute if they are compliant with the {@link UniverseRule}.
+     *
+     * @return Composite event generated.
+     */
+    @Override
+    protected UniverseEventOperator generateCompositeEvent() {
+        return generateServerOrDataEvent();
     }
 
     public ServerDynamic(long longevity, boolean waitForListener) {

@@ -115,11 +115,24 @@ public class PutGetDataDynamic extends Dynamic {
      *
      * @return Composite event generated.
      */
-    @Override
-    protected UniverseEventOperator generateCompositeEvent() {
+    protected UniverseEventOperator generateDataEvent() {
         UniverseEvent event = generatePut ? this.generatePutDataEvent() : this.generateGetDataEvent();
         generatePut = !generatePut;
         return new UniverseEventOperator.Single(event);
+    }
+
+    /**
+     * Generate a single event which content is a put or get event.
+     * The invocation to this method alternates between put and get events.
+     * And after each pair of put-get, a different table is used.
+     * The events generated have not guaranty of execution. They are allowed
+     * to execute if they are compliant with the {@link UniverseRule}.
+     *
+     * @return Composite event generated.
+     */
+    @Override
+    protected UniverseEventOperator generateCompositeEvent() {
+        return generateDataEvent();
     }
 
     public PutGetDataDynamic(long longevity, boolean waitForListener) {
