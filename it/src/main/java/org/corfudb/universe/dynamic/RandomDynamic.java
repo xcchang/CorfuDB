@@ -53,8 +53,7 @@ public class RandomDynamic extends ServerDynamic {
      *
      * @return Composite event generated.
      */
-    @Override
-    protected UniverseEventOperator generateCompositeEvent() {
+    protected UniverseEventOperator generateRandomCompositeEvent() {
         List<UniverseEvent> actualEvents = new ArrayList<>();
         int i = 0;
         while (i < this.possibleEvents.size() || actualEvents.isEmpty()) {
@@ -67,6 +66,18 @@ public class RandomDynamic extends ServerDynamic {
                 new UniverseEventOperator.Sequential(actualEvents) :
                 new UniverseEventOperator.Concurrent(actualEvents);
         return event;
+    }
+
+    /**
+     * Generate a composite event to materialize in the universe.
+     * The events generated have not guaranty of execution. They are allowed
+     * to execute if they are compliant with the {@link UniverseRule}.
+     *
+     * @return Composite event generated.
+     */
+    @Override
+    protected UniverseEventOperator generateCompositeEvent() {
+        return generateRandomCompositeEvent();
     }
 
     public RandomDynamic(long longevity, boolean waitForListener) {
