@@ -518,6 +518,8 @@ public abstract class Dynamic extends UniverseInitializer {
      */
     @Override
     public void shutdown() {
+        for(CorfuClientInstance c: this.corfuClients)
+            c.getCorfuClient().kill();
         super.shutdown();
     }
 
