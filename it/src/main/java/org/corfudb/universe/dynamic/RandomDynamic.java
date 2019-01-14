@@ -41,6 +41,9 @@ public class RandomDynamic extends ServerDynamic {
         return (long) (DEFAULT_INTERVAL_BETWEEN_EVENTS * this.randomNumberGenerator.nextDouble());
     }
 
+    /**
+     * List of events that this dynamic can provide
+     */
     private final List<Supplier<UniverseEvent>> possibleEvents = new ArrayList<>();
 
     /**
