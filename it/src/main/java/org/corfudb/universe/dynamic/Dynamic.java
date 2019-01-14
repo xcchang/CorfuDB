@@ -485,8 +485,13 @@ public abstract class Dynamic extends UniverseInitializer {
                     log.error("Error invoking Thread.sleep.", ex);
                 }
             } else {
+                log.info(String.format("Discarding event: %s", compositeEvent.getObservationDescription()));
                 discardedEvents++;
             }
+        }
+        if(discardedEvents != 0){
+            this.reportStateDifference(new UniverseEventOperator.TestEndWithDiscardedEvents(discardedEvents),
+                    discardedEvents, firstIteration);
         }
         this.listeners.forEach(l -> {
             try{

@@ -96,6 +96,25 @@ public abstract class UniverseEventOperator implements UniverseEvent {
         }
     }
 
+    public static class TestEndWithDiscardedEvents extends Single {
+        public TestEndWithDiscardedEvents(int discardedEvents){
+            super(new UniverseEvent() {
+                @Override
+                public String getObservationDescription() {
+                    return String.format("Test ends with %s discarded events", discardedEvents);
+                }
+
+                @Override
+                public void applyDesirePartialTransition(State currentDesireState) {
+                }
+
+                @Override
+                public void executeRealPartialTransition(State currentRealState) {
+                }
+            });
+        }
+    }
+
     /**
      * Base operator that allows to execute multiple events.
      */
