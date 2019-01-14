@@ -172,28 +172,36 @@ public abstract class NodeState implements Cloneable, Stats {
     }
 
     public void stopMetricsRecording() {
-        if(this.monitorExecutor != null)
-            this.monitorExecutor.shutdownNow();
-        //CPU records
-        totalCpuUsageAverage = getWMAverage(totalCpuUsageAverage, totalCpuUsageRecords, "totalCpuUsage");
-        cpuUsageInKernelmodeAverage = getWMAverage(cpuUsageInKernelmodeAverage, cpuUsageInKernelmodeRecords, "cpuUsageInKernelmode");
-        cpuUsageInUsermodeAverage = getWMAverage(cpuUsageInUsermodeAverage, cpuUsageInUsermodeRecords, "cpuUsageInUsermode");
-        systemCpuUsageAverage = getWMAverage(systemCpuUsageAverage, systemCpuUsageRecords, "systemCpuUsage");
-        //Memory records
-        memoryUsageAverage = getWMAverage(memoryUsageAverage, memoryUsageRecords, "memoryUsage");
-        memoryMaxUsageAverage = getWMAverage(memoryMaxUsageAverage, memoryMaxUsageRecords, "memoryMaxUsage");
-        memoryFailcntAverage = getWMAverage(memoryFailcntAverage, memoryFailcntRecords, "memoryFailcnt");
-        memoryLimitAverage = getWMAverage(memoryLimitAverage, memoryLimitRecords, "memoryLimit");
-        //Network records
-        if(ENABLE_NETWORK_STATS) {
-            netRxBytesAverage = getWMAverage(netRxBytesAverage, netRxBytesRecords, "netRxBytes");
-            netRxDroppedAverage = getWMAverage(netRxDroppedAverage, netRxDroppedRecords, "netRxDropped");
-            netRxErrorsAverage = getWMAverage(netRxErrorsAverage, netRxErrorsRecords, "netRxErrors");
-            netRxPacketsAverage = getWMAverage(netRxPacketsAverage, netRxPacketsRecords, "netRxPackets");
-            netTxBytesAverage = getWMAverage(netTxBytesAverage, netTxBytesRecords, "netTxBytes");
-            netTxDroppedAverage = getWMAverage(netTxDroppedAverage, netTxDroppedRecords, "netTxDropped");
-            netTxErrorsAverage = getWMAverage(netTxErrorsAverage, netTxErrorsRecords, "netTxErrors");
-            netTxPacketsAverage = getWMAverage(netTxPacketsAverage, netTxPacketsRecords, "netTxPackets");
+        if(this.monitorExecutor != null) {
+            try {
+                this.monitorExecutor.shutdownNow();
+            }catch (Exception ex){
+                log.error("Error stopping executor for monitor.", ex);
+            }
+            finally {
+                this.monitorExecutor = null;
+            }
+            //CPU records
+            totalCpuUsageAverage = getWMAverage(totalCpuUsageAverage, totalCpuUsageRecords, "totalCpuUsage");
+            cpuUsageInKernelmodeAverage = getWMAverage(cpuUsageInKernelmodeAverage, cpuUsageInKernelmodeRecords, "cpuUsageInKernelmode");
+            cpuUsageInUsermodeAverage = getWMAverage(cpuUsageInUsermodeAverage, cpuUsageInUsermodeRecords, "cpuUsageInUsermode");
+            systemCpuUsageAverage = getWMAverage(systemCpuUsageAverage, systemCpuUsageRecords, "systemCpuUsage");
+            //Memory records
+            memoryUsageAverage = getWMAverage(memoryUsageAverage, memoryUsageRecords, "memoryUsage");
+            memoryMaxUsageAverage = getWMAverage(memoryMaxUsageAverage, memoryMaxUsageRecords, "memoryMaxUsage");
+            memoryFailcntAverage = getWMAverage(memoryFailcntAverage, memoryFailcntRecords, "memoryFailcnt");
+            memoryLimitAverage = getWMAverage(memoryLimitAverage, memoryLimitRecords, "memoryLimit");
+            //Network records
+            if (ENABLE_NETWORK_STATS) {
+                netRxBytesAverage = getWMAverage(netRxBytesAverage, netRxBytesRecords, "netRxBytes");
+                netRxDroppedAverage = getWMAverage(netRxDroppedAverage, netRxDroppedRecords, "netRxDropped");
+                netRxErrorsAverage = getWMAverage(netRxErrorsAverage, netRxErrorsRecords, "netRxErrors");
+                netRxPacketsAverage = getWMAverage(netRxPacketsAverage, netRxPacketsRecords, "netRxPackets");
+                netTxBytesAverage = getWMAverage(netTxBytesAverage, netTxBytesRecords, "netTxBytes");
+                netTxDroppedAverage = getWMAverage(netTxDroppedAverage, netTxDroppedRecords, "netTxDropped");
+                netTxErrorsAverage = getWMAverage(netTxErrorsAverage, netTxErrorsRecords, "netTxErrors");
+                netTxPacketsAverage = getWMAverage(netTxPacketsAverage, netTxPacketsRecords, "netTxPackets");
+            }
         }
     }
 

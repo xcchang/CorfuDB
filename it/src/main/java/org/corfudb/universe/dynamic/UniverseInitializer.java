@@ -5,7 +5,6 @@ import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.exceptions.DockerCertificateException;
 import org.corfudb.universe.UniverseFactory;
 import org.corfudb.universe.logging.LoggingParams;
-import org.corfudb.universe.scenario.Scenario;
 import org.corfudb.universe.scenario.fixture.Fixtures;
 import org.corfudb.universe.universe.Universe;
 import org.corfudb.universe.universe.UniverseParams;
@@ -38,7 +37,7 @@ public abstract class UniverseInitializer {
                 .build();
     }
 
-    public Scenario getVmScenario(int numNodes) {
+    public Fixtures.AbstractUniverseFixture<VmUniverseParams> getVmFixture(int numNodes) {
         Fixtures.VmUniverseFixture universeFixture = new Fixtures.VmUniverseFixture();
         universeFixture.setNumNodes(numNodes);
 
@@ -52,10 +51,10 @@ public abstract class UniverseInitializer {
                 .buildVmUniverse(universeParams, manager)
                 .deploy();
 
-        return Scenario.with(universeFixture);
+        return universeFixture;
     }
 
-    public Scenario getDockerScenario(int numNodes) {
+    public Fixtures.AbstractUniverseFixture<UniverseParams> getDockerFixture(int numNodes) {
         Fixtures.UniverseFixture universeFixture = new Fixtures.UniverseFixture();
         universeFixture.setNumNodes(numNodes);
 
@@ -63,20 +62,15 @@ public abstract class UniverseInitializer {
                 .buildDockerUniverse(universeFixture.data(), docker, getDockerLoggingParams())
                 .deploy();
 
-        return Scenario.with(universeFixture);
+        return universeFixture;
     }
 
-    public Scenario<UniverseParams, Fixtures.AbstractUniverseFixture<UniverseParams>> getScenario() {
-        final int defaultNumNodes = 3;
-        return getScenario(defaultNumNodes);
-    }
-
-    public Scenario<UniverseParams, Fixtures.AbstractUniverseFixture<UniverseParams>> getScenario(int numNodes) {
+    public Fixtures.AbstractUniverseFixture<?> getFixture(int numNodes) {
         switch (universeMode) {
             case DOCKER:
-                return getDockerScenario(numNodes);
+                return getDockerFixture(numNodes);
             case VM:
-                return getVmScenario(numNodes);
+                return getVmFixture(numNodes);
             case PROCESS:
                 throw new UnsupportedOperationException("Not implemented");
             default:

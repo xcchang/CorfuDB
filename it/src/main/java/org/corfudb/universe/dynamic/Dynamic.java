@@ -13,6 +13,7 @@ import org.corfudb.universe.node.Node;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
+import org.corfudb.universe.scenario.fixture.Fixtures;
 import org.corfudb.util.Sleep;
 
 import java.nio.charset.StandardCharsets;
@@ -64,6 +65,11 @@ public abstract class Dynamic extends UniverseInitializer {
      * Amount of corfu tables handle for each client in the universe.
      */
     public static final int DEFAULT_AMOUNT_OF_CORFU_CLIENTS = 3;
+
+    /**
+     * Amount of corfu servers in the universe.
+     */
+    private static final int DEFAULT_AMOUNT_OF_CORFU_SERVERS = 3;
 
     /**
      * Random number generator used for the creation of
@@ -189,43 +195,49 @@ public abstract class Dynamic extends UniverseInitializer {
      * @return Whether the composite event was materialized or not.
      */
     private boolean materializeCompositeEvent(UniverseEventOperator compositeEvent) {
-        //Check the pre rules that any composite event must be compliant with
-        boolean isPreRulesCompliant = true;
-        for (UniverseRule preRule : UniverseRule.getPreCompositeEventRules()) {
-            if (!preRule.check(compositeEvent, this.desireState, this.realState)) {
-                isPreRulesCompliant = false;
-                break;
+        try {
+            //Check the pre rules that any composite event must be compliant with
+            boolean isPreRulesCompliant = true;
+            for (UniverseRule preRule : UniverseRule.getPreCompositeEventRules()) {
+                if (!preRule.check(compositeEvent, this.desireState, this.realState)) {
+                    isPreRulesCompliant = false;
+                    break;
+                }
             }
-        }
-        if (!isPreRulesCompliant)
-            return false;
-        //The next desire state is based in changes over the current real state
-        State desireStateCopy = (State) this.realState.clone();
-        compositeEvent.applyDesirePartialTransition(desireStateCopy);
-        //Check the post rules that any composite event must be compliant with
-        boolean isPostRulesCompliant = true;
-        for (UniverseRule postRule : UniverseRule.getPostCompositeEventRules()) {
-            if (!postRule.check(compositeEvent, desireStateCopy, this.realState)) {
-                isPostRulesCompliant = false;
-                break;
+            if (!isPreRulesCompliant)
+                return false;
+            //The next desire state is based in changes over the current real state
+            State desireStateCopy = (State) this.realState.clone();
+            compositeEvent.applyDesirePartialTransition(desireStateCopy);
+            //Check the post rules that any composite event must be compliant with
+            boolean isPostRulesCompliant = true;
+            for (UniverseRule postRule : UniverseRule.getPostCompositeEventRules()) {
+                if (!postRule.check(compositeEvent, desireStateCopy, this.realState)) {
+                    isPostRulesCompliant = false;
+                    break;
+                }
             }
+            if (!isPostRulesCompliant)
+                return false;
+            //Make the desire state equal to the computed desired state
+            this.desireState = desireStateCopy;
+            //StartServerEvent the system metrics monitor for each responsive server in the desire state
+            for (String serverName : this.desireState.getResponsiveServers()) {
+                this.realState.getServers().get(serverName).startMetricsRecording();
+            }
+            //Run the composite event
+            compositeEvent.executeRealPartialTransition(this.realState);
+        }catch (Exception ex){
+            log.error(String.format("Error materializing event: %s", compositeEvent.getObservationDescription()), ex);
         }
-        if (!isPostRulesCompliant)
-            return false;
-        //Make the desire state equal to the computed desired state
-        this.desireState = desireStateCopy;
-        //StartServerEvent the system metrics monitor for each responsive server in the desire state
-        for (String serverName : this.desireState.getResponsiveServers()){
-            this.realState.getServers().get(serverName).startMetricsRecording();
+        finally {
+            //StopServerEvent the monitoring of the system metrics
+            for (String serverName : this.desireState.getResponsiveServers()) {
+                this.realState.getServers().get(serverName).stopMetricsRecording();
+            }
+            //update the real state
+            this.updateRealState();
         }
-        //Run the composite event
-        compositeEvent.executeRealPartialTransition(this.realState);
-        //StopServerEvent the monitoring of the system metrics
-        for (String serverName : this.desireState.getResponsiveServers()){
-            this.realState.getServers().get(serverName).stopMetricsRecording();
-        }
-        //update the real state
-        this.updateRealState();
         return true;
     }
 
@@ -238,28 +250,32 @@ public abstract class Dynamic extends UniverseInitializer {
         } catch (Exception ex) {
             log.error("Error invoking Thread.sleep.", ex);
         }
-        for (CorfuClientInstance cci : this.corfuClients) {
-            //Update all client related fields
-            ClientState clientState = this.realState.getClients().get(cci.getName());
-            Layout layout = cci.getCorfuClient().getLayout();
-            ClusterStatusReport clusterStatusReport = cci.getCorfuClient().
-                    getManagementView().getClusterStatus();
-            clientState.setClusterStatus(clusterStatusReport.getClusterStatus());
-            Map<String, ClusterStatusReport.NodeStatus> statusMap = clusterStatusReport.getClientServerConnectivityStatusMap();
-            for (ClientServerState clientServerState : clientState.getServers().values()) {
-                String endpoint = clientServerState.getNodeEndpoint();
-                if (statusMap.containsKey(endpoint)) {
-                    clientServerState.setStatus(statusMap.get(endpoint));
-                    clientServerState.setLayoutServer(layout.getLayoutServers().contains(endpoint));
-                    clientServerState.setLogUnitServer(layout.getSegments().stream()
-                            .flatMap(seg -> seg.getAllLogServers().stream())
-                            .anyMatch(s -> s.equals(endpoint)));
-                    clientServerState.setPrimarySequencer(layout.getPrimarySequencer().equals(endpoint));
-                } else {
-                    log.error(String.format("Expected server not found in cluster status report. Node Name: %s - Node Endpoint: %s",
-                            clientServerState.getServerName(), endpoint));
+        try {
+            for (CorfuClientInstance cci : this.corfuClients) {
+                //Update all client related fields
+                ClientState clientState = this.realState.getClients().get(cci.getName());
+                Layout layout = cci.getCorfuClient().getLayout();
+                ClusterStatusReport clusterStatusReport = cci.getCorfuClient().
+                        getManagementView().getClusterStatus();
+                clientState.setClusterStatus(clusterStatusReport.getClusterStatus());
+                Map<String, ClusterStatusReport.NodeStatus> statusMap = clusterStatusReport.getClientServerConnectivityStatusMap();
+                for (ClientServerState clientServerState : clientState.getServers().values()) {
+                    String endpoint = clientServerState.getNodeEndpoint();
+                    if (statusMap.containsKey(endpoint)) {
+                        clientServerState.setStatus(statusMap.get(endpoint));
+                        clientServerState.setLayoutServer(layout.getLayoutServers().contains(endpoint));
+                        clientServerState.setLogUnitServer(layout.getSegments().stream()
+                                .flatMap(seg -> seg.getAllLogServers().stream())
+                                .anyMatch(s -> s.equals(endpoint)));
+                        clientServerState.setPrimarySequencer(layout.getPrimarySequencer().equals(endpoint));
+                    } else {
+                        log.error(String.format("Expected server not found in cluster status report. Node Name: %s - Node Endpoint: %s",
+                                clientServerState.getServerName(), endpoint));
+                    }
                 }
             }
+        }catch (Exception ex){
+            log.error("Error updating real state.", ex);
         }
     }
 
@@ -397,89 +413,88 @@ public abstract class Dynamic extends UniverseInitializer {
             counter++;
             outputFilePath = Paths.get(outputFilename + counter + ".csv");
         }
-        getScenario().describe((fixture, testCase) -> {
-            boolean firstIteration = true;
-            this.numNodes = fixture.getNumNodes();
-            this.clientFixture = fixture.getClient();
-            this.corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
+        Fixtures.AbstractUniverseFixture fixture = getFixture(DEFAULT_AMOUNT_OF_CORFU_SERVERS);
+        boolean firstIteration = true;
+        this.numNodes = fixture.getNumNodes();
+        this.clientFixture = fixture.getClient();
+        this.corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
 
-            for (Node node: corfuCluster.nodes().values()) {
-                CorfuServer nodeServer = (CorfuServer) node;
-                String nodeEndpoint = nodeServer.getEndpoint();
-                String nodeServerHostName = nodeServer.getParams().getName();
-                this.corfuServers.put(nodeServerHostName, nodeServer);
-                //Update desire state
-                ServerState desireServerState =
-                        new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
-                                DEFAULT_TIME_UNITS);
-                this.desireState.getServers().put(nodeServerHostName, desireServerState);
-                //Update desire state
-                ServerState realServerState =
-                        new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
-                                DEFAULT_TIME_UNITS);
-                this.realState.getServers().put(nodeServerHostName, realServerState);
+        for (Node node: corfuCluster.nodes().values()) {
+            CorfuServer nodeServer = (CorfuServer) node;
+            String nodeEndpoint = nodeServer.getEndpoint();
+            String nodeServerHostName = nodeServer.getParams().getName();
+            this.corfuServers.put(nodeServerHostName, nodeServer);
+            //Update desire state
+            ServerState desireServerState =
+                    new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
+                            DEFAULT_TIME_UNITS);
+            this.desireState.getServers().put(nodeServerHostName, desireServerState);
+            //Update desire state
+            ServerState realServerState =
+                    new ServerState(nodeServerHostName, nodeEndpoint, docker, DEFAULT_MONITORING_PERIOD,
+                            DEFAULT_TIME_UNITS);
+            this.realState.getServers().put(nodeServerHostName, realServerState);
+        }
+        for (int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++) {
+            CorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
+            String clientName = corfuClient.getParams().getName() + i;
+            CorfuClientInstance corfuClientInstance = new CorfuClientInstance(i, clientName, corfuClient);
+            this.corfuClients.add(corfuClientInstance);
+            ClientState desireClientState = new ClientState(clientName, clientName, docker,
+                    DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
+            this.desireState.getClients().put(clientName, desireClientState);
+            for(ServerState ss: this.desireState.getServers().values()){
+                ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
+                desireClientState.getServers().put(ss.getName(), clientServerState);
             }
-            for (int i = 0; i < DEFAULT_AMOUNT_OF_CORFU_CLIENTS; i++) {
-                CorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
-                String clientName = corfuClient.getParams().getName() + i;
-                CorfuClientInstance corfuClientInstance = new CorfuClientInstance(i, clientName, corfuClient);
-                this.corfuClients.add(corfuClientInstance);
-                ClientState desireClientState = new ClientState(clientName, clientName, docker,
-                        DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
-                this.desireState.getClients().put(clientName, desireClientState);
-                for(ServerState ss: this.desireState.getServers().values()){
-                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
-                    desireClientState.getServers().put(ss.getName(), clientServerState);
-                }
-                ClientState realClientState = new ClientState(clientName, clientName, docker,
-                        DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
-                this.realState.getClients().put(clientName, realClientState);
-                for(ServerState ss: this.realState.getServers().values()){
-                    ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
-                    realClientState.getServers().put(ss.getName(), clientServerState);
-                }
-                for (CorfuTableDataGenerationFunction corfuTableDataGenerator : corfuClientInstance.getCorfuTables()) {
-                    TableState desireTableState =
-                            new TableState(corfuTableDataGenerator.getTableStreamName());
-                    this.desireState.getData().put(desireTableState.getTableStreamName(), desireTableState);
-                    ClientTableAccessStats desireClientTableAccessStats =
-                            new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
-                    desireClientState.getTableAccessStats().put(desireClientTableAccessStats.getTableStreamName(),
-                            desireClientTableAccessStats);
-                    TableState realTableState =
-                            new TableState(corfuTableDataGenerator.getTableStreamName());
-                    this.realState.getData().put(desireTableState.getTableStreamName(), realTableState);
-                    ClientTableAccessStats realClientTableAccessStats =
-                            new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
-                    realClientState.getTableAccessStats().put(realClientTableAccessStats.getTableStreamName(),
-                            realClientTableAccessStats);
-                }
+            ClientState realClientState = new ClientState(clientName, clientName, docker,
+                    DEFAULT_MONITORING_PERIOD, DEFAULT_TIME_UNITS);
+            this.realState.getClients().put(clientName, realClientState);
+            for(ServerState ss: this.realState.getServers().values()){
+                ClientServerState clientServerState = new ClientServerState(ss.getName(), ss.getNodeEndpoint());
+                realClientState.getServers().put(ss.getName(), clientServerState);
             }
-            int discardedEvents = 0;
-            this.startTime = System.currentTimeMillis();
-            while ((System.currentTimeMillis() - this.startTime) < this.longevity) {
-                UniverseEventOperator compositeEvent = this.generateCompositeEvent();
-                if (this.materializeCompositeEvent(compositeEvent)) {
-                    this.reportStateDifference(compositeEvent, discardedEvents, firstIteration);
-                    firstIteration = false;
-                    discardedEvents = 0;
-                    try {
-                        Sleep.MILLISECONDS.sleepUninterruptibly(this.getIntervalBetweenEvents());
-                    } catch (Exception ex) {
-                        log.error("Error invoking Thread.sleep.", ex);
-                    }
-                } else {
-                    discardedEvents++;
-                }
+            for (CorfuTableDataGenerationFunction corfuTableDataGenerator : corfuClientInstance.getCorfuTables()) {
+                TableState desireTableState =
+                        new TableState(corfuTableDataGenerator.getTableStreamName());
+                this.desireState.getData().put(desireTableState.getTableStreamName(), desireTableState);
+                ClientTableAccessStats desireClientTableAccessStats =
+                        new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
+                desireClientState.getTableAccessStats().put(desireClientTableAccessStats.getTableStreamName(),
+                        desireClientTableAccessStats);
+                TableState realTableState =
+                        new TableState(corfuTableDataGenerator.getTableStreamName());
+                this.realState.getData().put(desireTableState.getTableStreamName(), realTableState);
+                ClientTableAccessStats realClientTableAccessStats =
+                        new ClientTableAccessStats(corfuTableDataGenerator.getTableStreamName());
+                realClientState.getTableAccessStats().put(realClientTableAccessStats.getTableStreamName(),
+                        realClientTableAccessStats);
             }
-            this.listeners.forEach(l -> {
-                try{
-                    l.finish();
+        }
+        int discardedEvents = 0;
+        this.startTime = System.currentTimeMillis();
+        while ((System.currentTimeMillis() - this.startTime) < this.longevity) {
+            UniverseEventOperator compositeEvent = this.generateCompositeEvent();
+            if (this.materializeCompositeEvent(compositeEvent)) {
+                this.reportStateDifference(compositeEvent, discardedEvents, firstIteration);
+                firstIteration = false;
+                discardedEvents = 0;
+                try {
+                    Sleep.MILLISECONDS.sleepUninterruptibly(this.getIntervalBetweenEvents());
+                } catch (Exception ex) {
+                    log.error("Error invoking Thread.sleep.", ex);
                 }
-                catch (Exception ex){
-                    log.error("Error reporting end of test to listener", ex);
-                }
-            });
+            } else {
+                discardedEvents++;
+            }
+        }
+        this.listeners.forEach(l -> {
+            try{
+                l.finish();
+            }
+            catch (Exception ex){
+                log.error("Error reporting end of test to listener", ex);
+            }
         });
     }
 
