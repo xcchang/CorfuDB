@@ -18,7 +18,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
     }
 
     /**
-     * Test cluster behavior after all nodes are are down and just one is up afterwards
+     * Test cluster behavior after all nodes are are disconnected and just one is up afterwards
      * <p>
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
@@ -35,7 +35,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
     }
 
     /**
-     * Test cluster behavior after all nodes are are down and just two is up afterwards
+     * Test cluster behavior after all nodes are are disconnected and just two is up afterwards
      * <p>
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
@@ -52,7 +52,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
     }
 
     /**
-     * Test cluster behavior after all nodes are are down and just two is up afterwards
+     * Test cluster behavior after all nodes are are disconnected and just two is up afterwards
      * <p>
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
@@ -69,7 +69,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
     }
 
     /**
-     * Test cluster behavior after all nodes are are down and all is up afterwards
+     * Test cluster behavior after all nodes are are disconnected and all is up afterwards
      * <p>
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
@@ -86,7 +86,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
     }
 
     /**
-     * Test cluster behavior after all nodes are are down and all is up afterwards
+     * Test cluster behavior after all nodes are are disconnected and all is up afterwards
      * <p>
      * 1) Deploy and bootstrap a three nodes cluster
      * 2) Sequentially stop all nodes
