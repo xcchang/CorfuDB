@@ -46,7 +46,7 @@ public class AllNodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (3 * 300 * 1000))
+    @Test(timeout = (6 * 300 * 1000))
     public void allNodesDisconnectedQuorumNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, QUORUM_AMOUNT_OF_NODES);
     }

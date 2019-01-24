@@ -1,6 +1,5 @@
 package org.corfudb.universe.scenario;
 
-import com.google.common.base.Functions;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.collections.CorfuTable;
@@ -16,7 +15,6 @@ import org.corfudb.util.Sleep;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -25,7 +23,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.corfudb.universe.scenario.ScenarioUtils.waitForClusterDown;
 import static org.corfudb.universe.scenario.fixture.Fixtures.TestFixtureConst.DEFAULT_TABLE_ITER;
 import static org.junit.Assert.fail;
 
@@ -39,6 +36,9 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     static final Duration DELAY_BETWEEN_SEQUENTIAL_FAILURES = Duration.ofMillis(1200);
     static final int MAXIMUN_UNEXPECTED_EXCEPTIONS = 10;
     static final int MAX_FAILURES_RECOVER_RETRIES = 5;
+    static final boolean WAIT_FOR_EPOCH_CHANGE = true;
+    static final Duration SLEEP_BEFORE_GET_CLUSTER_STATUS = Duration.ofMillis(2000);
+
 
     protected abstract FailureType getFailureType(int corfuServerIndex);
 
@@ -184,19 +184,19 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                                                                     boolean dataPathExceptionExpected, boolean startServersSequentially,
                                                                     ArrayList<CorfuServer> nodes, CorfuClient corfuClient,
                                                                     CorfuTable<String, String> table) {
+        long currentEpoch = corfuClient.getLayout().getEpoch();
         CombinationResult result = new CombinationResult(combinationName, combination, clusterStatusesExpected,
-                nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()), table);
+                nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()), table, currentEpoch);
         // Force failure in all nodes sequentially without wait to much for it
         if(executeFailureInAllNodes(nodes)) {
             // Verify cluster status is UNAVAILABLE with all nodes NA and UNRESPONSIVE
-            final Duration sleepDuration = Duration.ofSeconds(1);
-            Sleep.sleepUninterruptibly(sleepDuration);
+            Sleep.sleepUninterruptibly(SLEEP_BEFORE_GET_CLUSTER_STATUS);
             log.info(String.format("Verify cluster status after failure in all nodes for test-combination %s", combination));
             ClusterStatusReport clusterStatusReport = corfuClient.getManagementView().getClusterStatus();
             for (int i = 0; i < DEFAULT_CLUSTER_REPORT_POLL_ITER; i++) {
                 if (clusterStatusReport.getClusterStatus() != ClusterStatusReport.ClusterStatus.UNAVAILABLE) {
                     log.info(String.format("Cluster status after failure in all nodes: %s", clusterStatusReport.getClusterStatus()));
-                    Sleep.sleepUninterruptibly(sleepDuration);
+                    Sleep.sleepUninterruptibly(SLEEP_BEFORE_GET_CLUSTER_STATUS);
                     clusterStatusReport = corfuClient.getManagementView().getClusterStatus();
                 } else
                     break;
@@ -232,7 +232,8 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             // At this point, if the cluster is completely partitioned, the local corfu client is still capable
             // to communicate with every node.
             // It's not clear if under this conditions the data path operation should fail or should works.
-            // That's why the implementation is check if we are able to write, otherwise dono not check any thing
+            // That's why the implementation is as follow:
+            // check if we are able to write, otherwise do not check any thing
             executeIntermediateCorfuTableWrites(result);
 
             // Start the combination of nodes
@@ -259,12 +260,24 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             // Verify cluster status is the expected
             log.info(String.format("Verify cluster status after fix the nodes combination %s", combination));
             for (int i = 0; i < DEFAULT_CLUSTER_REPORT_POLL_ITER; i++) {
+                Sleep.sleepUninterruptibly(SLEEP_BEFORE_GET_CLUSTER_STATUS);
                 clusterStatusReport = corfuClient.getManagementView().getClusterStatus();
                 if (!clusterStatusesExpected.contains(clusterStatusReport.getClusterStatus())) {
                     log.info(String.format("Cluster status: %s", clusterStatusReport.getClusterStatus()));
-                    Sleep.sleepUninterruptibly(sleepDuration);
-                } else
-                    break;
+                } else {
+                    if(WAIT_FOR_EPOCH_CHANGE){
+                        long expectedEpoch = (!clusterStatusesExpected.contains(ClusterStatusReport.ClusterStatus.UNAVAILABLE)) ?
+                                currentEpoch + 1 : currentEpoch;
+                        corfuClient.invalidateLayout();
+                        Layout refreshedLayout = corfuClient.getLayout();
+                        if(refreshedLayout != null && refreshedLayout.getEpoch() >= expectedEpoch)
+                            break;
+                        else
+                            log.info(String.format("Waiting for epoch change after fix the nodes combination %s", combination));
+                    }else {
+                        break;
+                    }
+                }
             }
 
             log.info(String.format("Status for combination %s", combination));
@@ -272,11 +285,13 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             log.info(String.format("Layout after servers up: %s", afterStartLayout));
             if (afterStartLayout != null) {
                 result.activeServers = afterStartLayout.getAllActiveServers().size();
+                result.finalEpoch = afterStartLayout.getEpoch();
                 log.info(String.format("Nodes active: %s", result.activeServers));
                 log.info(String.format("Unresponsive Nodes: %s", afterStartLayout.getUnresponsiveServers().size()));
             } else {
                 log.info("Nodes active: None (layout is null)");
                 result.activeServers = 0;
+                result.finalEpoch = -1;
             }
             result.connectionMap = clusterStatusReport.getClientServerConnectivityStatusMap();
             log.info(String.format("Connection map after fix the nodes: %s", result.connectionMap));
@@ -288,7 +303,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                 result.assertResultStatus();
             }
 
-            // Verify data path working fine
+            // Verify data path is working fine
             testDataPathGetAfterRecovering(combination, dataPathExceptionExpected, result);
             if (executor != null)
                 executor.shutdownNow();
@@ -409,16 +424,18 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                         fail(mess);
                     } else {
                         log.info(mess);
-                        result.dataStatus.add(false);
+                        result.dataValidationResult.add(DataValidationResultType.EXPECTED_EXCEPTION_NO_RECEIVED_CHECKING_ORIGINAL_VALUE);
                     }
                 } else {
                     if (FAIL_EAGER) {
                         assertThat(result.table.get(String.valueOf(i))).isEqualTo(String.valueOf(i));
                     } else {
-                        boolean dataStatus = result.table.get(String.valueOf(i)).equals(String.valueOf(i));
-                        if (!dataStatus)
+                        boolean dataValidationResult = result.table.get(String.valueOf(i)).equals(String.valueOf(i));
+                        if (!dataValidationResult) {
+                            result.dataValidationResult.add(DataValidationResultType.INCORRECT_ORIGINAL_VALUE);
                             log.info(String.format("Incorrect value for %s", i));
-                        result.dataStatus.add(dataStatus);
+                        }else
+                            result.dataValidationResult.add(DataValidationResultType.SUCCESS);
                     }
                 }
 
@@ -429,14 +446,18 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                     if (FAIL_EAGER) {
                         assertThat(ex.getMessage()).startsWith("Cluster is unavailable");
                     } else {
-                        result.dataStatus.add(ex.getMessage().startsWith("Cluster is unavailable"));
+                        if(ex.getMessage().startsWith("Cluster is unavailable")){
+                            result.dataValidationResult.add(DataValidationResultType.SUCCESS);
+                        }else {
+                            result.dataValidationResult.add(DataValidationResultType.INCORRECT_EXCEPTION_CHECKING_ORIGINAL_VALUE);
+                        }
                         break;
                     }
                 } else {
                     unexpectedExceptions++;
                     log.info(String.format("Unexpected exception checking data value %s: %s", i,
                             ex));
-                    result.dataStatus.add(false);
+                    result.dataValidationResult.add(DataValidationResultType.EXCEPTION_CHECKING_ORIGINAL_VALUE);
                     if(unexpectedExceptions >= MAXIMUN_UNEXPECTED_EXCEPTIONS)
                         break;
                 }
@@ -445,21 +466,24 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         if(!dataPathExceptionExpected && result.lastIntermediateWrite >= 0){
             for (int i = 0; i < result.lastIntermediateWrite; i++) {
                 try{
-                    boolean dataStatus = result.table.get(getIntermediateKey(result, i)).equals(getIntermediateValue(i));
-                    if (!dataStatus) {
+                    boolean dataValidationResult = result.table.get(getIntermediateKey(result, i)).
+                            equals(getIntermediateValue(i));
+                    if (!dataValidationResult) {
+                        result.dataValidationResult.add(DataValidationResultType.INCORRECT_INTERMEDIATE_VALUE);
                         String mess = String.format("Incorrect intermediate value for %s", i);
                         if (FAIL_EAGER){
                             fail();
                         }else{
                             log.info(mess);
                         }
+                    }else{
+                        result.dataValidationResult.add(DataValidationResultType.SUCCESS);
                     }
-                    result.dataStatus.add(dataStatus);
                 }catch (Exception ex){
                     unexpectedExceptions++;
                     log.info(String.format("Unexpected exception checking intermediate data value %s: %s", i,
                             ex));
-                    result.dataStatus.add(false);
+                    result.dataValidationResult.add(DataValidationResultType.EXCEPTION_CHECKING_INTERMEDIATE_VALUE);
                     if(unexpectedExceptions >= MAXIMUN_UNEXPECTED_EXCEPTIONS)
                         break;
                 }
@@ -578,16 +602,18 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         public final ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected;
         public final List<String> endpoints;
         public final CorfuTable<String, String> table;
+        public final long initialEpoch;
         public int lastIntermediateWrite = -1;
 
         //Results
+        public long finalEpoch = 0;
         public boolean imposibleToExecuteFailure = false;
         public boolean imposibleToExecuteFix = false;
         public int activeServers = 0;
         public ClusterStatusReport.ClusterStatus clusterStatus = ClusterStatusReport.ClusterStatus.UNAVAILABLE;
         public Map<String, ClusterStatusReport.ConnectivityStatus> connectionMap = null;
         public Map<String, ClusterStatusReport.NodeStatus> statusMap = null;
-        public ArrayList<Boolean> dataStatus = new ArrayList<>();
+        public ArrayList<DataValidationResultType> dataValidationResult = new ArrayList<>();
 
         public synchronized void setImposibleToExecuteFixWithOr(boolean valueToOr){
             imposibleToExecuteFix = (valueToOr || imposibleToExecuteFix);
@@ -596,12 +622,18 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         public void assertResultStatus() {
             assertThat(clusterStatus).isIn(clusterStatusesExpected);
             combination.forEach(i -> assertThat(connectionMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.ConnectivityStatus.RESPONSIVE));
-            combination.forEach(i -> assertThat(statusMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.NodeStatus.UP));
-            assertThat(activeServers).isEqualTo(combination.size());
+            //The validation of node status and active servers can be performed only if the cluster is in a
+            //status different than unavailable
+            if(!clusterStatusesExpected.contains(ClusterStatusReport.ClusterStatus.UNAVAILABLE)) {
+                combination.forEach(i -> assertThat(statusMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.NodeStatus.UP));
+                assertThat(activeServers).isEqualTo(combination.size());
+                //The layout should change or at least stay the same
+                assertThat(initialEpoch).isLessThanOrEqualTo(finalEpoch);
+            }
         }
 
         public void assertResults() {
-            dataStatus.forEach(s -> assertThat(s).isTrue());
+            dataValidationResult.forEach(s -> assertThat(s).isEqualTo(DataValidationResultType.SUCCESS));
             assertResultStatus();
         }
     }
@@ -610,5 +642,15 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         STOP_NODE,
         DISCONNECT_NODE,
         NONE
+    }
+
+    protected enum DataValidationResultType {
+        EXPECTED_EXCEPTION_NO_RECEIVED_CHECKING_ORIGINAL_VALUE,
+        INCORRECT_EXCEPTION_CHECKING_ORIGINAL_VALUE,
+        EXCEPTION_CHECKING_ORIGINAL_VALUE,
+        EXCEPTION_CHECKING_INTERMEDIATE_VALUE,
+        INCORRECT_ORIGINAL_VALUE,
+        INCORRECT_INTERMEDIATE_VALUE,
+        SUCCESS
     }
 }
