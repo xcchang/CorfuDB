@@ -6,7 +6,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AllNodesMixFailuresIT extends AllNodesBaseIT {
+public class All3NodesMixFailuresIT extends AllNodesBaseIT {
 
     private List<FailureType> currentFailuresByCorfuServerIndex = new ArrayList<>();
 
@@ -18,6 +18,11 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
     @Override
     protected boolean useOneUniversePerTest(){
         return true;
+    }
+
+    @Override
+    protected int getAmountOfNodes(){
+        return currentFailuresByCorfuServerIndex.size();
     }
 
     /**
@@ -38,7 +43,7 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.NONE);
-        testAllNodesAllRecoverCombinations(true, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
 
     /**
@@ -59,7 +64,7 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.NONE);
-        testAllNodesAllRecoverCombinations(false, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }
 
     /**
@@ -80,7 +85,7 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
-        testAllNodesAllRecoverCombinations(true, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
 
     /**
@@ -101,7 +106,7 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
-        testAllNodesAllRecoverCombinations(false, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }
 
     /**
@@ -122,7 +127,7 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
-        testAllNodesAllRecoverCombinations(true, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
 
     /**
@@ -143,6 +148,6 @@ public class AllNodesMixFailuresIT extends AllNodesBaseIT {
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
-        testAllNodesAllRecoverCombinations(false, DEFAULT_AMOUNT_OF_NODES);
+        testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }
 }

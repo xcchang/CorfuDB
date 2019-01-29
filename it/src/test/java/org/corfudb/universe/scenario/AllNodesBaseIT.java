@@ -65,14 +65,6 @@ import static org.junit.Assert.fail;
 public abstract class AllNodesBaseIT extends GenericIntegrationTest {
 
     /**
-     * Default amount of nodes used in the cluster
-     */
-    static final int DEFAULT_AMOUNT_OF_NODES = 3;
-    /**
-     * Amount of quorum nodes as a function of {@link AllNodesBaseIT#DEFAULT_AMOUNT_OF_NODES}.
-     */
-    static final int QUORUM_AMOUNT_OF_NODES = (DEFAULT_AMOUNT_OF_NODES / 2) + 1;
-    /**
      * Amount of retries made before fail because a unexpected status in the cluster report.
      */
     static final int DEFAULT_CLUSTER_REPORT_POLL_ITER = 10;
@@ -114,6 +106,22 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     protected abstract boolean useOneUniversePerTest();
 
     /**
+     * Get the amount of nodes that must be used for the current test.
+     *
+     * @return amount of nodes for the current test.
+     */
+    protected abstract int getAmountOfNodes();
+
+    /**
+     * Get the amount of quorum nodes as a function of {@link AllNodesBaseIT#getAmountOfNodes}.
+     *
+     * @return amount of quorum nodes.
+     */
+    protected int getQuorumAmountOfNodes(){
+        return (getAmountOfNodes() / 2) + 1;
+    }
+
+    /**
      * Indicated whether the test must fail as soon as a verification fails or
      * the hole test must run across all the combinations-permutations and just fail at the end.
      *
@@ -152,7 +160,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     private void testAllNodesAllRecoverCombinationsInDifferentUniverses(boolean startServersSequentially, int amountUp,
                                                                         boolean permuteCombinations) {
         ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected = new ArrayList<>();
-        if (amountUp >= QUORUM_AMOUNT_OF_NODES) {
+        if (amountUp >= getQuorumAmountOfNodes()) {
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.STABLE);
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.DEGRADED);
         } else {
@@ -160,7 +168,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         }
 
         ArrayList<CombinationResult> testResult = new ArrayList();
-        ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(DEFAULT_AMOUNT_OF_NODES, amountUp, permuteCombinations);
+        ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(getAmountOfNodes(), amountUp, permuteCombinations);
 
         ClientParams clientParams = ClientParams.builder()
                 .systemDownHandlerTriggerLimit(10)
@@ -184,7 +192,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                         collect(Collectors.joining(" - "));
                 testCase.it(getTestCaseDescription(startServersSequentially, combinationName), data -> {
                     CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
-                            (amountUp < QUORUM_AMOUNT_OF_NODES), startServersSequentially, nodes, corfuClient, table);
+                            (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
                     testResult.add(result);
                 });
             });
@@ -208,7 +216,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
      */
     private void testAllNodesAllRecoverCombinationsInOneUniverse(boolean startServersSequentially, int amountUp, boolean permuteCombinations) {
         ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected = new ArrayList<>();
-        if (amountUp >= QUORUM_AMOUNT_OF_NODES) {
+        if (amountUp >= getQuorumAmountOfNodes()) {
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.STABLE);
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.DEGRADED);
         } else {
@@ -216,7 +224,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         }
 
         ArrayList<CombinationResult> testResult = new ArrayList();
-        ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(DEFAULT_AMOUNT_OF_NODES, amountUp, permuteCombinations);
+        ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(getAmountOfNodes(), amountUp, permuteCombinations);
 
         getScenario().describe((fixture, testCase) -> {
             CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
@@ -239,7 +247,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                         collect(Collectors.joining(" - "));
                 testCase.it(getTestCaseDescription(startServersSequentially, combinationName), data -> {
                     CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
-                            (amountUp < QUORUM_AMOUNT_OF_NODES), startServersSequentially, nodes, corfuClient, table);
+                            (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
                     testResult.add(result);
                 });
             }
@@ -306,7 +314,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                         break;
                 }
             }
-            if(nodesStoped >= QUORUM_AMOUNT_OF_NODES){
+            if(nodesStoped >= getQuorumAmountOfNodes()){
                 assertThat(clusterStatusReport.getClusterStatus()).isEqualTo(ClusterStatusReport.ClusterStatus.UNAVAILABLE);
             }
             Layout afterStopLayout = clusterStatusReport.getLayout();
