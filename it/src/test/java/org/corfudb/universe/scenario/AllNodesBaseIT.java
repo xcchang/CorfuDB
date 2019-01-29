@@ -7,13 +7,19 @@ import org.corfudb.runtime.view.ClusterStatusReport;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.universe.GenericIntegrationTest;
 import org.corfudb.universe.group.cluster.CorfuCluster;
+import org.corfudb.universe.logging.LoggingParams;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.scenario.fixture.Fixtures;
 import org.corfudb.util.Sleep;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,23 +32,96 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.corfudb.universe.scenario.fixture.Fixtures.TestFixtureConst.DEFAULT_TABLE_ITER;
 import static org.junit.Assert.fail;
 
+/**
+ * Base class of all combinatorial tests intended to test the link failure module.
+ * A test for this class is a set of failures, one per node, and and set of combination-permutations of these
+ * failures. A example of one test:
+ * - Set of failures: Stop, Discconect, None.
+ * - Set of combinations-permutations 2 on 3: 0-1, 1-0, 0-2, 2-0, 1-2, 2-1
+ * The test can be performed in two ways:
+ * - One cluster per combination-permutation of failures.
+ * - One cluster for all combinations-permutations of failures.
+ * This behaviour is specified by the sub-class through the method {@link AllNodesBaseIT#useOneUniversePerTest()}.
+ *
+ * The class offers a general behaviour that goes as follow:
+ * 1) Deploy and bootstrap a three nodes cluster
+ * 2) Sequentially execute the specified failures for each node. The sub-class must
+ * implement the method {@link AllNodesBaseIT#getFailureType(int)}. It possible to return None to
+ * inidicate no failure for a specific node, but just one of the nodes could have this "failure type".
+ * 3) Verify cluster status is unavailable, node status are down and data path is not available
+ * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
+ * 5) Wait for the new layout is available
+ * 6) Verify the amount of active servers, the cluster status and data path
+ * operations. The expected result of these verifications depends on the amount and type of failures.
+ *
+ * The class also offers the possibility to be greedy or eager in the test process:
+ * - Eager: the hole test must fail as soon as a verification in the step 6 failed in one of
+ * the combinations-permutations.
+ * - Greedy: the hole test must run across all the combinations-permutations and just fail at the end.
+ * This behaviour can be controlled by the sub-classes through a implementation of the
+ * method {@link AllNodesBaseIT#shouldFailEager()}.
+ */
 @Slf4j
 public abstract class AllNodesBaseIT extends GenericIntegrationTest {
 
+    /**
+     * Default amount of nodes used in the cluster
+     */
     static final int DEFAULT_AMOUNT_OF_NODES = 3;
+    /**
+     * Amount of quorum nodes as a function of {@link AllNodesBaseIT#DEFAULT_AMOUNT_OF_NODES}.
+     */
     static final int QUORUM_AMOUNT_OF_NODES = (DEFAULT_AMOUNT_OF_NODES / 2) + 1;
-    static final boolean FAIL_EAGER = false;
+    /**
+     * Amount of retries made before fail because a unexpected status in the cluster report.
+     */
     static final int DEFAULT_CLUSTER_REPORT_POLL_ITER = 10;
+    /**
+     * Delay between the failures to apply.
+     */
     static final Duration DELAY_BETWEEN_SEQUENTIAL_FAILURES = Duration.ofMillis(1200);
+    /**
+     * Maximum number of unexpected exceptions to handle before failing for a data path operation.
+     */
     static final int MAXIMUN_UNEXPECTED_EXCEPTIONS = 10;
+    /**
+     * Max amount of times that a failure or heal operation is attempted.
+     */
     static final int MAX_FAILURES_RECOVER_RETRIES = 5;
+    /**
+     * Indicates if the criteria to wait for new layout (step 5) should include a change in the epoch
+     */
     static final boolean WAIT_FOR_EPOCH_CHANGE = true;
+    /**
+     * Delay between retries in the process of waiting for a layout chage (step 5).
+     */
     static final Duration SLEEP_BEFORE_GET_CLUSTER_STATUS = Duration.ofMillis(2000);
 
 
+    /**
+     * Get the failure type that should be used for the specified corfu server.
+     *
+     * @param corfuServerIndex Index of the ser in the corfu server list.
+     * @return Type of failure to force in the server node specified.
+     */
     protected abstract FailureType getFailureType(int corfuServerIndex);
 
+    /**
+     * Indicates whether one cluster must be used for all combinations-permutations.
+     *
+     * @return Whether one cluster must be used for all combinations-permutations.
+     */
     protected abstract boolean useOneUniversePerTest();
+
+    /**
+     * Indicated whether the test must fail as soon as a verification fails or
+     * the hole test must run across all the combinations-permutations and just fail at the end.
+     *
+     * @return whether the test must fail as soon as a verification fails or not.
+     */
+    protected boolean shouldFailEager() {
+        return false;
+    }
 
     protected void testAllNodesAllRecoverCombinations(boolean startServersSequentially, int amountUp){
         testAllNodesAllRecoverCombinations(startServersSequentially, amountUp, true);
@@ -185,8 +264,12 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                                                                     ArrayList<CorfuServer> nodes, CorfuClient corfuClient,
                                                                     CorfuTable<String, String> table) {
         long currentEpoch = corfuClient.getLayout().getEpoch();
-        CombinationResult result = new CombinationResult(combinationName, combination, clusterStatusesExpected,
-                nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()), table, currentEpoch);
+        CombinationResult result = new CombinationResult(getTestName(), getTimestamp(), combinationName, combination,
+                clusterStatusesExpected, nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()),
+                table, currentEpoch, startServersSequentially);
+        for (int j= 0; j < nodes.size(); j++){
+            result.failures.add(getFailureType(j));
+        }
         // Force failure in all nodes sequentially without wait to much for it
         if(executeFailureInAllNodes(nodes)) {
             // Verify cluster status is UNAVAILABLE with all nodes NA and UNRESPONSIVE
@@ -194,6 +277,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             log.info(String.format("Verify cluster status after failure in all nodes for test-combination %s", combination));
             ClusterStatusReport clusterStatusReport = corfuClient.getManagementView().getClusterStatus();
             for (int i = 0; i < DEFAULT_CLUSTER_REPORT_POLL_ITER; i++) {
+                result.addAfterFailureLayouts(clusterStatusReport.getLayout());
                 if (clusterStatusReport.getClusterStatus() != ClusterStatusReport.ClusterStatus.UNAVAILABLE) {
                     log.info(String.format("Cluster status after failure in all nodes: %s", clusterStatusReport.getClusterStatus()));
                     Sleep.sleepUninterruptibly(SLEEP_BEFORE_GET_CLUSTER_STATUS);
@@ -262,6 +346,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             for (int i = 0; i < DEFAULT_CLUSTER_REPORT_POLL_ITER; i++) {
                 Sleep.sleepUninterruptibly(SLEEP_BEFORE_GET_CLUSTER_STATUS);
                 clusterStatusReport = corfuClient.getManagementView().getClusterStatus();
+                result.addAfterHealingLayouts(clusterStatusReport.getLayout());
                 if (!clusterStatusesExpected.contains(clusterStatusReport.getClusterStatus())) {
                     log.info(String.format("Cluster status: %s", clusterStatusReport.getClusterStatus()));
                 } else {
@@ -285,12 +370,15 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             log.info(String.format("Layout after servers up: %s", afterStartLayout));
             if (afterStartLayout != null) {
                 result.activeServers = afterStartLayout.getAllActiveServers().size();
+                result.unresposiveServers = afterStartLayout.getUnresponsiveServers().size();
                 result.finalEpoch = afterStartLayout.getEpoch();
                 log.info(String.format("Nodes active: %s", result.activeServers));
-                log.info(String.format("Unresponsive Nodes: %s", afterStartLayout.getUnresponsiveServers().size()));
+                log.info(String.format("Unresponsive Nodes: %s", result.unresposiveServers));
+                log.info(String.format("Epochs: %s - %s", result.initialEpoch, result.finalEpoch));
             } else {
                 log.info("Nodes active: None (layout is null)");
                 result.activeServers = 0;
+                result.unresposiveServers = 0;
                 result.finalEpoch = -1;
             }
             result.connectionMap = clusterStatusReport.getClientServerConnectivityStatusMap();
@@ -299,7 +387,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             log.info(String.format("Status map after fix the nodes: %s", result.statusMap));
             result.clusterStatus = clusterStatusReport.getClusterStatus();
             log.info(String.format("Cluster status: %s", result.clusterStatus));
-            if (FAIL_EAGER) {
+            if (shouldFailEager()) {
                 result.assertResultStatus();
             }
 
@@ -318,11 +406,19 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     }
 
     private void executeFinalAssertations(ArrayList<CombinationResult> testResult, ArrayList<ArrayList<Integer>> combinationsAndPermutations) {
+        List<String> summary = new ArrayList<>();
+        summary.add("Summary of the test:");
+        summary.add(CombinationResult.getDescriptionColumns());
+        summary.addAll(testResult.stream().map(CombinationResult::getDescription).collect(Collectors.toList()));
+        log.info(summary.stream().collect(Collectors.joining("\n")));
+        for (CombinationResult r : testResult) {
+            r.saveLayouts();
+        }
         int imposibleToExecuteFailureCount = 0;
         int imposibleToExecuteFixCount = 0;
         for (CombinationResult r : testResult) {
             if(!r.imposibleToExecuteFailure && !r.imposibleToExecuteFix) {
-                if (!FAIL_EAGER) {
+                if (!shouldFailEager()) {
                     r.assertResults();
                 }
             }else if(r.imposibleToExecuteFailure){
@@ -340,7 +436,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
 
     private String getTestCaseDescription(boolean startServersSequentially, String combinationName){
         String orderType = startServersSequentially ? "sequentially" : "concurrently";
-        String description = String.format("Should stop all nodes %s, restart the nodes %s and recover", orderType,
+        String description = String.format("Should put a failure in some nodes, %s heal the nodes %s and recover", orderType,
                 combinationName);
         return description;
     }
@@ -420,14 +516,14 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                     String unexpectedValue = result.table.get(String.valueOf(i));
                     String mess = String.format("Expected an UnreachableClusterException to be thrown but %s obtained",
                             unexpectedValue);
-                    if (FAIL_EAGER) {
+                    if (shouldFailEager()) {
                         fail(mess);
                     } else {
                         log.info(mess);
                         result.dataValidationResult.add(DataValidationResultType.EXPECTED_EXCEPTION_NO_RECEIVED_CHECKING_ORIGINAL_VALUE);
                     }
                 } else {
-                    if (FAIL_EAGER) {
+                    if (shouldFailEager()) {
                         assertThat(result.table.get(String.valueOf(i))).isEqualTo(String.valueOf(i));
                     } else {
                         boolean dataValidationResult = result.table.get(String.valueOf(i)).equals(String.valueOf(i));
@@ -443,7 +539,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                 if (dataPathExceptionExpected) {
                     log.info(String.format("Exception checking data value %s: %s", i,
                             ex));
-                    if (FAIL_EAGER) {
+                    if (shouldFailEager()) {
                         assertThat(ex.getMessage()).startsWith("Cluster is unavailable");
                     } else {
                         if(ex.getMessage().startsWith("Cluster is unavailable")){
@@ -471,7 +567,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                     if (!dataValidationResult) {
                         result.dataValidationResult.add(DataValidationResultType.INCORRECT_INTERMEDIATE_VALUE);
                         String mess = String.format("Incorrect intermediate value for %s", i);
-                        if (FAIL_EAGER){
+                        if (shouldFailEager()){
                             fail();
                         }else{
                             log.info(mess);
@@ -595,25 +691,79 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
      * to heal after servers failures
      */
     @Data
-    private class CombinationResult {
+    private static class CombinationResult {
+        //Description column names
+        public final static String COMBINATION_COLUMN           = "Combination  ";
+        public final static String ACTIVE_NODES_COLUMN          = "Actives      ";
+        public final static String UNRESPONSIVE_NODES_COLUMN    = "Unresponsives";
+        public final static String EPOCHS_COLUMN                = "Epochs       ";
+        public final static String COLUMN_SEPARATOR             = " | ";
+
         //Parameters
+        public final String testName;
+        public final String timestamp;
         public final String combinationName;
         public final ArrayList<Integer> combination;
         public final ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected;
         public final List<String> endpoints;
         public final CorfuTable<String, String> table;
         public final long initialEpoch;
+        public final boolean startServersSequentially;
         public int lastIntermediateWrite = -1;
+        public List<FailureType> failures = new ArrayList<>();
 
         //Results
+        private List<String> afterFailureLayouts = new ArrayList<>();
+        private List<String> afterHealingLayouts = new ArrayList<>();
         public long finalEpoch = 0;
         public boolean imposibleToExecuteFailure = false;
         public boolean imposibleToExecuteFix = false;
         public int activeServers = 0;
+        public int unresposiveServers = 0;
         public ClusterStatusReport.ClusterStatus clusterStatus = ClusterStatusReport.ClusterStatus.UNAVAILABLE;
         public Map<String, ClusterStatusReport.ConnectivityStatus> connectionMap = null;
         public Map<String, ClusterStatusReport.NodeStatus> statusMap = null;
         public ArrayList<DataValidationResultType> dataValidationResult = new ArrayList<>();
+
+        public void addAfterFailureLayouts(Layout afterFailureLayout){
+            String jsonLayout = afterFailureLayout.asJSONString();
+            if(afterFailureLayouts.isEmpty() ||
+                    !jsonLayout.equals(afterFailureLayouts.get(afterFailureLayouts.size()-1))){
+                afterFailureLayouts.add(jsonLayout);
+            }
+        }
+
+        public void addAfterHealingLayouts(Layout afterHealingLayout){
+            String jsonLayout = afterHealingLayout.asJSONString();
+            if(afterHealingLayouts.isEmpty() ||
+                    !jsonLayout.equals(afterHealingLayouts.get(afterHealingLayouts.size()-1))){
+                afterHealingLayouts.add(jsonLayout);
+            }
+        }
+
+        public static String getDescriptionColumns(){
+            return COMBINATION_COLUMN + COLUMN_SEPARATOR + ACTIVE_NODES_COLUMN + COLUMN_SEPARATOR +
+                    UNRESPONSIVE_NODES_COLUMN + COLUMN_SEPARATOR + EPOCHS_COLUMN;
+        }
+
+        public String getDescription(){
+            String combinationColumn = String.format("%" + COMBINATION_COLUMN.length() + "s", combinationName);
+            if(!imposibleToExecuteFailure && !imposibleToExecuteFix) {
+                String activeServersColumn = String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", activeServers);
+                String unresposiveServersColumn = String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", unresposiveServers);
+                String epochs = String.format("%s - %s", initialEpoch, finalEpoch);
+                String epochsColumn = String.format("%" + EPOCHS_COLUMN.length() + "s", epochs);
+                return combinationColumn + COLUMN_SEPARATOR + activeServersColumn + COLUMN_SEPARATOR +
+                        unresposiveServersColumn + COLUMN_SEPARATOR + epochsColumn;
+            }
+            else{
+                String activeServersColumn = String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", "NA");
+                String unresposiveServersColumn = String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", "NA");
+                String epochsColumn = String.format("%" + EPOCHS_COLUMN.length() + "s", "NA");
+                return combinationColumn + COLUMN_SEPARATOR + activeServersColumn + COLUMN_SEPARATOR +
+                        unresposiveServersColumn + COLUMN_SEPARATOR + epochsColumn;
+            }
+        }
 
         public synchronized void setImposibleToExecuteFixWithOr(boolean valueToOr){
             imposibleToExecuteFix = (valueToOr || imposibleToExecuteFix);
@@ -635,6 +785,36 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         public void assertResults() {
             dataValidationResult.forEach(s -> assertThat(s).isEqualTo(DataValidationResultType.SUCCESS));
             assertResultStatus();
+        }
+
+        public void saveLayouts(){
+            String orderType = startServersSequentially ? "sequentially" : "concurrently";
+            String testCombinationName = failures.stream().map(f -> f.toString()).collect(Collectors.joining("-"));
+            testCombinationName = testCombinationName + "-" + combinationName + "-" + orderType;
+            Path logDirPath = LoggingParams.getClientLogDir(testName, timestamp);
+            logDirPath = logDirPath.resolve(testCombinationName);
+            File logDirFile = logDirPath.toFile();
+            try {
+                if (!logDirFile.exists() && logDirFile.mkdirs()) {
+                    log.info("Created new client corfu log directory at {}.", logDirFile);
+                }
+                for (int i = 0; i < afterFailureLayouts.size(); i++) {
+                    Path filePathObj = logDirPath.resolve(String.format("after-failure-layout%d.json",i));
+                    String layoutStr = afterFailureLayouts.get(i);
+                    Files.write(filePathObj, layoutStr.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                }
+            }catch (Exception ex){
+                log.error("Error logging layouts collected after the failure.", ex);
+            }
+            try {
+                for (int i = 0; i < afterHealingLayouts.size(); i++) {
+                    Path filePathObj = logDirPath.resolve(String.format("after-healing-layout%d.json",i));
+                    String layoutStr = afterHealingLayouts.get(i);
+                    Files.write(filePathObj, layoutStr.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                }
+            }catch (Exception ex){
+                log.error("Error logging layouts collected after the healing.", ex);
+            }
         }
     }
 

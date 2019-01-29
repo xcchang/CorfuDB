@@ -17,6 +17,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
 
+import java.time.LocalDateTime;
+
 public abstract class GenericIntegrationTest {
     private static final UniverseFactory UNIVERSE_FACTORY = UniverseFactory.getInstance();
 
@@ -24,6 +26,9 @@ public abstract class GenericIntegrationTest {
     protected Universe universe;
 
     protected final UniverseMode universeMode = UniverseMode.DOCKER;
+
+    private final String timestamp = LocalDateTime.now().format(LoggingParams.DATE_FORMATTER);
+
 
     @Before
     public void setUp() throws Exception {
@@ -47,10 +52,19 @@ public abstract class GenericIntegrationTest {
         return test.getMethodName();
     }
 
+    public boolean isLoggingParamsEnable(){
+        return false;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
     public LoggingParams getDockerLoggingParams() {
         return LoggingParams.builder()
                 .testName(getTestName())
-                .enabled(false)
+                .enabled(isLoggingParamsEnable())
+                .timestamp(timestamp)
                 .build();
     }
 
