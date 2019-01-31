@@ -1,5 +1,6 @@
 package org.corfudb.universe.scenario;
 
+import com.spotify.docker.client.DefaultDockerClient;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.collections.CorfuTable;
@@ -12,6 +13,7 @@ import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.scenario.fixture.Fixtures;
+import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.util.Sleep;
 
 import java.io.File;
@@ -19,7 +21,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -75,7 +76,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     /**
      * Maximum number of unexpected exceptions to handle before failing for a data path operation.
      */
-    static final int MAXIMUN_UNEXPECTED_EXCEPTIONS = 10;
+    static final int MAXIMUN_UNEXPECTED_EXCEPTIONS = 20;
     /**
      * Max amount of times that a failure or heal operation is attempted.
      */
@@ -88,6 +89,15 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
      * Delay between retries in the process of waiting for a layout chage (step 5).
      */
     static final Duration SLEEP_BEFORE_GET_CLUSTER_STATUS = Duration.ofMillis(2000);
+    /**
+     * Maximum number of times that a combination-permutation in a test case is retried
+     * if it fails because a problem with a container or vm
+     */
+    static final int MAX_NODES_FAILURES_RETRIES = 3;
+    /**
+     * Delay between two creations of universe sceneries (dockers or vms).
+     */
+    static final Duration SLEEP_BEFORE_CREATE_NEW_UNIVERSE = Duration.ofMillis(2000);
 
 
     /**
@@ -179,7 +189,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                 .build();
 
         for (ArrayList<Integer> combination : combinationsAndPermutations) {
-            getScenario().describe((fixture, testCase) -> {
+            getScenario(getAmountOfNodes()).describe((fixture, testCase) -> {
                 CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
 
                 CorfuClient corfuClient = corfuCluster.getLocalCorfuClient(clientParams);
@@ -226,33 +236,79 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         ArrayList<CombinationResult> testResult = new ArrayList();
         ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(getAmountOfNodes(), amountUp, permuteCombinations);
 
-        getScenario().describe((fixture, testCase) -> {
-            CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
+        ArrayList<CorfuServer> nodes = null;
+        CorfuClient corfuClient = null;
+        CorfuTable<String, String> table = null;
 
-            ClientParams clientParams = ClientParams.builder()
-                    .systemDownHandlerTriggerLimit(10)
-                    .requestTimeout(Duration.ofSeconds(5))
-                    .idleConnectionTimeout(30)
-                    .connectionTimeout(Duration.ofMillis(500))
-                    .connectionRetryRate(Duration.ofMillis(1000))
-                    .build();
-            CorfuClient corfuClient = corfuCluster.getLocalCorfuClient(clientParams);
-
-            CorfuTable<String, String> table = initializeCorfuTable(corfuClient);
-
-            ArrayList<CorfuServer> nodes = new ArrayList<>(corfuCluster.<CorfuServer>nodes().values());
-
-            for (ArrayList<Integer> combination : combinationsAndPermutations) {
-                String combinationName = combination.stream().map(i -> i.toString()).
-                        collect(Collectors.joining(" - "));
-                testCase.it(getTestCaseDescription(startServersSequentially, combinationName), data -> {
+        for (ArrayList<Integer> combination : combinationsAndPermutations) {
+            String combinationName = combination.stream().map(i -> i.toString()).
+                    collect(Collectors.joining(" - "));
+            for (int i = 0; i < MAX_NODES_FAILURES_RETRIES; i++) {
+                log.info("Execute test: {}. Attempt {}", getTestCaseDescription(startServersSequentially, combinationName), i);
+                try {
+                    if (currentCorfuCluster == null) {
+                        if(docker == null)
+                            docker = DefaultDockerClient.fromEnv().build();
+                        initializeCorfuCluster();
+                        Sleep.sleepUninterruptibly(Duration.ofMillis((i+1)*250));
+                        nodes = new ArrayList<>(currentCorfuCluster.<CorfuServer>nodes().values());
+                        corfuClient = getCorfuClient();
+                        table = initializeCorfuTable(corfuClient);
+                    }
                     CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
                             (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
                     testResult.add(result);
-                });
+                    if (!result.imposibleToExecuteFailure && !result.imposibleToExecuteFix) {
+                        break;
+                    } else if (i < (MAX_NODES_FAILURES_RETRIES - 1)) {
+                        log.info("Restarting universe...");
+                        shutdownUniverse();
+                    }
+                }catch (Exception ex){
+                    log.error(String.format("Error executing test combination", combinationName), ex);
+                    CombinationResult result = new CombinationResult(getTestName(), getTimestamp(), combinationName, combination,
+                            clusterStatusesExpected, nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()),
+                            table, -1, startServersSequentially);
+                    result.failedWithUnhandledException = true;
+                    testResult.add(result);
+                    shutdownUniverse();
+                }
             }
-        });
+        }
         executeFinalAssertations(testResult, combinationsAndPermutations);
+    }
+
+    private void shutdownUniverse() {
+        universe.shutdown();
+        docker.close();
+        universe = null;
+        docker = null;
+        currentCorfuCluster = null;
+        Sleep.sleepUninterruptibly(SLEEP_BEFORE_CREATE_NEW_UNIVERSE);
+    }
+
+    private CorfuClient getCorfuClient() {
+        ClientParams clientParams = ClientParams.builder()
+                .systemDownHandlerTriggerLimit(10)
+                .requestTimeout(Duration.ofSeconds(5))
+                .idleConnectionTimeout(30)
+                .connectionTimeout(Duration.ofMillis(500))
+                .connectionRetryRate(Duration.ofMillis(1000))
+                .build();
+        return currentCorfuCluster.getLocalCorfuClient(clientParams);
+    }
+
+    private CorfuCluster currentCorfuCluster = null;
+
+    private void setCurrentCorfuCluster(CorfuCluster corfuCluster){
+        currentCorfuCluster = corfuCluster;
+    }
+
+    private void initializeCorfuCluster() {
+        getScenario(getAmountOfNodes()).describe((fixture, testCase) -> {
+            CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
+            setCurrentCorfuCluster(corfuCluster);
+        });
     }
 
     /**
@@ -701,11 +757,17 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     @Data
     private static class CombinationResult {
         //Description column names
-        public final static String COMBINATION_COLUMN           = "Combination  ";
-        public final static String ACTIVE_NODES_COLUMN          = "Actives      ";
-        public final static String UNRESPONSIVE_NODES_COLUMN    = "Unresponsives";
-        public final static String EPOCHS_COLUMN                = "Epochs       ";
+        public final static String COMBINATION_COLUMN           = "Combination          ";
+        public final static String CLUSTER_STATUS_COLUMN        = "Cluster Status       ";
+        public final static String ACTIVE_NODES_COLUMN          = "Actives              ";
+        public final static String UNRESPONSIVE_NODES_COLUMN    = "Unresponsives        ";
+        public final static String UNREACHABLE_NODES_COLUMN     = "Unreachables         ";
+        public final static String NODE_STATUS_COLUMN           = "Node Status          ";
+        public final static String EPOCHS_COLUMN                = "Epochs               ";
+        public final static String DATA_TESTS_FAILED_COLUMN     = "Failed Data Tests    ";
         public final static String COLUMN_SEPARATOR             = " | ";
+        public final static String TEST_FAILED_CELL             = "Failed";
+        public final static String TEST_EXCEPTION_CELL          = "Exception";
 
         //Parameters
         public final String testName;
@@ -723,6 +785,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         //Results
         private List<String> afterFailureLayouts = new ArrayList<>();
         private List<String> afterHealingLayouts = new ArrayList<>();
+        public boolean failedWithUnhandledException = false;
         public long finalEpoch = 0;
         public boolean imposibleToExecuteFailure = false;
         public boolean imposibleToExecuteFix = false;
@@ -750,27 +813,49 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         }
 
         public static String getDescriptionColumns(){
-            return COMBINATION_COLUMN + COLUMN_SEPARATOR + ACTIVE_NODES_COLUMN + COLUMN_SEPARATOR +
-                    UNRESPONSIVE_NODES_COLUMN + COLUMN_SEPARATOR + EPOCHS_COLUMN;
+            ArrayList<String> columnNames = new ArrayList<>();
+            columnNames.add(COMBINATION_COLUMN);
+            columnNames.add(CLUSTER_STATUS_COLUMN);
+            columnNames.add(ACTIVE_NODES_COLUMN);
+            columnNames.add(UNRESPONSIVE_NODES_COLUMN);
+            columnNames.add(UNREACHABLE_NODES_COLUMN);
+            columnNames.add(NODE_STATUS_COLUMN);
+            columnNames.add(EPOCHS_COLUMN);
+            columnNames.add(DATA_TESTS_FAILED_COLUMN);
+            String header = columnNames.stream().collect(Collectors.joining(COLUMN_SEPARATOR));
+            return header;
         }
 
         public String getDescription(){
-            String combinationColumn = String.format("%" + COMBINATION_COLUMN.length() + "s", combinationName);
-            if(!imposibleToExecuteFailure && !imposibleToExecuteFix) {
-                String activeServersColumn = String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", activeServers);
-                String unresposiveServersColumn = String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", unresposiveServers);
+            ArrayList<String> columns = new ArrayList<>();
+            columns.add(String.format("%" + COMBINATION_COLUMN.length() + "s", combinationName));
+            if(!imposibleToExecuteFailure && !imposibleToExecuteFix && !failedWithUnhandledException) {
+                columns.add(String.format("%" + CLUSTER_STATUS_COLUMN.length() + "s", clusterStatus));
+                columns.add(String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", activeServers));
+                columns.add(String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", unresposiveServers));
+                long unreachableNodes = connectionMap.values().stream().
+                        filter(s -> s.equals(ClusterStatusReport.ConnectivityStatus.UNRESPONSIVE)).count();
+                columns.add(String.format("%" + UNREACHABLE_NODES_COLUMN.length() + "s", unreachableNodes));
+                String nodeStatus = statusMap.values().stream().map(s -> String.format("%4s", s)).
+                        collect(Collectors.joining("|"));
+                columns.add(String.format("%" + NODE_STATUS_COLUMN.length() + "s", nodeStatus));
                 String epochs = String.format("%s - %s", initialEpoch, finalEpoch);
-                String epochsColumn = String.format("%" + EPOCHS_COLUMN.length() + "s", epochs);
-                return combinationColumn + COLUMN_SEPARATOR + activeServersColumn + COLUMN_SEPARATOR +
-                        unresposiveServersColumn + COLUMN_SEPARATOR + epochsColumn;
+                columns.add(String.format("%" + EPOCHS_COLUMN.length() + "s", epochs));
+                long dataTestsFailed = dataValidationResult.stream().filter(r -> !r.equals(DataValidationResultType.SUCCESS)).count();
+                columns.add(String.format("%" + DATA_TESTS_FAILED_COLUMN.length() + "s", dataTestsFailed));
             }
             else{
-                String activeServersColumn = String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", "NA");
-                String unresposiveServersColumn = String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", "NA");
-                String epochsColumn = String.format("%" + EPOCHS_COLUMN.length() + "s", "NA");
-                return combinationColumn + COLUMN_SEPARATOR + activeServersColumn + COLUMN_SEPARATOR +
-                        unresposiveServersColumn + COLUMN_SEPARATOR + epochsColumn;
+                String mess = failedWithUnhandledException ? TEST_EXCEPTION_CELL : TEST_FAILED_CELL;
+                columns.add(String.format("%" + CLUSTER_STATUS_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + ACTIVE_NODES_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + UNRESPONSIVE_NODES_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + UNREACHABLE_NODES_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + NODE_STATUS_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + EPOCHS_COLUMN.length() + "s", mess));
+                columns.add(String.format("%" + DATA_TESTS_FAILED_COLUMN.length() + "s", mess));
             }
+            String row = columns.stream().collect(Collectors.joining(COLUMN_SEPARATOR));
+            return row;
         }
 
         public synchronized void setImposibleToExecuteFixWithOr(boolean valueToOr){
