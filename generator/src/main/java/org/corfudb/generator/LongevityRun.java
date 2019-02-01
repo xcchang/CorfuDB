@@ -53,11 +53,7 @@ public class LongevityRun {
                 "corfu server to connect to");
         Option checkPointFlag = new Option("cp", CHECKPOINT, false,
                 "enable checkpoint");
-<<<<<<< HEAD
         Option thread = new Option("T", THREAD_NUM, true, "thread number");
-=======
-        Option thread = new Option("T", THREAD_NUM, false, "thread number");
->>>>>>> f9c7748950fecc73385abc59ad3131aa804b51de
 
         options.addOption(amountTime);
         options.addOption(timeUnit);
