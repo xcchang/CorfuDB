@@ -44,7 +44,7 @@ public class LongevityApp {
     static final int APPLICATION_TIMEOUT_IN_MS = 10000;
     static final long TIME_TO_WAIT_FOR_RUNTIME_TO_CONNECT = 60000;
 
-    static final int QUEUE_CAPACITY = 1000;
+    static final int QUEUE_CAPACITY = 1000_0;
 
     long startTime;
     int numberThreads;
