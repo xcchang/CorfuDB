@@ -30,6 +30,10 @@ public class LongevityRun {
     private static final String TIME_AMOUNT = "time_amount";
     private static final String CORFU_ENDPOINT = "corfu_endpoint";
     private static final String CHECKPOINT = "checkpoint";
+    private static final String THREAD_NUM = "thread_number";
+
+    private static final int DEFAULT_THREAD_NUM = 10;
+    private static final String DEFAULT_CORFU_ENDPOINT = "localhost:9000";
 
 
 
@@ -49,11 +53,13 @@ public class LongevityRun {
                 "corfu server to connect to");
         Option checkPointFlag = new Option("cp", CHECKPOINT, false,
                 "enable checkpoint");
+        Option thread = new Option("T", THREAD_NUM, true, "thread number");
 
         options.addOption(amountTime);
         options.addOption(timeUnit);
         options.addOption(corfuEndpoint);
         options.addOption(checkPointFlag);
+        options.addOption(thread);
 
 
 
@@ -81,7 +87,7 @@ public class LongevityRun {
         String timeUnitValue = cmd.getOptionValue(TIME_UNIT);
 
         String configurationString = cmd.hasOption(CORFU_ENDPOINT) ?
-                cmd.getOptionValue(CORFU_ENDPOINT) : "localhost:9000";
+                cmd.getOptionValue(CORFU_ENDPOINT) : DEFAULT_CORFU_ENDPOINT;
 
         boolean checkPoint = cmd.hasOption(CHECKPOINT) ?
                 true : false;
@@ -100,7 +106,10 @@ public class LongevityRun {
                 longevity = Duration.ofHours(1).toMillis();
         }
 
-        LongevityApp la = new LongevityApp(longevity, 10, configurationString, checkPoint);
+        int threadNum = cmd.hasOption(THREAD_NUM) ?
+                Integer.parseInt(cmd.getOptionValue(THREAD_NUM)) : DEFAULT_THREAD_NUM;
+
+        LongevityApp la = new LongevityApp(longevity, threadNum, configurationString, checkPoint);
         la.runLongevityTest();
     }
 }
