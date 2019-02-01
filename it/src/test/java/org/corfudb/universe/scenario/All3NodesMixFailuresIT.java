@@ -37,7 +37,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void oneStopOnePartionedNodesSequentiallyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
@@ -58,7 +58,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void oneStopOnePartionedNodesConcurrentlyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
@@ -79,7 +79,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void oneStopTwoPartionedNodesSequentiallyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
@@ -100,7 +100,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void oneStopTwoPartionedNodesConcurrentlyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.DISCONNECT_NODE);
@@ -121,7 +121,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void twoStopOnePartionedNodesSequentiallyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);
@@ -142,7 +142,7 @@ public class All3NodesMixFailuresIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void twoStopOnePartionedNodesConcurrentlyTest() {
         currentFailuresByCorfuServerIndex.clear();
         currentFailuresByCorfuServerIndex.add(FailureType.STOP_NODE);

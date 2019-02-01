@@ -31,7 +31,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations failed with UnreachableClusterException
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedOneNodeReconnectedTest() {
         testAllNodesAllRecoverCombinations(true, 1);
     }
@@ -48,7 +48,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedTwoNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, 2);
     }
@@ -65,7 +65,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedTwoNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, 2);
     }
@@ -82,7 +82,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedQuorumNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getQuorumAmountOfNodes());
     }
@@ -99,7 +99,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedQuorumNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getQuorumAmountOfNodes());
     }
@@ -116,7 +116,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedAllNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
@@ -133,7 +133,7 @@ public class All4NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (12 * 300 * 1000))
+    @Test(timeout = (144 * 300 * 1000))
     public void allNodesDisconnectedAllNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }

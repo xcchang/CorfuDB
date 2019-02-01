@@ -88,7 +88,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     /**
      * Delay between retries in the process of waiting for a layout chage (step 5).
      */
-    static final Duration SLEEP_BEFORE_GET_CLUSTER_STATUS = Duration.ofMillis(2000);
+    static final Duration SLEEP_BEFORE_GET_CLUSTER_STATUS = Duration.ofMillis(42000);
     /**
      * Maximum number of times that a combination-permutation in a test case is retried
      * if it fails because a problem with a container or vm
@@ -198,8 +198,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
 
                 ArrayList<CorfuServer> nodes = new ArrayList<>(corfuCluster.<CorfuServer>nodes().values());
 
-                String combinationName = combination.stream().map(i -> i.toString()).
-                        collect(Collectors.joining(" - "));
+                String combinationName = getCombinationName(combination);
                 testCase.it(getTestCaseDescription(startServersSequentially, combinationName), data -> {
                     CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
                             (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
@@ -240,9 +239,9 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         CorfuClient corfuClient = null;
         CorfuTable<String, String> table = null;
 
-        for (ArrayList<Integer> combination : combinationsAndPermutations) {
-            String combinationName = combination.stream().map(i -> i.toString()).
-                    collect(Collectors.joining(" - "));
+        for (int j = 0; j < combinationsAndPermutations.size(); j++) {
+            ArrayList<Integer> combination = combinationsAndPermutations.get(j);
+            String combinationName = getCombinationName(combination);
             for (int i = 0; i < MAX_NODES_FAILURES_RETRIES; i++) {
                 log.info("Execute test: {}. Attempt {}", getTestCaseDescription(startServersSequentially, combinationName), i);
                 try {
@@ -266,16 +265,26 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                     }
                 }catch (Exception ex){
                     log.error(String.format("Error executing test combination", combinationName), ex);
+                    List<String> endpoints = nodes == null ? new ArrayList<>() :
+                            nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList());
                     CombinationResult result = new CombinationResult(getTestName(), getTimestamp(), combinationName, combination,
-                            clusterStatusesExpected, nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()),
+                            clusterStatusesExpected, endpoints,
                             table, -1, startServersSequentially);
                     result.failedWithUnhandledException = true;
                     testResult.add(result);
                     shutdownUniverse();
                 }
+                logPartialSummary(testResult, combinationsAndPermutations.
+                        subList(j+1, combinationsAndPermutations.size()).stream().
+                        map(c -> getCombinationName(c)).collect(Collectors.toList()));
             }
         }
         executeFinalAssertations(testResult, combinationsAndPermutations);
+    }
+
+    private String getCombinationName(ArrayList<Integer> combination) {
+        return combination.stream().map(i -> i.toString()).
+                collect(Collectors.joining(" - "));
     }
 
     private void shutdownUniverse() {
@@ -470,11 +479,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     }
 
     private void executeFinalAssertations(ArrayList<CombinationResult> testResult, ArrayList<ArrayList<Integer>> combinationsAndPermutations) {
-        List<String> summary = new ArrayList<>();
-        summary.add("Summary of the test:");
-        summary.add(CombinationResult.getDescriptionColumns());
-        summary.addAll(testResult.stream().map(CombinationResult::getDescription).collect(Collectors.toList()));
-        log.info(summary.stream().collect(Collectors.joining("\n")));
+        logSummary(testResult);
         for (CombinationResult r : testResult) {
             r.saveLayouts();
         }
@@ -496,6 +501,28 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         if(untestedCombinations > 0)
             log.warn(String.format("%s combination has not been tested", untestedCombinations));
         assertThat(untestedCombinations).isLessThan(maxUntestedCombinationsAllowed);
+    }
+
+    private void logPartialSummary(ArrayList<CombinationResult> testResult, List<String> pendingCombinations) {
+        List<String> finalMessage = new ArrayList<>();
+        finalMessage.add("Pending combinations:");
+        finalMessage.addAll(pendingCombinations);
+        logSummary(testResult, "Partial summary of the test:",
+                finalMessage.stream().collect(Collectors.joining("\n")));
+    }
+
+    private void logSummary(ArrayList<CombinationResult> testResult) {
+        logSummary(testResult, "Summary of the test:", "");
+    }
+
+    private void logSummary(ArrayList<CombinationResult> testResult, String initialMessage, String finalMessage){
+        List<String> summary = new ArrayList<>();
+        summary.add(initialMessage);
+        summary.add(CombinationResult.getDescriptionColumns());
+        summary.addAll(testResult.stream().map(CombinationResult::getDescription).collect(Collectors.toList()));
+        if(!finalMessage.isEmpty())
+            summary.add(finalMessage);
+        log.info(summary.stream().collect(Collectors.joining("\n")));
     }
 
     private String getTestCaseDescription(boolean startServersSequentially, String combinationName){
@@ -797,18 +824,22 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         public ArrayList<DataValidationResultType> dataValidationResult = new ArrayList<>();
 
         public void addAfterFailureLayouts(Layout afterFailureLayout){
-            String jsonLayout = afterFailureLayout.asJSONString();
-            if(afterFailureLayouts.isEmpty() ||
-                    !jsonLayout.equals(afterFailureLayouts.get(afterFailureLayouts.size()-1))){
-                afterFailureLayouts.add(jsonLayout);
+            if(afterFailureLayout != null) {
+                String jsonLayout = afterFailureLayout.asJSONString();
+                if (afterFailureLayouts.isEmpty() ||
+                        !jsonLayout.equals(afterFailureLayouts.get(afterFailureLayouts.size() - 1))) {
+                    afterFailureLayouts.add(jsonLayout);
+                }
             }
         }
 
         public void addAfterHealingLayouts(Layout afterHealingLayout){
-            String jsonLayout = afterHealingLayout.asJSONString();
-            if(afterHealingLayouts.isEmpty() ||
-                    !jsonLayout.equals(afterHealingLayouts.get(afterHealingLayouts.size()-1))){
-                afterHealingLayouts.add(jsonLayout);
+            if(afterHealingLayout != null) {
+                String jsonLayout = afterHealingLayout.asJSONString();
+                if (afterHealingLayouts.isEmpty() ||
+                        !jsonLayout.equals(afterHealingLayouts.get(afterHealingLayouts.size() - 1))) {
+                    afterHealingLayouts.add(jsonLayout);
+                }
             }
         }
 
@@ -864,7 +895,8 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
 
         public void assertResultStatus() {
             assertThat(clusterStatus).isIn(clusterStatusesExpected);
-            combination.forEach(i -> assertThat(connectionMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.ConnectivityStatus.RESPONSIVE));
+            if(connectionMap != null)
+                combination.forEach(i -> assertThat(connectionMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.ConnectivityStatus.RESPONSIVE));
             //The validation of node status and active servers can be performed only if the cluster is in a
             //status different than unavailable
             if(!clusterStatusesExpected.contains(ClusterStatusReport.ClusterStatus.UNAVAILABLE)) {

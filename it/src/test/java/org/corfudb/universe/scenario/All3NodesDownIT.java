@@ -33,7 +33,7 @@ public class All3NodesDownIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is UNAVAILABLE and the data path
      * operations failed with UnreachableClusterException
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void allNodesDownOneNodeUpTest() {
         testAllNodesAllRecoverCombinations(true, 1);
     }
@@ -49,7 +49,7 @@ public class All3NodesDownIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void allNodesDownQuorumNodesUpSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getQuorumAmountOfNodes());
     }
@@ -65,7 +65,7 @@ public class All3NodesDownIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void allNodesDownQuorumNodesUpConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getQuorumAmountOfNodes());
     }
@@ -81,7 +81,7 @@ public class All3NodesDownIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void allNodesDownAllNodesUpSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
@@ -97,7 +97,7 @@ public class All3NodesDownIT extends AllNodesBaseIT {
      * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
      * operations works
      */
-    @Test(timeout = (6 * 300 * 1000))
+    @Test(timeout = (12 * 300 * 1000))
     public void allNodesDownAllNodesUpConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }

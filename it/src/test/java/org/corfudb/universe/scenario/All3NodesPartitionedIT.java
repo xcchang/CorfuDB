@@ -34,7 +34,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations failed with UnreachableClusterException
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (10 * 300 * 1000))
+    @Test(timeout = (36 * 300 * 1000))
     public void allNodesDisconnectedOneNodeReconnectedTest() {
         testAllNodesAllRecoverCombinations(true, 1);
     }
@@ -51,7 +51,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (10 * 300 * 1000))
+    @Test(timeout = (36 * 300 * 1000))
     public void allNodesDisconnectedQuorumNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getQuorumAmountOfNodes());
     }
@@ -68,7 +68,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (10 * 300 * 1000))
+    @Test(timeout = (36 * 300 * 1000))
     public void allNodesDisconnectedQuorumNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getQuorumAmountOfNodes());
     }
@@ -85,7 +85,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (10 * 300 * 1000))
+    @Test(timeout = (36 * 300 * 1000))
     public void allNodesDisconnectedAllNodesReconnectedSequentiallyTest() {
         testAllNodesAllRecoverCombinations(true, getAmountOfNodes());
     }
@@ -102,7 +102,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (10 * 300 * 1000))
+    @Test(timeout = (36 * 300 * 1000))
     public void allNodesDisconnectedAllNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }
