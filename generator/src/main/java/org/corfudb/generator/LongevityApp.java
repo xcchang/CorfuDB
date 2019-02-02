@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by rmichoud on 7/25/17.
@@ -49,6 +50,8 @@ public class LongevityApp {
 
     long startTime;
     int numberThreads;
+
+    private final AtomicInteger counter = new AtomicInteger(0);
 
 
     public LongevityApp(long durationMs, int numberThreads, String configurationString, boolean checkPoint) {
@@ -136,6 +139,7 @@ public class LongevityApp {
                 throw new UnrecoverableCorfuInterruptedError(e);
             }
 
+            System.out.println("Total Operations: " + counter.get());
             exitStatus = checkpointHasFinished ? 0 : 1;
             System.exit(exitStatus);
         }
@@ -187,7 +191,7 @@ public class LongevityApp {
         // Assign a worker for each thread in the pool
         for (int i = 0; i < numberThreads; i++) {
             workers.execute(() -> {
-                long startTime = System.currentTimeMillis();
+                //long startTime = System.currentTimeMillis();
                 int operationCount = 0;
                 while (withinDurationLimit()) {
                     try {
@@ -198,9 +202,8 @@ public class LongevityApp {
                         log.error("Operation failed with", e);
                     }
                 }
-                long endTime = System.currentTimeMillis();
-                System.out.println("Number of operations: " + operationCount);
-                System.out.println("Total time: " + (endTime - startTime)/1000 + " seconds");
+                //long endTime = System.currentTimeMillis();
+                counter.getAndAdd(operationCount);
             });
         }
     }
