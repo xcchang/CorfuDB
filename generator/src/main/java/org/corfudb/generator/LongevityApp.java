@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
  *
  */
 @Slf4j
+@SuppressWarnings("checkstyle:printLine")
 public class LongevityApp {
     private long durationMs;
     private boolean checkPoint;
@@ -171,6 +172,7 @@ public class LongevityApp {
                     log.error("operation error", e);
                 }
             }
+
         });
 
     }
@@ -185,14 +187,20 @@ public class LongevityApp {
         // Assign a worker for each thread in the pool
         for (int i = 0; i < numberThreads; i++) {
             workers.execute(() -> {
+                long startTime = System.currentTimeMillis();
+                int operationCount = 0;
                 while (withinDurationLimit()) {
                     try {
                         Operation op = operationQueue.take();
                         op.execute();
+                        operationCount++;
                     } catch (Exception e) {
                         log.error("Operation failed with", e);
                     }
                 }
+                long endTime = System.currentTimeMillis();
+                System.out.println("Number of operations: " + operationCount);
+                System.out.println("Total time: " + (endTime - startTime)/1000 + " seconds");
             });
         }
     }
