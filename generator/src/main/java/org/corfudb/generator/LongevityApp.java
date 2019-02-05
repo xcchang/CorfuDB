@@ -164,7 +164,9 @@ public class LongevityApp {
                 try {
                     operationQueue.put(current);
                 } catch (InterruptedException e) {
-                    throw new UnrecoverableCorfuInterruptedError(e);
+                    if (withinDurationLimit()) {
+                        throw new UnrecoverableCorfuInterruptedError(e);
+                    }
                 } catch (Exception e) {
                     log.error("operation error", e);
                 }
