@@ -188,7 +188,7 @@ public class LongevityApp {
                 while (withinDurationLimit()) {
                     try {
                         Operation op = operationQueue.take();
-                        op.execute();
+                        CompletableFuture.runAsync(()->op.execute());
                     } catch (Exception e) {
                         log.error("Operation failed with", e);
                     }
