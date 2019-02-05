@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
  *
  */
 @Slf4j
+@SuppressWarnings("checkstyle:printLine")
 public class LongevityApp {
     private long durationMs;
     private boolean checkPoint;
@@ -159,10 +160,12 @@ public class LongevityApp {
      */
     private void runTaskProducer() {
         taskProducer.execute(() -> {
-            while (true) {
+            int count = 0;
+            while (withinDurationLimit()) {
                 Operation current = state.getOperations().getRandomOperation();
                 try {
                     operationQueue.put(current);
+                    count++;
                 } catch (InterruptedException e) {
                     if (withinDurationLimit()) {
                         throw new UnrecoverableCorfuInterruptedError(e);
@@ -171,6 +174,7 @@ public class LongevityApp {
                     log.error("operation error", e);
                 }
             }
+            System.out.println(count);
         });
 
     }
