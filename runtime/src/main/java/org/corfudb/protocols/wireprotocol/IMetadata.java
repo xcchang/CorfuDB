@@ -68,8 +68,7 @@ public interface IMetadata {
     @SuppressWarnings("unchecked")
     @Nullable
     default DataRank getRank() {
-        return (DataRank) getMetadataMap().getOrDefault(LogUnitMetadataType.RANK,
-                null);
+        return (DataRank) getMetadataMap().getOrDefault(LogUnitMetadataType.RANK, null);
     }
 
     /**

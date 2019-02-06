@@ -45,6 +45,12 @@ public class HandOfGodIT extends GenericIntegrationTest {
                 CorfuServer server1 = corfuCluster.getServerByIndex(1);
                 CorfuServer server2 = corfuCluster.getServerByIndex(2);
 
+                System.out.println(server0.getEndpoint());
+                System.out.println(server1.getEndpoint());
+                System.out.println(server2.getEndpoint());
+
+                System.exit(0);
+
                 // Sequentially kill two nodes
                 server1.kill();
                 server2.kill();

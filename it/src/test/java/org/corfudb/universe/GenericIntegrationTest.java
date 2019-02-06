@@ -23,7 +23,7 @@ public abstract class GenericIntegrationTest {
     protected DockerClient docker;
     protected Universe universe;
 
-    protected final UniverseMode universeMode = UniverseMode.DOCKER;
+    protected final UniverseMode universeMode = UniverseMode.VM;
 
     @Before
     public void setUp() throws Exception {

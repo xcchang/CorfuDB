@@ -10,7 +10,6 @@ import java.nio.file.Paths;
  * <p>
  * Created by maithem on 4/4/18.
  */
-
 public class Persistence {
 
     /**
@@ -23,7 +22,7 @@ public class Persistence {
      * @param dir the directory to be synced
      * @throws IOException
      */
-    public static void syncDirectory(String dir) throws IOException {
+    public static void syncDirectory( String dir) throws IOException {
         Path dirPath = Paths.get(dir);
         try (FileChannel channel = FileChannel.open(dirPath)) {
             channel.force(true);

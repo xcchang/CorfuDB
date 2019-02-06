@@ -9,15 +9,20 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang.RandomStringUtils;
+import org.apache.commons.lang.math.RandomUtils;
 import org.corfudb.AbstractCorfuTest;
 import org.corfudb.format.Types;
 import org.corfudb.format.Types.Metadata;
@@ -31,6 +36,17 @@ import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
+import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.results.RunResult;
+import org.openjdk.jmh.runner.Runner;
+import org.openjdk.jmh.runner.RunnerException;
+import org.openjdk.jmh.runner.options.Options;
+import org.openjdk.jmh.runner.options.OptionsBuilder;
+import org.openjdk.jmh.runner.options.TimeValue;
+import org.openjdk.jmh.runner.options.VerboseMode;
 
 
 /**
@@ -45,10 +61,53 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
     private ServerContext getContext() {
         String path = getDirPath();
         return new ServerContextBuilder()
-            .setLogPath(path)
-            .setMemory(false)
-            .build();
+                .setLogPath(path)
+                .setMemory(false)
+                .build();
     }
+
+    @Test
+    public void testWriteReadPerformance() throws RunnerException {
+        perf();
+    }
+
+    private void perf() {
+        byte[] streamEntry = "Payload".getBytes();
+        ByteBuf b = Unpooled.buffer();
+        Serializers.CORFU.serialize(streamEntry, b);
+        LogData entry = new LogData(DataType.DATA, b);
+        StreamLog log = new StreamLogFiles(getContext(), false);
+
+        List<LogData> data = new ArrayList<>();
+        /*for (int i = 0; i < 10000; i++) {
+            byte[] currstreamEntry = RandomStringUtils.randomAlphanumeric(10000).getBytes();
+            ByteBuf bb = Unpooled.buffer();
+            Serializers.CORFU.serialize(currstreamEntry, bb);
+            LogData currentry = new LogData(DataType.DATA, bb);
+            data.add(currentry);
+        }*/
+
+        long addr = 0;
+        for (int i = 0; i < 1000; i++) {
+            // Enable checksum, then append and read the same entry
+            addr = i;
+
+            log.append(addr, entry);
+            //assertThat(log.read(i).getPayload(null)).isEqualTo(streamEntry);
+        }
+
+        long start = System.currentTimeMillis();
+        for (int i = 0; i < 1000000; i++) {
+            // Enable checksum, then append and read the same entry
+            addr++;
+
+            log.append(addr, entry); //append(addr, entry);
+            //assertThat(log.read(i).getPayload(null)).isEqualTo(streamEntry);
+        }
+
+        System.out.println("time: " + (System.currentTimeMillis() - start));
+    }
+
 
     @Test
     public void testWriteReadWithChecksum() {

@@ -1,18 +1,15 @@
 package org.corfudb.infrastructure.log;
 
-import lombok.Data;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 
-import java.io.IOException;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * The global log is partition into segments, each segment contains a range of consecutive
@@ -21,49 +18,40 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author Maithem
  */
 @Slf4j
-@Data
+@AllArgsConstructor
 class SegmentHandle {
+    @Getter
     final long segment;
 
     @NonNull
+    @Getter
     final FileChannel writeChannel;
 
     @NonNull
+    @Getter
     final FileChannel readChannel;
 
     @NonNull
+    @Getter
     String fileName;
 
-    private final Map<Long, AddressMetaData> knownAddresses = new ConcurrentHashMap<>();
-    private final Set<Long> trimmedAddresses = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private final Set<Long> pendingTrims = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    private volatile int refCount = 0;
-
-
-    public synchronized void retain() {
-        refCount++;
-    }
-
-    public synchronized void release() {
-        if (refCount == 0) {
-            throw new IllegalStateException("refCount cannot be less than 0, segment " + segment);
-        }
-        refCount--;
-    }
+    @Getter
+    private final ConcurrentMap<Long, AddressMetaData> knownAddresses = new ConcurrentHashMap<>();
 
     public void close() {
-        Set<FileChannel> channels = new HashSet<>(
-                Arrays.asList(writeChannel, readChannel)
-        );
+        IOUtils.closeQuietly(writeChannel);
+        IOUtils.closeQuietly(readChannel);
+    }
 
-        for (FileChannel channel : channels) {
-            try {
-                channel.force(true);
-            } catch (IOException e) {
-                log.debug("Can't force updates in the channel", e.getMessage());
-            } finally {
-                IOUtils.closeQuietly(channel);
-            }
-        }
+    void updateKnownAddresses(Long address, AddressMetaData metaData) {
+        knownAddresses.put(address, metaData);
+    }
+
+    void updateKnownAddresses(Map<Long, AddressMetaData> knownAddresses) {
+        this.knownAddresses.putAll(knownAddresses);
+    }
+
+    public boolean contains(Long globalAddress) {
+        return knownAddresses.containsKey(globalAddress);
     }
 }

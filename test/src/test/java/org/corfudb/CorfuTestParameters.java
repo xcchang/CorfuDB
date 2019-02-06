@@ -120,8 +120,7 @@ public class CorfuTestParameters {
         CONCURRENCY_LOTS = TRAVIS_BUILD ? 25 : 100;
 
         // Filesystem
-        TEST_TEMP_DIR = com.google.common.io.Files.createTempDir()
-                                            .getAbsolutePath();
+        TEST_TEMP_DIR = com.google.common.io.Files.createTempDir().getAbsolutePath();
 
         // Random Seed
         SEED = System.getProperty("test.seed") == null ? 0L :

@@ -73,7 +73,7 @@ public interface Fixtures {
      * Configuration for VM specific Universe initialization
      */
     class VmUniverseFixture extends AbstractUniverseFixture<VmUniverseParams> {
-        private static final String VM_PREFIX = "corfu-vm-";
+        private static final String VM_PREFIX = "bynull-corfu-vm-";
 
         public VmUniverseParams data;
 

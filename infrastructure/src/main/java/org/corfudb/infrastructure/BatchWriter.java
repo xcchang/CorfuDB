@@ -90,7 +90,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
 
     public void bulkWrite(List<LogData> entries, long epoch) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<Void> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.RANGE_WRITE,
                     null, null, epoch, entries, cf));
         } catch (Exception e) {
