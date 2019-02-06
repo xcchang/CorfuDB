@@ -102,7 +102,7 @@ public class All3NodesPartitionedIT extends AllNodesBaseIT {
      * operations works
      */
     //@Ignore("Fix iptables for travis")
-    @Test(timeout = (36 * 300 * 1000))
+    @Test(timeout = (48 * 300 * 1000))
     public void allNodesDisconnectedAllNodesReconnectedConcurrentlyTest() {
         testAllNodesAllRecoverCombinations(false, getAmountOfNodes());
     }

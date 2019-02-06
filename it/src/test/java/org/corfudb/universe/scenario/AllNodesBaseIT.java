@@ -98,6 +98,10 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
      * Delay between two creations of universe sceneries (dockers or vms).
      */
     static final Duration SLEEP_BEFORE_CREATE_NEW_UNIVERSE = Duration.ofMillis(2000);
+    /**
+     * Data validations failures allowed.
+     */
+    static final int ALLOWED_DATA_FAILURES = DEFAULT_TABLE_ITER / 20;
 
 
     /**
@@ -258,10 +262,17 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                             (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
                     testResult.add(result);
                     if (!result.imposibleToExecuteFailure && !result.imposibleToExecuteFix) {
+                        if (i < (MAX_NODES_FAILURES_RETRIES - 1))
+                            logPartialSummary(testResult, combinationsAndPermutations.
+                                    subList(j+1, combinationsAndPermutations.size()).stream().
+                                    map(c -> getCombinationName(c)).collect(Collectors.toList()));
                         break;
                     } else if (i < (MAX_NODES_FAILURES_RETRIES - 1)) {
                         log.info("Restarting universe...");
                         shutdownUniverse();
+                        logPartialSummary(testResult, combinationsAndPermutations.
+                                subList(j+1, combinationsAndPermutations.size()).stream().
+                                map(c -> getCombinationName(c)).collect(Collectors.toList()));
                     }
                 }catch (Exception ex){
                     log.error(String.format("Error executing test combination", combinationName), ex);
@@ -273,10 +284,10 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                     result.failedWithUnhandledException = true;
                     testResult.add(result);
                     shutdownUniverse();
+                    logPartialSummary(testResult, combinationsAndPermutations.
+                            subList(j+1, combinationsAndPermutations.size()).stream().
+                            map(c -> getCombinationName(c)).collect(Collectors.toList()));
                 }
-                logPartialSummary(testResult, combinationsAndPermutations.
-                        subList(j+1, combinationsAndPermutations.size()).stream().
-                        map(c -> getCombinationName(c)).collect(Collectors.toList()));
             }
         }
         executeFinalAssertations(testResult, combinationsAndPermutations);
@@ -288,8 +299,10 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     }
 
     private void shutdownUniverse() {
-        universe.shutdown();
-        docker.close();
+        if(universe != null)
+            universe.shutdown();
+        if(docker != null)
+            docker.close();
         universe = null;
         docker = null;
         currentCorfuCluster = null;
@@ -900,7 +913,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             //The validation of node status and active servers can be performed only if the cluster is in a
             //status different than unavailable
             if(!clusterStatusesExpected.contains(ClusterStatusReport.ClusterStatus.UNAVAILABLE)) {
-                combination.forEach(i -> assertThat(statusMap.get(endpoints.get(i))).isEqualTo(ClusterStatusReport.NodeStatus.UP));
+                combination.forEach(i -> assertThat(statusMap.get(endpoints.get(i))).isNotEqualTo(ClusterStatusReport.NodeStatus.DOWN));
                 assertThat(activeServers).isEqualTo(combination.size());
                 //The layout should change or at least stay the same
                 assertThat(initialEpoch).isLessThanOrEqualTo(finalEpoch);
@@ -908,7 +921,9 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         }
 
         public void assertResults() {
-            dataValidationResult.forEach(s -> assertThat(s).isEqualTo(DataValidationResultType.SUCCESS));
+            List<DataValidationResultType> failedataValidationResult = dataValidationResult.stream().
+                    filter(dvt -> !dvt.equals(DataValidationResultType.SUCCESS)).collect(Collectors.toList());
+            assertThat(failedataValidationResult.size()).isLessThanOrEqualTo(ALLOWED_DATA_FAILURES);
             assertResultStatus();
         }
 
