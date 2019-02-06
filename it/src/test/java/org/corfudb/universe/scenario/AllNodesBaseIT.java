@@ -13,7 +13,6 @@ import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.scenario.fixture.Fixtures;
-import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.util.Sleep;
 
 import java.io.File;
@@ -34,11 +33,16 @@ import static org.corfudb.universe.scenario.fixture.Fixtures.TestFixtureConst.DE
 import static org.junit.Assert.fail;
 
 /**
- * Base class of all combinatorial tests intended to test the link failure module.
+ * Base class of all combinatorial tests intended to verify the behaviour of the link failure module.
  * A test for this class is a set of failures, one per node, and and set of combination-permutations of these
- * failures. A example of one test:
+ * failures. A example of one test could be as follow:
  * - Set of failures: Stop, Discconect, None.
  * - Set of combinations-permutations 2 on 3: 0-1, 1-0, 0-2, 2-0, 1-2, 2-1
+ * The combinations-permutations are specified as indices over the set of server nodes, to indicate which servers
+ * must be healed. Heal means: execute the operation that solve the failure introduced for the specified server node.
+ * For example, if the scenario implies sequential healing, the combination-permutation 1-0 means:
+ * reconnect the second server on the list and after restart the first server. if the scenario implies concurrent
+ * healing, both operations will be executed at the same time.
  * The test can be performed in two ways:
  * - One cluster per combination-permutation of failures.
  * - One cluster for all combinations-permutations of failures.
@@ -47,7 +51,8 @@ import static org.junit.Assert.fail;
  * The class offers a general behaviour that goes as follow:
  * 1) Deploy and bootstrap a three nodes cluster
  * 2) Sequentially execute the specified failures for each node. The sub-class must
- * implement the method {@link AllNodesBaseIT#getFailureType(int)}. It possible to return None to
+ * implement the method {@link AllNodesBaseIT#getFailureType(int)} to indicate which failre correspond
+ * to which server node. It possible to return None to
  * inidicate no failure for a specific node, but just one of the nodes could have this "failure type".
  * 3) Verify cluster status is unavailable, node status are down and data path is not available
  * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
@@ -145,10 +150,45 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         return false;
     }
 
+    /**
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified amount of nodes are fix afterwards.
+     * Multiple test cases are executed. A test case is a specific combination-permutation
+     * of healed servers.
+     *
+     * 1) Deploy and bootstrap a three nodes cluster
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 3) Verify cluster status is unavailable, node status are down and data path is not available
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 5) Wait for the new layout is available
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param amountUp amount of servers to heal.
+     */
     protected void testAllNodesAllRecoverCombinations(boolean startServersSequentially, int amountUp){
         testAllNodesAllRecoverCombinations(startServersSequentially, amountUp, true);
     }
 
+    /**
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified amount of nodes are fix afterwards.
+     * Multiple test cases are executed. A test case is a specific combination-permutation
+     * of healed servers.
+     *
+     * 1) Deploy and bootstrap a three nodes cluster
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 3) Verify cluster status is unavailable, node status are down and data path is not available
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 5) Wait for the new layout is available
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param amountUp amount of servers to heal.
+     * @param permuteCombinations indicates if permutations of the combinations must be included in the tests.
+     */
     protected void testAllNodesAllRecoverCombinations(boolean startServersSequentially, int amountUp,
                                                       boolean permuteCombinations){
         if(useOneUniversePerTest()){
@@ -159,75 +199,76 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     }
 
     /**
-     * Test cluster behavior after all nodes are are failed and just the specified amount is fix afterwards.
-     * One universe is created for each test case. A test case is a specific combination-permutation
-     * of recovered servers.
-     * <p>
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified amount of nodes are fix afterwards.
+     * Multiple test cases are executed. A test case is a specific combination-permutation
+     * of healed servers.
+     * For this test one universe is created for each test case.
+     *
      * 1) Deploy and bootstrap a three nodes cluster
-     * 2) Sequentially stop all nodes
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
      * 3) Verify cluster status is unavailable, node status are down and data path is not available
-     * 4) Restart just one server
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
      * 5) Wait for the new layout is available
-     * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
-     * operations works
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param amountUp amount of servers to heal.
+     * @param permuteCombinations indicates if permutations of the combinations must be included in the tests.
      */
     private void testAllNodesAllRecoverCombinationsInDifferentUniverses(boolean startServersSequentially, int amountUp,
                                                                         boolean permuteCombinations) {
-        ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected = new ArrayList<>();
-        if (amountUp >= getQuorumAmountOfNodes()) {
-            clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.STABLE);
-            clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.DEGRADED);
-        } else {
-            clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.UNAVAILABLE);
-        }
-
-        ArrayList<CombinationResult> testResult = new ArrayList();
-        ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(getAmountOfNodes(), amountUp, permuteCombinations);
-
-        ClientParams clientParams = ClientParams.builder()
-                .systemDownHandlerTriggerLimit(10)
-                .requestTimeout(Duration.ofSeconds(5))
-                .idleConnectionTimeout(30)
-                .connectionTimeout(Duration.ofMillis(500))
-                .connectionRetryRate(Duration.ofMillis(1000))
-                .build();
-
-        for (ArrayList<Integer> combination : combinationsAndPermutations) {
-            getScenario(getAmountOfNodes()).describe((fixture, testCase) -> {
-                CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());
-
-                CorfuClient corfuClient = corfuCluster.getLocalCorfuClient(clientParams);
-
-                CorfuTable<String, String> table = initializeCorfuTable(corfuClient);
-
-                ArrayList<CorfuServer> nodes = new ArrayList<>(corfuCluster.<CorfuServer>nodes().values());
-
-                String combinationName = getCombinationName(combination);
-                testCase.it(getTestCaseDescription(startServersSequentially, combinationName), data -> {
-                    CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
-                            (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
-                    testResult.add(result);
-                });
-            });
-            universe.shutdown();
-        }
-        executeFinalAssertations(testResult, combinationsAndPermutations);
+        testAllNodesAllRecoverCombinations(startServersSequentially, amountUp, permuteCombinations, false);
     }
 
     /**
-     * Test cluster behavior after all nodes are are failed and just the specified amount is fix afterwards.
-     * One single universe is re-used for all test cases. A test case is a specific combination-permutation
-     * of recovered servers.
-     * <p>
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified amount of nodes are fix afterwards.
+     * Multiple test cases are executed. A test case is a specific combination-permutation
+     * of healed servers.
+     * For this test single universe is re-used for all test cases.
+     *
      * 1) Deploy and bootstrap a three nodes cluster
-     * 2) Sequentially stop all nodes
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
      * 3) Verify cluster status is unavailable, node status are down and data path is not available
-     * 4) Restart just one server
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
      * 5) Wait for the new layout is available
-     * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
-     * operations works
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param amountUp amount of servers to heal.
+     * @param permuteCombinations indicates if permutations of the combinations must be included in the tests.
      */
-    private void testAllNodesAllRecoverCombinationsInOneUniverse(boolean startServersSequentially, int amountUp, boolean permuteCombinations) {
+    private void testAllNodesAllRecoverCombinationsInOneUniverse(boolean startServersSequentially, int amountUp,
+                                                                 boolean permuteCombinations){
+        testAllNodesAllRecoverCombinations(startServersSequentially, amountUp, permuteCombinations, true);
+    }
+
+    /**
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified amount of nodes are fix afterwards.
+     * Multiple test cases are executed. A test case is a specific combination-permutation
+     * of healed servers.
+     * For this test single universe is re-used for all test cases.
+     *
+     * 1) Deploy and bootstrap a three nodes cluster
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 3) Verify cluster status is unavailable, node status are down and data path is not available
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
+     * 5) Wait for the new layout is available
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param amountUp amount of servers to heal.
+     * @param permuteCombinations indicates if permutations of the combinations must be included in the tests.
+     * @param reuseUniverse indicates if a universe (cluster  and clients) must be reuse as much as possible.
+     */
+    private void testAllNodesAllRecoverCombinations(boolean startServersSequentially, int amountUp,
+                                                    boolean permuteCombinations, boolean reuseUniverse) {
+        //Depending in the amount of nodes to heal, with can specify which is the expected cluster status
         ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected = new ArrayList<>();
         if (amountUp >= getQuorumAmountOfNodes()) {
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.STABLE);
@@ -236,19 +277,26 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             clusterStatusesExpected.add(ClusterStatusReport.ClusterStatus.UNAVAILABLE);
         }
 
+        //This list accumulates the test result for each combination-permutation tested
         ArrayList<CombinationResult> testResult = new ArrayList();
+
+        //Generate all the possible combinations and permutations (if apply)
         ArrayList<ArrayList<Integer>> combinationsAndPermutations = combine(getAmountOfNodes(), amountUp, permuteCombinations);
 
         ArrayList<CorfuServer> nodes = null;
         CorfuClient corfuClient = null;
         CorfuTable<String, String> table = null;
 
+        //we go through every possible combination-permutation, and, in case of a failure with the universe engine (docker,
+        //corfu-client connection, etc.), we allow some retries. The retries are necessary because after some amount
+        // of combinations tested, the docker client behave erratic.
         for (int j = 0; j < combinationsAndPermutations.size(); j++) {
             ArrayList<Integer> combination = combinationsAndPermutations.get(j);
             String combinationName = getCombinationName(combination);
             for (int i = 0; i < MAX_NODES_FAILURES_RETRIES; i++) {
                 log.info("Execute test: {}. Attempt {}", getTestCaseDescription(startServersSequentially, combinationName), i);
                 try {
+                    //Check if the universe (cluster and client) are active, if not, we re-initialize everything
                     if (currentCorfuCluster == null) {
                         if(docker == null)
                             docker = DefaultDockerClient.fromEnv().build();
@@ -258,21 +306,36 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
                         corfuClient = getCorfuClient();
                         table = initializeCorfuTable(corfuClient);
                     }
-                    CombinationResult result = testAllNodesWithOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
+                    //Perform the test case for the combination-permutation of this iteration
+                    CombinationResult result = testAllNodesOneRecoverCombination(combination, combinationName, clusterStatusesExpected,
                             (amountUp < getQuorumAmountOfNodes()), startServersSequentially, nodes, corfuClient, table);
+                    //Store the result for the combination-permutation
                     testResult.add(result);
+                    //Check if the test was executed successfully or not.
+                    //Success in this case means that not problems were found with the universe engine (docker,
+                    // corfu-client connections, etc.). It doesn't mean that test case pass or not.
                     if (!result.imposibleToExecuteFailure && !result.imposibleToExecuteFix) {
+                        //This case implies the test case was executed successfully (no problems with the universe engine)
                         if (i < (MAX_NODES_FAILURES_RETRIES - 1))
                             logPartialSummary(testResult, combinationsAndPermutations.
                                     subList(j+1, combinationsAndPermutations.size()).stream().
                                     map(c -> getCombinationName(c)).collect(Collectors.toList()));
+                        if(!reuseUniverse){
+                            log.info("Shutting down universe...");
+                            shutdownUniverse();
+                        }
                         break;
                     } else if (i < (MAX_NODES_FAILURES_RETRIES - 1)) {
+                        //This case implies that a universe failure was detected and the test case should be retried.
                         log.info("Restarting universe...");
                         shutdownUniverse();
                         logPartialSummary(testResult, combinationsAndPermutations.
                                 subList(j+1, combinationsAndPermutations.size()).stream().
                                 map(c -> getCombinationName(c)).collect(Collectors.toList()));
+                    } else if(!reuseUniverse){
+                        //This case implies that a universe failure was detected but the maximum number of retries was reached.
+                        log.info("Shutting down universe after max retries...");
+                        shutdownUniverse();
                     }
                 }catch (Exception ex){
                     log.error(String.format("Error executing test combination", combinationName), ex);
@@ -334,22 +397,35 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
     }
 
     /**
-     * Test cluster behavior after all nodes are are failed and just the specified combination is fix afterwards
-     * <p>
+     * Test cluster behavior after the failures specified by the method {@link AllNodesBaseIT#getFailureType(int)}
+     * are executed and just the specified {@code combination} of nodes are fix afterwards.
+     *
      * 1) Deploy and bootstrap a three nodes cluster
-     * 2) Sequentially stop all nodes
+     * 2) Sequentially execute the specified failures for each node through {@link AllNodesBaseIT#getFailureType(int)}.
      * 3) Verify cluster status is unavailable, node status are down and data path is not available
-     * 4) Restart just one server
+     * 4) Heal the nodes accordingly to the failure associated to it through {@link AllNodesBaseIT#getFailureType(int)}.
      * 5) Wait for the new layout is available
-     * 6) Verify the amount of active servers, the cluster status is STABLE or DEGRADED and the data path
-     * operations works
+     * 6) Verify the amount of active servers, the cluster status and the data path operations
+     *
+     * @param combination combination of healing nodes to test.
+     * @param combinationName name of the combination to use for logging.
+     * @param clusterStatusesExpected list of possible cluster status that are valid to expect after healing the
+     *                                {@code combination} of nodes specified.
+     * @param dataPathExceptionExpected whether the data path operations executed at the end of the test (step 6)
+     *                                  should result in a {@link org.corfudb.runtime.exceptions.UnreachableClusterException}
+     * @param startServersSequentially whether the healing operations must be executed sequentially one by one, or
+     *                                 concurrently all at once.
+     * @param nodes list of server nodes that form the corfu cluster.
+     * @param corfuClient a corfu client to use in the test.
+     * @param table a corfu table to use in the test.
      */
-    private CombinationResult testAllNodesWithOneRecoverCombination(ArrayList<Integer> combination, String combinationName,
-                                                                    ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected,
-                                                                    boolean dataPathExceptionExpected, boolean startServersSequentially,
-                                                                    ArrayList<CorfuServer> nodes, CorfuClient corfuClient,
-                                                                    CorfuTable<String, String> table) {
+    private CombinationResult testAllNodesOneRecoverCombination(ArrayList<Integer> combination, String combinationName,
+                                                                ArrayList<ClusterStatusReport.ClusterStatus> clusterStatusesExpected,
+                                                                boolean dataPathExceptionExpected, boolean startServersSequentially,
+                                                                ArrayList<CorfuServer> nodes, CorfuClient corfuClient,
+                                                                CorfuTable<String, String> table) {
         long currentEpoch = corfuClient.getLayout().getEpoch();
+        //Initialize the result class instance associated to this test case to execute
         CombinationResult result = new CombinationResult(getTestName(), getTimestamp(), combinationName, combination,
                 clusterStatusesExpected, nodes.stream().map(CorfuServer::getEndpoint).collect(Collectors.toList()),
                 table, currentEpoch, startServersSequentially);
@@ -401,7 +477,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             //Verify data path
             // At this point, if the cluster is completely partitioned, the local corfu client is still capable
             // to communicate with every node.
-            // It's not clear if under this conditions the data path operation should fail or should works.
+            // It's not clear if under these conditions the data path operation should fail or should works.
             // That's why the implementation is as follow:
             // check if we are able to write, otherwise do not check any thing
             executeIntermediateCorfuTableWrites(result);
@@ -482,6 +558,7 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
             if (executor != null)
                 executor.shutdownNow();
             // Recover nodes not present in the combination
+            // This is specially useful for the cases where we are reusing the universe between test cases
             IntStream.range(0, nodes.size() - 1).filter(i -> !combination.contains(i)).forEach(j -> {
                 recoverServer(nodes.get(j), j, "Error executing recovering from (%s)", "Imposible to execute recovering");
             });
@@ -611,6 +688,16 @@ public abstract class AllNodesBaseIT extends GenericIntegrationTest {
         return String.format("%s-IntermediateKey-%s", result.combinationName, index);
     }
 
+    /**
+     * Check if the data path operations are working as expected.
+     * The expected behavior depends of the expected cluster status.
+     * If the expected cluster status for a test is UNAVAILABLE, the expected result for the data path operations
+     * is a exception. This expectation is controlled with the parameter {@code dataPathExceptionExpected}.
+     *
+     * @param combination combination tested.
+     * @param dataPathExceptionExpected whether a exception is expected result for the data path operation.
+     * @param result result class instance where the test result should be saved.
+     */
     private void testDataPathGetAfterRecovering(ArrayList<Integer> combination, boolean dataPathExceptionExpected, CombinationResult result) {
         log.info(String.format("Verify data path for combination %s", combination));
         int unexpectedExceptions = 0;
