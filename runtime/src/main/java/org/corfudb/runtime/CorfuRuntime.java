@@ -5,6 +5,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+import io.opentracing.Tracer;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 import java.time.Duration;
@@ -59,13 +60,7 @@ import org.corfudb.runtime.view.ManagementView;
 import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.runtime.view.SequencerView;
 import org.corfudb.runtime.view.StreamsView;
-import org.corfudb.util.CFUtils;
-import org.corfudb.util.GitRepositoryState;
-import org.corfudb.util.MetricsUtils;
-import org.corfudb.util.NodeLocator;
-import org.corfudb.util.Sleep;
-import org.corfudb.util.UuidUtils;
-import org.corfudb.util.Version;
+import org.corfudb.util.*;
 
 /**
  * Created by mwei on 12/9/15.
@@ -521,6 +516,9 @@ public class CorfuRuntime {
      */
     @Getter
     private volatile boolean isShutdown = false;
+
+    @Getter
+    public final Tracer tracer = TracerUtils.initTracer("CorfuRuntime");
 
 
     /**
