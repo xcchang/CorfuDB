@@ -1,12 +1,12 @@
 package org.corfudb.infrastructure;
 
 import io.netty.channel.ChannelHandlerContext;
-import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
+import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Created by mwei on 12/4/15.
@@ -14,13 +14,7 @@ import java.util.concurrent.ExecutorService;
 @Slf4j
 public abstract class AbstractServer {
 
-    @Getter
-    @Setter
-    volatile boolean shutdown;
-
-    public AbstractServer() {
-        shutdown = false;
-    }
+    protected final AtomicReference<ServerState> state = new AtomicReference<>(ServerState.READY);
 
     /**
      * Get the message handler for this instance.
@@ -39,8 +33,7 @@ public abstract class AbstractServer {
     }
 
     public boolean isServerReadyToHandleMsg(CorfuMsg msg) {
-        // Overridden in sequencer to mark ready/not-ready state.
-        return true;
+        return state.get() == ServerState.READY;
     }
 
     /**
@@ -51,6 +44,16 @@ public abstract class AbstractServer {
      * @param r   The router that took in the message.
      */
     public void handleMessage(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        if (state.get() == ServerState.SHUTDOWN) {
+            log.warn("Server received {} but is already shutdown.", msg.getMsgType().toString());
+            return;
+        }
+
+        if (!isServerReadyToHandleMsg(msg)) {
+            r.sendResponse(ctx, msg, CorfuMsgType.NOT_READY.msg());
+            return;
+        }
+
         if (!getHandler().handle(msg, ctx, r)) {
             log.warn("Received unhandled message type {}", msg.getMsgType());
         }
@@ -62,8 +65,11 @@ public abstract class AbstractServer {
      * Shutdown the server.
      */
     public void shutdown() {
-        setShutdown(true);
+        state.set(ServerState.SHUTDOWN);
         getExecutor().shutdownNow();
     }
 
+    public enum ServerState {
+        READY, NOT_READY, SHUTDOWN
+    }
 }

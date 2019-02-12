@@ -71,6 +71,8 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             .setLength(-1)
             .build()
             .getSerializedSize();
+
+    private static final long ZERO_SEGMENT = 0;
     public static final int VERSION = 2;
     public static final int RECORDS_PER_LOG_FILE = 10000;
     private final Path logDir;
@@ -78,17 +80,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
     private final StreamLogDataStore dataStore;
 
-    private ConcurrentMap<String, SegmentHandle> writeChannels;
-    private Set<FileChannel> channelsToSync;
-    private MultiReadWriteLock segmentLocks = new MultiReadWriteLock();
+    private final ConcurrentMap<String, SegmentHandle> writeChannels;
+    private final Set<FileChannel> channelsToSync;
+    private final MultiReadWriteLock segmentLocks = new MultiReadWriteLock();
 
-    //=================Log Metadata=================
-    // TODO(Maithem) this should effectively be final, but it is used
-    // by a reset API that clears the state of this class, on reset
-    // a new instance of this class should be created after deleting
-    // the files of the old instance
-    private LogMetadata logMetadata;
-
+    private final  LogMetadata logMetadata;
 
     /**
      * Returns a file-based stream log object.
@@ -1046,8 +1042,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         for (SegmentHandle fh : writeChannels.values()) {
             fh.close();
         }
-
-        writeChannels = new ConcurrentHashMap<>();
     }
 
     /**
@@ -1099,37 +1093,35 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
     /**
-     * TODO(Maithem) remove this method. Obtaining a new instance should happen
-     * through instantiation not by clearing this class' state
-     * <p>
      * Resets the Stream log.
      * Clears all data and resets the handlers.
      * Usage: To heal a recovering node, we require to wipe off existing data.
      */
     @Override
     public void reset() {
-        // Trim all segments
-        long endSegment = Math.max(logMetadata.getGlobalTail(), 0L) / RECORDS_PER_LOG_FILE;
-        log.warn("Global Tail:{}, endSegment={}", logMetadata.getGlobalTail(), endSegment);
+        log.warn("Global Tail:{}, endSegment={}", logMetadata.getGlobalTail());
+
+        try {
+            dataStore.resetStartingAddress();
+            dataStore.resetTailSegment();
+        } catch (Exception ex) {
+            log.error("Can't reset tailSegment and startingAddress in the data store");
+        }
 
         // Close segments before deleting their corresponding log files
-        closeSegmentHandlers(endSegment);
+        close();
 
         deleteFilesMatchingFilter(file -> {
             try {
                 String segmentStr = file.getName().split("\\.")[0];
-                return Long.parseLong(segmentStr) <= endSegment;
+                return Long.parseLong(segmentStr) >= ZERO_SEGMENT;
             } catch (Exception e) {
                 log.warn("reset: ignoring file {}", file.getName());
                 return false;
             }
         });
 
-        dataStore.resetStartingAddress();
-        dataStore.resetTailSegment();
-        logMetadata = new LogMetadata();
-        writeChannels.clear();
-        log.info("reset: Completed, end segment {}", endSegment);
+        log.info("reset: Completed, end segment {}", logMetadata.getGlobalTail());
     }
 
     @VisibleForTesting
