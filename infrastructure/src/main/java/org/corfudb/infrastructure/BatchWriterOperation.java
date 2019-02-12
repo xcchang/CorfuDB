@@ -6,6 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import lombok.Data;
 
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.protocols.wireprotocol.TailsResponse;
 
 /**
  * Created by maithem on 11/28/16.
@@ -28,10 +29,9 @@ public class BatchWriterOperation {
     private final LogData logData;
     private final Long epoch;
     private final List<LogData> entries;
-    private final CompletableFuture future;
+    private final CompletableFuture<TailsResponse> future;
     private Exception exception;
 
 
-    public static BatchWriterOperation SHUTDOWN = new BatchWriterOperation(Type.SHUTDOWN,
-            null, null, null, null, null);
+    public static BatchWriterOperation SHUTDOWN = new BatchWriterOperation(Type.SHUTDOWN, null, null, null, null, null);
 }

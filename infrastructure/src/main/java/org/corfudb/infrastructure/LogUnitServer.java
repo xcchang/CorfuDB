@@ -5,8 +5,10 @@ import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelHandlerContext;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
 import org.corfudb.infrastructure.log.StreamLog;
@@ -85,6 +87,7 @@ public class LogUnitServer extends AbstractServer {
 
     /**
      * Returns a new LogUnitServer.
+     *
      * @param serverContext context object providing settings and objects
      */
     public LogUnitServer(ServerContext serverContext) {
@@ -132,27 +135,39 @@ public class LogUnitServer extends AbstractServer {
         r.sendResponse(ctx, msg, CorfuMsgType.TRIM_MARK_RESPONSE.payloadMsg(streamLog.getTrimMark()));
     }
 
+    public static class CallBack {
+        CorfuPayloadMsg<WriteRequest> msg;
+        ChannelHandlerContext ctx;
+        IServerRouter router;
+
+        public void callBack() {
+            router.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
+        }
+    }
+
     /**
      * Service an incoming write request.
      */
     @ServerHandler(type = CorfuMsgType.WRITE)
     public void write(CorfuPayloadMsg<WriteRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
-        log.debug("log write: global: {}, streams: {}", msg.getPayload().getToken(),
-                msg.getPayload().getData().getBackpointerMap());
+        log.debug(
+                "log write: global: {}, streams: {}",
+                msg.getPayload().getToken(),
+                msg.getPayload().getData().getBackpointerMap()
+        );
+
+        LogData logData = (LogData) msg.getPayload().getData();
+        logData.setEpoch(msg.getEpoch());
 
         try {
-            LogData logData = (LogData) msg.getPayload().getData();
-            logData.setEpoch(msg.getEpoch());
             dataCache.put(msg.getPayload().getGlobalAddress(), logData);
-            r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
-
+            r.sendResponse(ctx, msg, CorfuMsg.WRITE_OK);
         } catch (OverwriteException ex) {
             r.sendResponse(ctx, msg, CorfuMsgType.ERROR_OVERWRITE.payloadMsg(ex.getOverWriteCause().getId()));
         } catch (DataOutrankedException e) {
             r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_OUTRANKED.msg());
         } catch (ValueAdoptedException e) {
-            r.sendResponse(ctx, msg, CorfuMsgType.ERROR_VALUE_ADOPTED.payloadMsg(e
-                    .getReadResponse()));
+            r.sendResponse(ctx, msg, CorfuMsgType.ERROR_VALUE_ADOPTED.payloadMsg(e.getReadResponse()));
         }
     }
 
@@ -162,7 +177,7 @@ public class LogUnitServer extends AbstractServer {
         ReadResponse rr = new ReadResponse();
         try {
             for (Long l = msg.getPayload().getRange().lowerEndpoint();
-                    l < msg.getPayload().getRange().upperEndpoint() + 1L; l++) {
+                 l < msg.getPayload().getRange().upperEndpoint() + 1L; l++) {
                 ILogData e = dataCache.get(l);
                 if (e == null) {
                     rr.put(l, LogData.getEmpty(l));
@@ -197,8 +212,7 @@ public class LogUnitServer extends AbstractServer {
     }
 
     @ServerHandler(type = CorfuMsgType.FILL_HOLE)
-    private void fillHole(CorfuPayloadMsg<FillHoleRequest> msg, ChannelHandlerContext ctx,
-                          IServerRouter r) {
+    private void fillHole(CorfuPayloadMsg<FillHoleRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
         try {
             Token address = msg.getPayload().getAddress();
             log.debug("fillHole: filling address {}, epoch {}", address, msg.getEpoch());
@@ -257,8 +271,7 @@ public class LogUnitServer extends AbstractServer {
      * Services incoming range write calls.
      */
     @ServerHandler(type = CorfuMsgType.RANGE_WRITE)
-    private void rangeWrite(CorfuPayloadMsg<RangeWriteMsg> msg,
-                                  ChannelHandlerContext ctx, IServerRouter r) {
+    private void rangeWrite(CorfuPayloadMsg<RangeWriteMsg> msg, ChannelHandlerContext ctx, IServerRouter r) {
         List<LogData> entries = msg.getPayload().getEntries();
         batchWriter.bulkWrite(entries, msg.getEpoch());
         r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
@@ -266,9 +279,9 @@ public class LogUnitServer extends AbstractServer {
 
     /**
      * Seal the server with the epoch.
-     *
+     * <p>
      * - A seal operation is inserted in the queue and then we wait to flush all operations
-     *   in the queue before this operation.
+     * in the queue before this operation.
      * - All operations after this operation but stamped with an older epoch will be failed.
      */
     @Override
@@ -280,9 +293,9 @@ public class LogUnitServer extends AbstractServer {
     /**
      * Resets the log unit server via the BatchWriter.
      * Warning: Clears all data.
-     *
+     * <p>
      * - The epochWaterMark is set to prevent resetting log unit multiple times during
-     *   same epoch.
+     * same epoch.
      * - After this the reset operation is inserted which resets and clears all data.
      * - Finally the cache is invalidated to purge the existing entries.
      */
@@ -309,10 +322,10 @@ public class LogUnitServer extends AbstractServer {
      *
      * @param address The address to retrieve the entry from.
      * @return The log unit entry to retrieve into the cache.
-     *
-     *     This function should not care about trimmed addresses, as that is handled in
-     *     the read() and append(). Any address that cannot be retrieved should be returned as
-     *     unwritten (null).
+     * <p>
+     * This function should not care about trimmed addresses, as that is handled in
+     * the read() and append(). Any address that cannot be retrieved should be returned as
+     * unwritten (null).
      */
     private synchronized ILogData handleRetrieval(long address) {
         LogData entry = streamLog.read(address);
@@ -373,6 +386,22 @@ public class LogUnitServer extends AbstractServer {
                     .noVerify((Boolean) opts.get("--no-verify"))
                     .noSync((Boolean) opts.get("--no-sync"))
                     .build();
+        }
+    }
+
+    @Builder
+    public static class ServerWriter {
+        @NonNull
+        private final PerformantBatchWriter<Long, ILogData> batchWriter;
+
+        public void write(CorfuPayloadMsg<WriteRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+            WriteRequest payload = msg.getPayload();
+            log.debug("log write: global: {}, streams: {}", payload.getToken(), payload.getData().getBackpointerMap());
+
+            LogData logData = (LogData) payload.getData();
+            logData.setEpoch(msg.getEpoch());
+
+            batchWriter.asyncWrite(logData, (CorfuMsg operationResult) -> r.sendResponse(ctx, msg, operationResult));
         }
     }
 }

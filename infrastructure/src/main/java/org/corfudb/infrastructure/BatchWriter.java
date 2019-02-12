@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.CacheWriter;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -12,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 
@@ -40,7 +42,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
 
     private BlockingQueue<BatchWriterOperation> operationsQueue;
 
-    final ExecutorService writerService = Executors
+    private final ExecutorService writerService = Executors
             .newSingleThreadExecutor(new ThreadFactoryBuilder()
                     .setDaemon(false)
                     .setNameFormat("LogUnit-Write-Processor-%d")
@@ -74,7 +76,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
     @Override
     public void write(@Nonnull K key, @Nonnull V value) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<TailsResponse> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.WRITE,
                     (Long) key, (LogData) value, ((LogData) value).getEpoch(), null, cf));
             cf.get();
@@ -90,7 +92,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
 
     public void bulkWrite(List<LogData> entries, long epoch) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<TailsResponse> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.RANGE_WRITE,
                     null, null, epoch, entries, cf));
         } catch (Exception e) {
@@ -110,7 +112,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
      */
     public void prefixTrim(@Nonnull Token address) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<TailsResponse> cf = new CompletableFuture();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.PREFIX_TRIM,
                     address.getSequence(), null, address.getEpoch(), null, cf));
             cf.get();
@@ -133,7 +135,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
      */
     public void waitForSealComplete(long epoch) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
+            CompletableFuture<TailsResponse> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(Type.SEAL, null, null, epoch, null, cf));
             cf.get();
         } catch (Exception e) {
@@ -150,7 +152,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
      */
     public void reset(@Nonnull long epoch) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
+            CompletableFuture<TailsResponse> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(Type.RESET, null, null, epoch, null, cf));
             cf.get();
         } catch (Exception e) {

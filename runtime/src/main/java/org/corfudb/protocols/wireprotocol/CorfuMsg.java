@@ -21,13 +21,15 @@ import lombok.experimental.Accessors;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CorfuMsg {
+    public static final CorfuMsg WRITE_OK = new CorfuMsg(CorfuMsgType.WRITE_OK);
+    public static final CorfuMsg ERROR_DATA_OUTRANKED = new CorfuMsg(CorfuMsgType.ERROR_DATA_OUTRANKED);
 
     /**
      * Marker field value, should equal 0xC0FC0FC0.
      */
     static final int markerField = 0xC0FC0FC0;
     static Map<Byte, CorfuMsgType> typeMap =
-            Arrays.<CorfuMsgType>stream(CorfuMsgType.values())
+            Arrays.stream(CorfuMsgType.values())
                     .collect(Collectors.toMap(CorfuMsgType::asByte, Function.identity()));
     /**
      * The unique id of the client making the request.
