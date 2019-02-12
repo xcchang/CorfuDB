@@ -7,6 +7,10 @@ import com.google.common.collect.Range;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import lombok.Getter;
 import lombok.NonNull;
 
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.logprotocol.LogEntry;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.DataType;
@@ -35,6 +40,7 @@ import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.WriteSizeException;
 import org.corfudb.util.CorfuComponent;
+import org.corfudb.util.JsonUtils;
 import org.corfudb.util.serializer.Serializers;
 
 
@@ -44,6 +50,7 @@ import org.corfudb.util.serializer.Serializers;
  * <p>This class provides access to operations on a remote log unit.
  * Created by mwei on 12/10/15.
  */
+@Slf4j
 public class LogUnitClient extends AbstractClient {
 
     public LogUnitClient(IClientRouter router, long epoch) {
@@ -132,6 +139,12 @@ public class LogUnitClient extends AbstractClient {
      */
     private void checkWriteSize(ILogData ld) {
         if (maxWrite != 0 && ld.getSizeEstimate() > maxWrite) {
+            Path file = Paths.get("/var/log/corfu/tx/", System.currentTimeMillis() + ".txt");
+            try {
+                Files.write(file, JsonUtils.toJson(ld).getBytes());
+            } catch (IOException e) {
+                //ignore
+            }
             throw new WriteSizeException(ld.getSizeEstimate(), maxWrite);
         }
     }
