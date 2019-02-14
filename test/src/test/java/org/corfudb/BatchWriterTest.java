@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public class BatchWriterTest {
-    private static final int TOTAL_RECORDS = 1000 * 100;
+    private static final int TOTAL_RECORDS = 1000 * 10;
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
