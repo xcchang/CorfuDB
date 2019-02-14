@@ -112,7 +112,8 @@ public class BatchWriterTest {
 
         batchWriter.close();
         System.out.println("Wait for termination");
-        batchWriter.getWriterService().awaitTermination(50, TimeUnit.MILLISECONDS);
+        final int ms = 50;
+        batchWriter.getWriterService().awaitTermination(ms, TimeUnit.MILLISECONDS);
 
         long total = System.currentTimeMillis() - start;
         System.out.println("time: " + total);
