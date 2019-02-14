@@ -104,7 +104,7 @@ public class PerformantBatchWriter<K, V> implements AutoCloseable {
             try {
                 counter += data.size();
                 if (counter % 1000 == 0) {
-                    System.out.println("Writes!!! " + counter + ", time: " + (System.currentTimeMillis() - start));
+                    log.warn("Writes!!! " + counter + ", time: " + (System.currentTimeMillis() - start));
                 }
                 streamLog.append(data);
                 streamLog.sync(sync);

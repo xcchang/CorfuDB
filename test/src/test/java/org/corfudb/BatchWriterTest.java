@@ -54,8 +54,9 @@ public class BatchWriterTest {
          .writer(batchWriter)
          .build(this::handleRetrieval);**/
 
-        long start = System.currentTimeMillis();
-        for (int i = 0; i < 1000000; i++) {
+        final long start = System.currentTimeMillis();
+        final int totalRecords = 1000000;
+        for (int i = 0; i < totalRecords; i++) {
             // Enable checksum, then append and read the same entry
             final long addr = i;
             LogData entry = buildLogData(addr);
@@ -67,7 +68,8 @@ public class BatchWriterTest {
         System.out.println("time: " + total);
         //System.out.println("Speed: " + 100000 / streamLog.avgTime.stream().mapToLong(l -> l).sum() * 1000);
 
-        Thread.sleep(100000000);
+        final int timeout = 100000000;
+        Thread.sleep(timeout);
     }
 
     @Test
@@ -91,7 +93,7 @@ public class BatchWriterTest {
 
         final AtomicLong records = new AtomicLong();
 
-        int totalRecords = 1000000;
+        final int totalRecords = 1000000;
         for (int i = 0; i < totalRecords; i++) {
             // Enable checksum, then append and read the same entry
             final long addr = i;
@@ -104,7 +106,8 @@ public class BatchWriterTest {
         }
 
         while (records.get() < totalRecords) {
-            Thread.sleep(100);
+            final int timeout = 100;
+            Thread.sleep(timeout);
         }
 
         batchWriter.close();
@@ -115,7 +118,8 @@ public class BatchWriterTest {
         System.out.println("time: " + total);
         //System.out.println("Speed: " + totalRecords / streamLog.avgTime.stream().mapToLong(l -> l).sum() * 1000);
 
-        Thread.sleep(100000000);
+        final int timeout = 100000000;
+        Thread.sleep(timeout);
     }
 
     private static final byte[] streamEntry = ("PayloadPayloadPayloadPayloadPayloadPayloadPayloadPayloadPayloadPay")
