@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public class BatchWriterTest {
+    private static final int TOTAL_RECORDS = 1000 * 100;
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
@@ -55,8 +56,8 @@ public class BatchWriterTest {
          .build(this::handleRetrieval);**/
 
         final long start = System.currentTimeMillis();
-        final int totalRecords = 1000000;
-        for (int i = 0; i < totalRecords; i++) {
+
+        for (int i = 0; i < TOTAL_RECORDS; i++) {
             // Enable checksum, then append and read the same entry
             final long addr = i;
             LogData entry = buildLogData(addr);
@@ -69,7 +70,7 @@ public class BatchWriterTest {
         //System.out.println("Speed: " + 100000 / streamLog.avgTime.stream().mapToLong(l -> l).sum() * 1000);
 
         final int timeout = 100000000;
-        Thread.sleep(timeout);
+        //Thread.sleep(timeout);
     }
 
     @Test
@@ -93,8 +94,7 @@ public class BatchWriterTest {
 
         final AtomicLong records = new AtomicLong();
 
-        final int totalRecords = 1000000;
-        for (int i = 0; i < totalRecords; i++) {
+        for (int i = 0; i < TOTAL_RECORDS; i++) {
             // Enable checksum, then append and read the same entry
             final long addr = i;
             LogData entry = buildLogData(addr);
@@ -105,7 +105,7 @@ public class BatchWriterTest {
             });
         }
 
-        while (records.get() < totalRecords) {
+        while (records.get() < TOTAL_RECORDS) {
             final int timeout = 100;
             Thread.sleep(timeout);
         }
@@ -120,7 +120,7 @@ public class BatchWriterTest {
         //System.out.println("Speed: " + totalRecords / streamLog.avgTime.stream().mapToLong(l -> l).sum() * 1000);
 
         final int timeout = 100000000;
-        Thread.sleep(timeout);
+        //Thread.sleep(timeout);
     }
 
     private static final byte[] streamEntry = ("PayloadPayloadPayloadPayloadPayloadPayloadPayloadPayloadPayloadPay")
