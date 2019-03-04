@@ -72,7 +72,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             .build()
             .getSerializedSize();
 
-    private static final long ZERO_SEGMENT = 0;
     public static final int VERSION = 2;
     public static final int RECORDS_PER_LOG_FILE = 10000;
     private final Path logDir;
@@ -84,7 +83,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     private final Set<FileChannel> channelsToSync;
     private final MultiReadWriteLock segmentLocks = new MultiReadWriteLock();
 
-    private final  LogMetadata logMetadata;
+    private final LogMetadata logMetadata;
 
     /**
      * Returns a file-based stream log object.
@@ -762,8 +761,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @return A map of AddressMetaData for the written records
      * @throws IOException IO exception
      */
-    private Map<Long, AddressMetaData> writeRecords(SegmentHandle segment,
-                                                    List<LogData> entries) throws IOException {
+    private Map<Long, AddressMetaData> writeRecords(SegmentHandle segment, List<LogData> entries) throws IOException {
         Map<Long, AddressMetaData> recordsMap = new HashMap<>();
 
         List<ByteBuffer> entryBuffs = new ArrayList<>();
@@ -844,16 +842,14 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @param entry   The LogData to append.
      * @return Returns metadata for the written record
      */
-    private AddressMetaData writeRecord(SegmentHandle segment, long address,
-                                        LogData entry) throws IOException {
+    private AddressMetaData writeRecord(SegmentHandle segment, long address, LogData entry) throws IOException {
         LogEntry logEntry = getLogEntry(address, entry);
         Metadata metadata = getMetadata(logEntry);
 
         ByteBuffer record = getByteBuffer(metadata, logEntry);
         long channelOffset;
 
-        try (MultiReadWriteLock.AutoCloseableLock ignored =
-                     segmentLocks.acquireWriteLock(segment.getSegment())) {
+        try (MultiReadWriteLock.AutoCloseableLock ignored = segmentLocks.acquireWriteLock(segment.getSegment())) {
             channelOffset = segment.getWriteChannel().position() + METADATA_SIZE;
             safeWrite(segment.getWriteChannel(), record);
             channelsToSync.add(segment.getWriteChannel());
@@ -1102,8 +1098,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         log.warn("Global Tail:{}, endSegment={}", logMetadata.getGlobalTail());
 
         try {
-            dataStore.resetStartingAddress();
-            dataStore.resetTailSegment();
+            dataStore.reset();
         } catch (Exception ex) {
             log.error("Can't reset tailSegment and startingAddress in the data store");
         }
@@ -1111,15 +1106,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         // Close segments before deleting their corresponding log files
         close();
 
-        deleteFilesMatchingFilter(file -> {
-            try {
-                String segmentStr = file.getName().split("\\.")[0];
-                return Long.parseLong(segmentStr) >= ZERO_SEGMENT;
-            } catch (Exception e) {
-                log.warn("reset: ignoring file {}", file.getName());
-                return false;
-            }
-        });
+        try {
+            FileUtils.cleanDirectory(logDir.toFile());
+        } catch (IOException ioe) {
+            throw new UnrecoverableCorfuError(ioe);
+        }
 
         log.info("reset: Completed, end segment {}", logMetadata.getGlobalTail());
     }

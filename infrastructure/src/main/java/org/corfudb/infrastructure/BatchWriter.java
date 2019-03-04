@@ -9,6 +9,7 @@ import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
+import org.corfudb.runtime.exceptions.LogUnitException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
 
@@ -21,7 +22,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * BatchWriter is a class that will intercept write-through calls to batch and
@@ -273,16 +273,13 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
      * Reset batch writer
      */
     public void reset() {
-        // нам пофиг мы не контролируем очередь, это ответственность чувака на друглм уровне
+        writerService.shutdown();
 
         while (!operationsQueue.isEmpty()){
             BatchWriterOperation operation = operationsQueue.poll();
-            handleOperationResults(operation);
+            operation.getFuture().completeExceptionally(new LogUnitException("Reset LogUnit server"));
         }
-        operationsQueue.clear();
-        operationsQueue.add(BatchWriterOperation.SHUTDOWN);
 
         streamLog.reset();
-        writerService.shutdown();
     }
 }

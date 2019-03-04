@@ -34,10 +34,8 @@ public class StreamLogDataStoreTest {
     @Test
     public void testReset() {
         StreamLogDataStore streamLogDs = getStreamLogDataStore();
-        streamLogDs.resetStartingAddress();
+        streamLogDs.reset();
         assertEquals(INITIAL_ADDRESS, streamLogDs.getStartingAddress());
-
-        streamLogDs.resetTailSegment();
         assertEquals(INITIAL_ADDRESS, streamLogDs.getTailSegment());
     }
 

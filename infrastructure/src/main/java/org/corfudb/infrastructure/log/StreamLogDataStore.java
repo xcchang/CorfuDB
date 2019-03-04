@@ -99,10 +99,15 @@ public class StreamLogDataStore {
         startingAddress.set(newStartingAddress);
     }
 
+    public void reset() {
+        resetStartingAddress();
+        resetTailSegment();
+    }
+
     /**
      * Reset tail segment
      */
-    public void resetTailSegment() {
+    private void resetTailSegment() {
         log.info("Reset tail segment. Current segment: {}", tailSegment.get());
         dataStore.put(TAIL_SEGMENT_RECORD, ZERO_ADDRESS);
         tailSegment.set(ZERO_ADDRESS);
@@ -111,7 +116,7 @@ public class StreamLogDataStore {
     /**
      * Reset starting address
      */
-    public void resetStartingAddress() {
+    private void resetStartingAddress() {
         log.info("Reset starting address. Current address: {}", startingAddress.get());
         dataStore.put(STARTING_ADDRESS_RECORD, ZERO_ADDRESS);
         startingAddress.set(ZERO_ADDRESS);

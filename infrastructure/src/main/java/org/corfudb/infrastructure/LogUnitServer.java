@@ -128,7 +128,7 @@ public class LogUnitServer extends AbstractServer {
                     return logData == null ? 1 : logData.length;
                 })
                 .maximumWeight(config.getMaxCacheSize())
-                .writer(batchWriter.get())
+                .writer(getBatchWriter())
                 .build(this::handleRetrieval);
 
         dataCache.set(cache);
@@ -143,8 +143,12 @@ public class LogUnitServer extends AbstractServer {
      */
     @ServerHandler(type = CorfuMsgType.TAIL_REQUEST)
     public void handleTailRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
-        TailsResponse tails = batchWriter.get().queryTails(msg.getEpoch());
+        TailsResponse tails = getBatchWriter().queryTails(msg.getEpoch());
         r.sendResponse(ctx, msg, CorfuMsgType.TAIL_RESPONSE.payloadMsg(tails));
+    }
+
+    private BatchWriter<Long, ILogData> getBatchWriter() {
+        return batchWriter.get();
     }
 
     /**
@@ -246,7 +250,7 @@ public class LogUnitServer extends AbstractServer {
                             IServerRouter r) {
         try {
             TrimRequest req = msg.getPayload();
-            batchWriter.get().prefixTrim(req.getAddress());
+            getBatchWriter().prefixTrim(req.getAddress());
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         } catch (TrimmedException ex) {
             r.sendResponse(ctx, msg, CorfuMsgType.ERROR_TRIMMED.msg());
@@ -283,7 +287,7 @@ public class LogUnitServer extends AbstractServer {
     private void rangeWrite(CorfuPayloadMsg<RangeWriteMsg> msg,
                             ChannelHandlerContext ctx, IServerRouter r) {
         List<LogData> entries = msg.getPayload().getEntries();
-        batchWriter.get().bulkWrite(entries, msg.getEpoch());
+        getBatchWriter().bulkWrite(entries, msg.getEpoch());
         r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
     }
 
@@ -296,7 +300,7 @@ public class LogUnitServer extends AbstractServer {
      */
     @Override
     public void sealServerWithEpoch(long epoch) {
-        batchWriter.get().waitForSealComplete(epoch);
+        getBatchWriter().waitForSealComplete(epoch);
         log.info("LogUnit sealServerWithEpoch: sealed and flushed with epoch {}", epoch);
     }
 
@@ -325,7 +329,7 @@ public class LogUnitServer extends AbstractServer {
 
         serverContext.setLogUnitEpochWaterMark(msg.getPayload());
 
-        batchWriter.get().reset();
+        getBatchWriter().reset();
         init(serverContext);
 
         state.set(ServerState.READY);
@@ -356,7 +360,7 @@ public class LogUnitServer extends AbstractServer {
     public void shutdown() {
         super.shutdown();
         logCleaner.get().shutdown();
-        batchWriter.get().close();
+        getBatchWriter().close();
     }
 
     @VisibleForTesting
