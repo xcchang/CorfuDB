@@ -12,6 +12,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.experimental.Accessors;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Created by mwei on 9/15/15.
@@ -20,6 +21,7 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @NoArgsConstructor
 @AllArgsConstructor
+@Slf4j
 public class CorfuMsg {
 
     /**
@@ -77,6 +79,7 @@ public class CorfuMsg {
      * @return The corresponding message.
      */
     public static CorfuMsg deserialize(ByteBuf buffer) {
+
         int marker = buffer.readInt();
         if (marker != markerField) {
             throw new RuntimeException("Attempt to deserialize a message which is not a CorfuMsg, "

@@ -83,7 +83,7 @@ public class CorfuServer {
                     + "[-b] [-g -o <username_file> -j <password_file>] "
                     + "[-k <seqcache>] [-T <threads>] [-B <size>] [-i <channel-implementation>] "
                     + "[-H <seconds>] [-I <cluster-id>] [-x <ciphers>] [-z <tls-protocols>]] "
-                    + "[-P <prefix>] [-R <retention>] [--agent] <port>\n"
+                    + "[-P <prefix>] [-R <retention>] [--agent] [--tracer=<tracer>] <port>\n"
                     + "\n"
                     + "Options:\n"
                     + " -l <path>, --log-path=<path>                                             "

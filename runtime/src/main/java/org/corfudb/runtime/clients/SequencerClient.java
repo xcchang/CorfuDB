@@ -1,10 +1,15 @@
 package org.corfudb.runtime.clients;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapInjectAdapter;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.SequencerMetrics;
 import org.corfudb.protocols.wireprotocol.SequencerTailsRecoveryMsg;
@@ -41,8 +46,15 @@ public class SequencerClient extends AbstractClient {
      * @return A completable future with the token response from the sequencer.
      */
     public CompletableFuture<TokenResponse> nextToken(List<UUID> streamIDs, long numTokens) {
+        Map<String, String> inject = new HashMap<>();
+        Span activeSpan = getRouter().getParam().getTracer().activeSpan();
+
+        if (activeSpan != null)
+            this.getRouter().getParam().getTracer().inject(activeSpan.context(),
+                Format.Builtin.TEXT_MAP, new TextMapInjectAdapter(inject));
+
         return sendMessageWithFuture(CorfuMsgType.TOKEN_REQ.payloadMsg(
-                new TokenRequest(numTokens, streamIDs)));
+                new TokenRequest(numTokens, streamIDs, inject)));
     }
 
     /**
@@ -54,9 +66,10 @@ public class SequencerClient extends AbstractClient {
      * @return A completable future with the token response from the sequencer.
      */
     public CompletableFuture<TokenResponse> nextToken(List<UUID> streamIDs, long numTokens,
-                                                      TxResolutionInfo conflictInfo) {
-        return sendMessageWithFuture(CorfuMsgType.TOKEN_REQ.payloadMsg(
-                new TokenRequest(numTokens, streamIDs, conflictInfo)));
+                                                      TxResolutionInfo conflictInfo,
+                                                      Map<String, String> map) {
+            return sendMessageWithFuture(CorfuMsgType.TOKEN_REQ.payloadMsg(
+                    new TokenRequest(numTokens, streamIDs, conflictInfo, map)));
     }
 
     public CompletableFuture<Void> trimCache(Long address) {

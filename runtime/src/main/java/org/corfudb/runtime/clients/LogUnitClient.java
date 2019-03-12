@@ -5,6 +5,9 @@ import com.codahale.metrics.Timer;
 import com.google.common.collect.Range;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.opentracing.Span;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapInjectAdapter;
 import lombok.Getter;
 import org.corfudb.protocols.logprotocol.LogEntry;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
@@ -26,6 +29,7 @@ import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.serializer.Serializers;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -103,7 +107,14 @@ public class LogUnitClient extends AbstractClient {
      *     write completes.
      */
     public CompletableFuture<Boolean> write(ILogData payload) {
-        return sendMessageWithFuture(CorfuMsgType.WRITE.payloadMsg(new WriteRequest(payload)));
+        Map<String, String> inject = new HashMap<>();
+        Span activeSpan = getRouter().getParam().getTracer().activeSpan();
+        if (activeSpan != null)
+            getRouter().getParam().getTracer().inject(
+                    activeSpan.context(),
+                    Format.Builtin.TEXT_MAP, new TextMapInjectAdapter(inject));
+
+        return sendMessageWithFuture(CorfuMsgType.WRITE.payloadMsg(new WriteRequest(payload, inject)));
     }
 
     /**

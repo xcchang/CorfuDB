@@ -63,7 +63,8 @@ public class ServerContextBuilder {
                 .put("--HandshakeTimeout", handshakeTimeout)
                 .put("--sequencer-cache-size", seqCache)
                 .put("--batch-size", batchSize)
-                .put("--metadata-retention", retention);
+                .put("--metadata-retention", retention)
+                .put("--tracer", "10.33.82.92");
         if (logPath != null) {
          builder.put("--log-path", logPath);
         }

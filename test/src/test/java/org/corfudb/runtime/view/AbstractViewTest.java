@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
+import io.jaegertracing.Configuration;
+import io.jaegertracing.internal.clock.Clock;
 import io.netty.channel.DefaultEventLoopGroup;
 import io.netty.channel.EventLoopGroup;
 
 import javax.annotation.Nonnull;
+
+import io.opentracing.Tracer;
 import lombok.Data;
 import lombok.Getter;
 import org.corfudb.AbstractCorfuTest;
@@ -33,6 +37,7 @@ import org.corfudb.runtime.clients.ManagementHandler;
 import org.corfudb.runtime.clients.SequencerHandler;
 import org.corfudb.runtime.clients.TestClientRouter;
 import org.corfudb.runtime.clients.TestRule;
+import org.corfudb.util.MicrosecondPrecisionClock;
 import org.corfudb.util.NodeLocator;
 import org.junit.After;
 import org.junit.AfterClass;
@@ -73,6 +78,7 @@ import org.junit.BeforeClass;
  * Created by mwei on 12/22/15.
  */
 public abstract class AbstractViewTest extends AbstractCorfuTest {
+
     private static final int QUIET_PERIOD = 100;
     private static final int TIMEOUT = 300;
 
@@ -95,7 +101,8 @@ public abstract class AbstractViewTest extends AbstractCorfuTest {
         // Force all new CorfuRuntimes to override the getRouterFn
         CorfuRuntime.overrideGetRouterFunction = this::getRouterFunction;
         runtime = CorfuRuntime.fromParameters(CorfuRuntimeParameters.builder()
-            .nettyEventLoop(NETTY_EVENT_LOOP)
+                .nettyEventLoop(NETTY_EVENT_LOOP)
+                .tracerSInk("10.33.82.92")
             .build());
         // Default number of times to read before hole filling to 0
         // (most aggressive, to surface concurrency issues).
@@ -146,7 +153,8 @@ public abstract class AbstractViewTest extends AbstractCorfuTest {
                             endpoint.substring(endpoint.indexOf("test"), endpoint.length() - 1)
                             : endpoint;
                     TestClientRouter tcn =
-                            new TestClientRouter(testServerMap.get(serverName).getServerRouter());
+                            new TestClientRouter(testServerMap.get(serverName).getServerRouter(),
+                                    runtime.getParameters());
                     tcn.addClient(new BaseHandler())
                             .addClient(new SequencerHandler())
                             .addClient(new LayoutHandler())

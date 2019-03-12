@@ -51,6 +51,11 @@ public class CorfuServerParams implements NodeParams<CorfuServerParams> {
     @NonNull
     private final Duration stopTimeout = Duration.ofSeconds(1);
 
+    @Getter
+    @NonNull
+    @Default
+    private final String traceSink = "";
+
     @Override
     public String getName() {
         return clusterName + "-corfu-node" + getPort();

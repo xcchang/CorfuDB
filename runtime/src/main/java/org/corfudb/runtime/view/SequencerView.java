@@ -3,6 +3,9 @@ package org.corfudb.runtime.view;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.collect.Lists;
+import io.opentracing.Span;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapInjectAdapter;
 import org.corfudb.protocols.wireprotocol.TokenResponse;
 import org.corfudb.protocols.wireprotocol.TxResolutionInfo;
 import org.corfudb.runtime.CorfuRuntime;
@@ -12,6 +15,8 @@ import org.corfudb.util.MetricsUtils;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -97,9 +102,16 @@ public class SequencerView extends AbstractView {
      * @return First token to be written for the streams if there are no conflicts
      */
     public TokenResponse next(TxResolutionInfo conflictInfo, UUID ... streamIds) {
+        Map<String, String> inject = new HashMap<>();
+        Span activeSpan = runtime.getParameters().getTracer().activeSpan();
+        if (activeSpan != null)
+            this.runtime.getParameters().getTracer().inject(
+                    activeSpan.context(),
+                    Format.Builtin.TEXT_MAP, new TextMapInjectAdapter(inject));
+
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerNextMultipleStream)) {
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
-                    .nextToken(Arrays.asList(streamIds), 1, conflictInfo)));
+                    .nextToken(Arrays.asList(streamIds), 1, conflictInfo, inject)));
         }
     }
 
@@ -125,9 +137,14 @@ public class SequencerView extends AbstractView {
     @Deprecated
     public TokenResponse nextToken(Set<UUID> streamIDs, int numTokens,
                                    TxResolutionInfo conflictInfo) {
+        Map<String, String> inject = new HashMap<>();
+        this.runtime.getParameters().getTracer().inject(
+                runtime.getParameters().getTracer().activeSpan().context(),
+                Format.Builtin.TEXT_MAP, new TextMapInjectAdapter(inject));
+
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerDeprecatedNextMultipleStream)){
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
-                    .nextToken(Lists.newArrayList(streamIDs), numTokens, conflictInfo)));
+                    .nextToken(Lists.newArrayList(streamIDs), numTokens, conflictInfo, inject)));
         }
     }
 

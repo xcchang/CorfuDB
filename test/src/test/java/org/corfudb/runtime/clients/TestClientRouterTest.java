@@ -26,7 +26,7 @@ public class TestClientRouterTest extends AbstractCorfuTest {
         TestServerRouter tsr = new TestServerRouter();
         BaseServer bs = new BaseServer(ServerContextBuilder.defaultTestContext(0));
         tsr.addServer(bs);
-        tcr = new TestClientRouter(tsr);
+        tcr = new TestClientRouter(tsr, null);
         BaseHandler baseHandler = new BaseHandler();
         tcr.addClient(baseHandler);
         bc = new BaseClient(tcr, 0L);

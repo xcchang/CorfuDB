@@ -5,6 +5,7 @@ import static java.lang.Long.min;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
+import io.opentracing.Scope;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.logprotocol.SMREntry;
@@ -151,7 +152,7 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
         underlyingObject = new VersionLockedObject<T>(this::getNewInstance,
                 new StreamViewSMRAdapter(rt, rt.getStreamsView().getUnsafe(streamID)),
                 upcallTargetMap, undoRecordTargetMap,
-                undoTargetMap, resetSet);
+                undoTargetMap, resetSet, rt);
 
         metrics = CorfuRuntime.getDefaultMetrics();
         mpObj = CorfuComponent.OBJECT.toString();
@@ -172,7 +173,8 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
     public <R> R access(ICorfuSMRAccess<R, T> accessMethod,
                         Object[] conflictObject) {
         boolean isEnabled = MetricsUtils.isMetricsCollectionEnabled();
-        try (Timer.Context context = MetricsUtils.getConditionalContext(isEnabled, timerAccess)) {
+        try (Timer.Context context = MetricsUtils.getConditionalContext(isEnabled, timerAccess);
+             Scope scope = rt.getParameters().getTracer().buildSpan("accessInner").startActive(true)) {
             return accessInner(accessMethod, conflictObject, isEnabled);
         }
     }
@@ -221,7 +223,9 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
     @Override
     public long logUpdate(String smrUpdateFunction, final boolean keepUpcallResult,
                           Object[] conflictObject, Object... args) {
-        try (Timer.Context context = MetricsUtils.getConditionalContext(timerLogWrite)) {
+        try (Timer.Context context = MetricsUtils.getConditionalContext(timerLogWrite);
+                final Scope scope = rt.getParameters().getTracer()
+                .buildSpan("logUpdate").startActive(true)) {
             return logUpdateInner(smrUpdateFunction, keepUpcallResult, conflictObject, args);
         }
     }
@@ -257,7 +261,9 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
      */
     @Override
     public <R> R getUpcallResult(long timestamp, Object[] conflictObject) {
-        try (Timer.Context context = MetricsUtils.getConditionalContext(timerUpcall);) {
+        try (Timer.Context context = MetricsUtils.getConditionalContext(timerUpcall);
+             final Scope scope = rt.getParameters().getTracer()
+                     .buildSpan("getUpcallResult").startActive(true)) {
             return getUpcallResultInner(timestamp, conflictObject);
         }
     }

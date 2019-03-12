@@ -21,6 +21,7 @@ public class CorfuClusterParamsTest {
         CorfuServerParams param = CorfuServerParams
                 .serverParamsBuilder()
                 .port(port)
+                .traceSink("1.1.1.1")
                 .clusterName(clusterName)
                 .build();
 

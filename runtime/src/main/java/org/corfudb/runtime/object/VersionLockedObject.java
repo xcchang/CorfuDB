@@ -2,6 +2,9 @@ package org.corfudb.runtime.object;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import io.opentracing.tag.Tags;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.logprotocol.SMREntry;
 import org.corfudb.runtime.CorfuRuntime;
@@ -82,6 +85,7 @@ public class VersionLockedObject<T> {
      */
     private final ISMRStream smrStream;
 
+    public final CorfuRuntime rt;
     /**
      * The optimistic SMR stream on this object, if any.
      */
@@ -134,8 +138,10 @@ public class VersionLockedObject<T> {
                                Map<String, ICorfuSMRUpcallTarget<T>> upcallTargets,
                                Map<String, IUndoRecordFunction<T>> undoRecordTargets,
                                Map<String, IUndoFunction<T>> undoTargets,
-                               Set<String> resetSet) {
+                               Set<String> resetSet,
+                               CorfuRuntime rt) {
         this.smrStream = smrStream;
+        this.rt = rt;
 
         this.upcallTargetMap = upcallTargets;
         this.undoRecordFunctionMap = undoRecordTargets;
@@ -201,7 +207,9 @@ public class VersionLockedObject<T> {
         // meets the conditions for direct access.
         long ts = lock.tryOptimisticRead();
         if (ts != 0) {
-            try (Timer.Context optimistReadDuration = VloMetricsHelper.getOptimisticReadContext()) {
+            try (Timer.Context optimistReadDuration = VloMetricsHelper.getOptimisticReadContext();
+                 Scope scope = rt.getParameters().getTracer().buildSpan("VLO Access 0")
+                                 .startActive(true)) {
                 if (directAccessCheckFunction.apply(this)) {
                     log.trace("Access [{}] Direct (optimistic-read) access at {}",
                             this, getVersionUnsafe());
@@ -226,10 +234,14 @@ public class VersionLockedObject<T> {
                         this);
             }
         }
+
         // Next, we just upgrade to a full write lock if the optimistic
         // read fails, since it means that the state of the object was
         // updated.
-        try (Timer.Context updateObjectReadDuration = VloMetricsHelper.getUpdatedObjectReadContext()) {
+        try (
+                Scope scope =
+                        rt.getParameters().getTracer().buildSpan("VLO Access 1").startActive(true);
+                Timer.Context updateObjectReadDuration = VloMetricsHelper.getUpdatedObjectReadContext()) {
             // Attempt an upgrade
             ts = lock.tryConvertToWriteLock(ts);
             // Upgrade failed, try conversion again
@@ -312,52 +324,65 @@ public class VersionLockedObject<T> {
      * @param timestamp The timestamp to update the object to.
      */
     public void syncObjectUnsafe(long timestamp) {
-        // If there is an optimistic stream attached,
-        // and it belongs to this thread use that
-        if (optimisticallyOwnedByThreadUnsafe()) {
-            // If there are no updates, ensure we are at the right snapshot
-            if (optimisticStream.pos() == Address.NEVER_READ) {
-                final WriteSetSMRStream currentOptimisticStream =
-                        optimisticStream;
+        try (Scope scope = rt.getParameters().getTracer().buildSpan("syncObjectUnsafe")
+                .startActive(true)) {
+            scope.span().setTag("timestamp", timestamp);
+
+            // If there is an optimistic stream attached,
+            // and it belongs to this thread use that
+            if (optimisticallyOwnedByThreadUnsafe()) {
+                // If there are no updates, ensure we are at the right snapshot
+                if (optimisticStream.pos() == Address.NEVER_READ) {
+                    final WriteSetSMRStream currentOptimisticStream = optimisticStream;
+                    // If we are too far ahead, roll back to the past
+                    if (getVersionUnsafe() > timestamp) {
+                        try {
+                            rollbackObjectUnsafe(timestamp);
+                        } catch (NoRollbackException nre) {
+                            log.warn("SyncObjectUnsafe[{}] to {} failed {}", this, timestamp, nre);
+                            resetUnsafe();
+                        }
+                    }
+                    try (Scope xscope = rt.getParameters().getTracer().buildSpan("smrStream")
+                            .startActive(true)) {
+                        // Now sync the regular log
+                        syncStreamUnsafe(smrStream, timestamp);
+
+                    }
+                    // It's possible that due to reset,
+                    // the optimistic stream is no longer
+                    // present. Restore it.
+                    optimisticStream = currentOptimisticStream;
+                }
+                try (Scope xscope = rt.getParameters().getTracer().buildSpan("optimisticStream")
+                        .startActive(true)) {
+                    // Now sync the regular log
+                    syncStreamUnsafe(optimisticStream, Address.OPTIMISTIC);
+                }
+
+            } else {
+                // If there is an optimistic stream for another
+                // transaction, remove it by rolling it back first
+                if (this.optimisticStream != null) {
+                    optimisticRollbackUnsafe();
+                    this.optimisticStream = null;
+                }
                 // If we are too far ahead, roll back to the past
                 if (getVersionUnsafe() > timestamp) {
                     try {
                         rollbackObjectUnsafe(timestamp);
+                        // Rollback successfully got us to the right
+                        // version, we're done.
+                        if (getVersionUnsafe() == timestamp) {
+                            return;
+                        }
                     } catch (NoRollbackException nre) {
-                        log.warn("SyncObjectUnsafe[{}] to {} failed {}", this, timestamp, nre);
+                        log.warn("Rollback[{}] to {} failed {}", this, timestamp, nre);
                         resetUnsafe();
                     }
                 }
-                // Now sync the regular log
                 syncStreamUnsafe(smrStream, timestamp);
-                // It's possible that due to reset,
-                // the optimistic stream is no longer
-                // present. Restore it.
-                optimisticStream = currentOptimisticStream;
             }
-            syncStreamUnsafe(optimisticStream, Address.OPTIMISTIC);
-        } else {
-            // If there is an optimistic stream for another
-            // transaction, remove it by rolling it back first
-            if (this.optimisticStream != null) {
-                optimisticRollbackUnsafe();
-                this.optimisticStream = null;
-            }
-            // If we are too far ahead, roll back to the past
-            if (getVersionUnsafe() > timestamp) {
-                try {
-                    rollbackObjectUnsafe(timestamp);
-                    // Rollback successfully got us to the right
-                    // version, we're done.
-                    if (getVersionUnsafe() == timestamp) {
-                        return;
-                    }
-                } catch (NoRollbackException nre) {
-                    log.warn("Rollback[{}] to {} failed {}", this, timestamp, nre);
-                    resetUnsafe();
-                }
-            }
-            syncStreamUnsafe(smrStream, timestamp);
         }
     }
 
@@ -621,26 +646,32 @@ public class VersionLockedObject<T> {
     protected void syncStreamUnsafe(ISMRStream stream, long timestamp) {
         log.trace("Sync[{}] {}", this, (timestamp == Address.OPTIMISTIC)
                 ? "Optimistic" : "to " + timestamp);
-        long syncTo = (timestamp == Address.OPTIMISTIC) ? Address.MAX : timestamp;
-        stream.streamUpTo(syncTo)
-                .forEachOrdered(entry -> {
-                    try {
-                        Object res = applyUpdateUnsafe(entry);
-                        if (timestamp == Address.OPTIMISTIC) {
+
+        try (Scope scope = rt.getParameters().getTracer().buildSpan("syncStreamUnsafe")
+                .startActive(true)) {
+            scope.span().setTag("old version", stream.pos());
+            scope.span().setTag("new version", timestamp);
+            long syncTo = (timestamp == Address.OPTIMISTIC) ? Address.MAX : timestamp;
+            stream.streamUpTo(syncTo)
+                    .forEachOrdered(entry -> {
+                        try {
+                            Object res = applyUpdateUnsafe(entry);
+                            if (timestamp == Address.OPTIMISTIC) {
+                                entry.setUpcallResult(res);
+                            } else if (pendingUpcalls.contains(entry.getEntry().getGlobalAddress())) {
+                                log.debug("Sync[{}] Upcall Result {}",
+                                        this, entry.getEntry().getGlobalAddress());
+                                upcallResults.put(entry.getEntry().getGlobalAddress(), res == null
+                                        ? NullValue.NULL_VALUE : res);
+                                pendingUpcalls.remove(entry.getEntry().getGlobalAddress());
+                            }
                             entry.setUpcallResult(res);
-                        } else if (pendingUpcalls.contains(entry.getEntry().getGlobalAddress())) {
-                            log.debug("Sync[{}] Upcall Result {}",
-                                    this, entry.getEntry().getGlobalAddress());
-                            upcallResults.put(entry.getEntry().getGlobalAddress(), res == null
-                                    ? NullValue.NULL_VALUE : res);
-                            pendingUpcalls.remove(entry.getEntry().getGlobalAddress());
+                        } catch (Exception e) {
+                            log.error("Sync[{}] Error: Couldn't execute upcall due to {}", this, e);
+                            throw new UnrecoverableCorfuError(e);
                         }
-                        entry.setUpcallResult(res);
-                    } catch (Exception e) {
-                        log.error("Sync[{}] Error: Couldn't execute upcall due to {}", this, e);
-                        throw new UnrecoverableCorfuError(e);
-                    }
-                });
+                    });
+        }
     }
 
     /**

@@ -2,7 +2,9 @@ package org.corfudb.infrastructure;
 
 import com.codahale.metrics.Timer;
 import com.google.common.collect.ImmutableMap;
+import io.jaegertracing.Configuration;
 import io.netty.channel.ChannelHandlerContext;
+import io.opentracing.noop.NoopTracerFactory;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -18,11 +20,19 @@ import org.corfudb.protocols.wireprotocol.TokenRequest;
 import org.corfudb.protocols.wireprotocol.TokenResponse;
 import org.corfudb.protocols.wireprotocol.TokenType;
 import org.corfudb.protocols.wireprotocol.TxResolutionInfo;
+import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.MetricsUtils;
+import org.corfudb.util.MicrosecondPrecisionClock;
 import org.corfudb.util.Utils;
+
+import io.opentracing.Scope;
+import io.opentracing.SpanContext;
+import io.opentracing.Tracer;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapExtractAdapter;
 
 import java.lang.invoke.MethodHandles;
 import java.util.ArrayList;
@@ -104,6 +114,9 @@ public class SequencerServer extends AbstractServer {
      */
     private final Map<Byte, String> timerNameCache = new HashMap<>();
 
+    @Getter
+    private Tracer tracer = NoopTracerFactory.create();
+
     /**
      * Handler for this server.
      */
@@ -125,12 +138,18 @@ public class SequencerServer extends AbstractServer {
      * @param serverContext context object providing parameters and objects
      */
     public SequencerServer(ServerContext serverContext) {
+
         this.serverContext = serverContext;
         Map<String, Object> opts = serverContext.getServerConfig();
         this.executor = Executors.newFixedThreadPool(
                 serverContext.getSequencerThreadCount(),
                 new ServerThreadFactory("sequencer-", new ServerThreadFactory.ExceptionHandler())
         );
+
+        if (serverContext.getServerConfig().containsKey("--tracer")) {
+            this.tracer = CorfuRuntime.newTracer("SequencerServer",
+                    (String) serverContext.getServerConfig().get("--tracer"));
+        }
 
         long initialToken = Utils.parseLong(opts.get("--initial-token"));
         if (Address.nonAddress(initialToken)) {
@@ -280,23 +299,27 @@ public class SequencerServer extends AbstractServer {
      */
     private void handleTokenQuery(CorfuPayloadMsg<TokenRequest> msg,
                                   ChannelHandlerContext ctx, IServerRouter r) {
+
+        SpanContext spanContext = tracer.extract(Format.Builtin.TEXT_MAP,
+                new TextMapExtractAdapter(msg.getPayload().getTraceCtx()));
+        Scope scope = tracer.buildSpan("handleTokenQuery").asChildOf(spanContext).startActive(true);
+
+        scope.span().setTag("tailMap", streamTailToGlobalTailMap.size());
+        final List<Long> streamTails = new ArrayList<>(streamTailToGlobalTailMap.size());
+
         TokenRequest req = msg.getPayload();
         List<UUID> streams = req.getStreams();
-        List<Long> streamTails;
         Token token;
         if (req.getStreams().isEmpty()) {
             // Global tail query
             token = new Token(sequencerEpoch, globalLogTail.get() - 1);
-            streamTails = Collections.emptyList();
         } else if (req.getStreams().size() == 1) {
             // single stream query
             token = new Token(sequencerEpoch, streamTailToGlobalTailMap.getOrDefault(streams.get(0), Address.NON_EXIST));
-            streamTails = Collections.emptyList();
         } else {
             // multiple stream query, the token is populated with the global tail and the tail queries are stored in
             // streamTails
             token = new Token(sequencerEpoch, globalLogTail.get() - 1);
-            streamTails = new ArrayList<>(streams.size());
             for (UUID stream : streams) {
                 streamTails.add(streamTailToGlobalTailMap.getOrDefault(stream, Address.NON_EXIST));
             }
@@ -305,7 +328,7 @@ public class SequencerServer extends AbstractServer {
         r.sendResponse(ctx, msg, CorfuMsgType.TOKEN_RES.payloadMsg(new TokenResponse(
                 TokenType.NORMAL, TokenResponse.NO_CONFLICT_KEY,
                 TokenResponse.NO_CONFLICT_STREAM, token, Collections.emptyMap(), streamTails)));
-
+        scope.close();
     }
 
 
@@ -426,7 +449,7 @@ public class SequencerServer extends AbstractServer {
                     return;
 
                 default:
-                    handleAllocation(msg, ctx, r);
+                    handleAllocation(msg, ctx, r, null);
                     return;
             }
         }
@@ -478,22 +501,28 @@ public class SequencerServer extends AbstractServer {
         // in the TK_TX request type, the sequencer is utilized for transaction conflict-resolution.
         // Token allocation is conditioned on commit.
         // First, we check if the transaction can commit.
+        SpanContext spanContext = tracer.extract(Format.Builtin.TEXT_MAP,
+                new TextMapExtractAdapter(req.getTraceCtx()));
+        Scope scope = tracer.buildSpan("getToken").asChildOf(spanContext).startActive(true);
         TxResolutionResponse txResolutionResponse = txnCanCommit(req.getTxnResolution());
+        scope.close();
+
         if (txResolutionResponse.getTokenType() != TokenType.NORMAL) {
             // If the txn aborts, then DO NOT hand out a token.
             Token newToken = new Token(sequencerEpoch, txResolutionResponse.getAddress());
-            r.sendResponse(ctx, msg, CorfuMsgType.TOKEN_RES.payloadMsg(new TokenResponse(
-                    txResolutionResponse.getTokenType(),
-                    txResolutionResponse.getConflictingKey(),
-                    txResolutionResponse.getConflictingStream(),
-                    newToken, Collections.emptyMap(), Collections.emptyList())));
+                r.sendResponse(ctx, msg, CorfuMsgType.TOKEN_RES.payloadMsg(new TokenResponse(
+                        txResolutionResponse.getTokenType(),
+                        txResolutionResponse.getConflictingKey(),
+                        txResolutionResponse.getConflictingStream(),
+                        newToken, Collections.emptyMap(), Collections.emptyList())));
             return;
         }
 
         // if we get here, this means the transaction can commit.
         // handleAllocation() does the actual allocation of log position(s)
         // and returns the response
-        handleAllocation(msg, ctx, r);
+        handleAllocation(msg, ctx, r, spanContext);
+
     }
 
     /**
@@ -505,49 +534,59 @@ public class SequencerServer extends AbstractServer {
      * @param ctx netty ChannelHandlerContext
      * @param r   server router
      */
-    private void handleAllocation(CorfuPayloadMsg<TokenRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+    private void handleAllocation(CorfuPayloadMsg<TokenRequest> msg, ChannelHandlerContext ctx, IServerRouter r,
+                                  SpanContext spanContext) {
         final TokenRequest req = msg.getPayload();
 
         // extend the tail of the global log by the requested # of tokens
         // currentTail is the first available position in the global log
         long currentTail = globalLogTail.getAndAdd(req.getNumTokens());
         long newTail = currentTail + req.getNumTokens();
-
-        // for each streams:
-        //   1. obtain the last back-pointer for this streams, if exists; -1L otherwise.
-        //   2. record the new global tail as back-pointer for this streams.
-        //   3. extend the tail by the requested # tokens.
         ImmutableMap.Builder<UUID, Long> backPointerMap = ImmutableMap.builder();
-        for (UUID id : req.getStreams()) {
 
-            // step 1. and 2. (comment above)
-            streamTailToGlobalTailMap.compute(id, (k, v) -> {
-                if (v == null) {
-                    backPointerMap.put(k, Address.NON_EXIST);
-                    return newTail - 1;
-                } else {
-                    backPointerMap.put(k, v);
-                    return newTail - 1;
-                }
-            });
+        try(Scope msgScope = tracer.buildSpan("updateTail")
+                .asChildOf(spanContext).startActive(true)) {
+            // for each streams:
+            //   1. obtain the last back-pointer for this streams, if exists; -1L otherwise.
+            //   2. record the new global tail as back-pointer for this streams.
+            //   3. extend the tail by the requested # tokens.
+            for (UUID id : req.getStreams()) {
+
+                // step 1. and 2. (comment above)
+                streamTailToGlobalTailMap.compute(id, (k, v) -> {
+                    if (v == null) {
+                        backPointerMap.put(k, Address.NON_EXIST);
+                        return newTail - 1;
+                    } else {
+                        backPointerMap.put(k, v);
+                        return newTail - 1;
+                    }
+                });
+            }
         }
 
-        // update the cache of conflict parameters
-        if (req.getTxnResolution() != null) {
-            req.getTxnResolution()
-                    .getWriteConflictParams()
-                    .forEach((key, value) -> {
-                        // insert an entry with the new timestamp using the hash code based on the param
-                        // and the stream id.
-                        value.forEach(conflictParam -> cache.put(new ConflictTxStream(key, conflictParam), newTail - 1));
-                    });
+        Map<ConflictTxStream, Long> test = new HashMap<>();
+        try(Scope msgScope = tracer.buildSpan("updateCache")
+                .asChildOf(spanContext).startActive(true)) {
+            // update the cache of conflict parameters
+            if (req.getTxnResolution() != null) {
+                req.getTxnResolution()
+                        .getWriteConflictParams()
+                        .forEach((key, value) -> {
+                            // insert an entry with the new timestamp using the hash code based on the param
+                            // and the stream id.
+                            value.forEach(conflictParam -> cache.put(new ConflictTxStream(key, conflictParam), newTail - 1));
+                        });
+            }
         }
-
         log.trace("token {} backpointers {}", currentTail, backPointerMap.build());
         // return the token response with the new global tail
         // and the streams backpointers
         Token token = new Token(sequencerEpoch, currentTail);
-        r.sendResponse(ctx, msg, CorfuMsgType.TOKEN_RES.payloadMsg(new TokenResponse(token, backPointerMap.build())));
+        try(Scope msgScope = tracer.buildSpan("response")
+                .asChildOf(spanContext).startActive(true)) {
+            r.sendResponse(ctx, msg, CorfuMsgType.TOKEN_RES.payloadMsg(new TokenResponse(token, backPointerMap.build())));
+        }
     }
 
     @Override

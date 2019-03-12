@@ -99,6 +99,7 @@ public class TestClientRouter implements IClientRouter {
     /** A mock channel context for this connection. */
     TestChannelContext channelContext;
 
+    CorfuRuntime.CorfuRuntimeParameters parameters;
     /**
      * The test host that this router is routing requests for.
      */
@@ -111,7 +112,9 @@ public class TestClientRouter implements IClientRouter {
     @Getter
     Integer port;
 
-    public TestClientRouter(TestServerRouter serverRouter) {
+    public TestClientRouter(TestServerRouter serverRouter,
+                            CorfuRuntime.CorfuRuntimeParameters parameters) {
+        this.parameters = parameters;
         clientList = new ArrayList<>();
         handlerMap = new ConcurrentHashMap<>();
         outstandingRequests = new ConcurrentHashMap<>();
@@ -140,6 +143,11 @@ public class TestClientRouter implements IClientRouter {
     private void routeMessage(CorfuMsg message) {
         CorfuMsg m = simulateSerialization(message);
         serverRouter.sendServerMessage(m, channelContext);
+    }
+
+    @Override
+    public CorfuRuntime.CorfuRuntimeParameters getParam() {
+        return parameters;
     }
 
     /**

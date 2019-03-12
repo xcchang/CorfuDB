@@ -9,6 +9,8 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
 
+import com.codahale.metrics.Timer;
+import io.opentracing.Scope;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,6 +26,7 @@ import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.object.ICorfuSMRAccess;
 import org.corfudb.runtime.object.ICorfuSMRProxyInternal;
 import org.corfudb.runtime.object.VersionLockedObject;
+import org.corfudb.util.MetricsUtils;
 
 /** A Corfu optimistic transaction context.
  *
@@ -90,26 +93,31 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
         // to the correct version, reflecting any optimistic
         // updates.
         // Get snapshot timestamp in advance so it is not performed under the VLO lock
+        Scope getSequenceScope =
+                proxy.getUnderlyingObject().rt.getParameters().getTracer().buildSpan(
+                "getSequence").startActive(true);
         long ts = getSnapshotTimestamp().getSequence();
+        getSequenceScope.close();
+
         return proxy
                 .getUnderlyingObject()
                 .access(o -> {
-                            WriteSetSMRStream stream = o.getOptimisticStreamUnsafe();
+                            try (Scope scope = proxy.getUnderlyingObject().rt.getParameters().getTracer().buildSpan(
+                                         "accessCheck").startActive(true)) {
+                                WriteSetSMRStream stream = o.getOptimisticStreamUnsafe();
+                                // Obtain the stream position as when transaction context last remembered it.
+                                long streamReadPosition = getKnownStreamPosition()
+                                        .getOrDefault(proxy.getStreamID(), ts);
 
-                            // Obtain the stream position as when transaction context last
-                            // remembered it.
-                            long streamReadPosition = getKnownStreamPosition()
-                                    .getOrDefault(proxy.getStreamID(), ts);
-
-                            return (
-                                    (stream == null || stream.isStreamCurrentContextThreadCurrentContext())
-                                    && (stream != null && getWriteSetEntrySize(proxy.getStreamID()) == stream.pos() + 1
-                                       || (getWriteSetEntrySize(proxy.getStreamID()) == 0 /* No updates. */
-                                          && o.getVersionUnsafe() == streamReadPosition) /* Match timestamp. */
-                                    )
-                            );
+                                return ((stream == null || stream.isStreamCurrentContextThreadCurrentContext())
+                                        && (stream != null && getWriteSetEntrySize(proxy.getStreamID()) == stream.pos() + 1
+                                        || (getWriteSetEntrySize(proxy.getStreamID()) == 0 /* No updates. */
+                                        && o.getVersionUnsafe() == streamReadPosition) /* Match timestamp. */
+                                ));
+                            }
                         },
-                        o -> {
+                        o -> { try (Scope scope = proxy.getUnderlyingObject().rt.getParameters()
+                                .getTracer().buildSpan("updateFunction").startActive(true)) {
                             // inside syncObjectUnsafe, depending on the object
                             // version, we may need to undo or redo
                             // committed changes, or apply forward committed changes.
@@ -118,9 +126,15 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
                             // Update the global positions map. The value obtained from underlying
                             // object must be under object's write-lock.
                             getKnownStreamPosition().put(proxy.getStreamID(), o.getVersionUnsafe());
-                        },
-                        accessFunction::access
-        );
+                        }},
+                        o -> {
+                            try (Scope scope = proxy.getUnderlyingObject().rt.getParameters()
+                                    .getTracer().buildSpan("accessFunction").startActive(true)) {
+                                return accessFunction.access(o);
+                            }
+                        }
+                );
+
     }
 
     /**
@@ -210,7 +224,11 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
                 this, proxy, updateEntry.getSMRMethod(),
                 updateEntry.getSMRArguments(), conflictObjects);
 
-        return addToWriteSet(proxy, updateEntry, conflictObjects);
+        try (final Scope scope = proxy.getUnderlyingObject()
+                .rt.getParameters().getTracer()
+                .buildSpan("addToWriteSet").startActive(true)) {
+            return addToWriteSet(proxy, updateEntry, conflictObjects);
+        }
     }
 
     /**
@@ -278,6 +296,10 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
 
         UUID[] affectedStreams = affectedStreamsIds.toArray(new UUID[affectedStreamsIds.size()]);
 
+
+        Scope resScope = this.transaction.runtime.getParameters().getTracer()
+                .buildSpan("TxResolutionInfo").startActive(true);
+
         // Now we obtain a conditional address from the sequencer.
         // This step currently happens all at once, and we get an
         // address of -1L if it is rejected.
@@ -293,7 +315,9 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
                 conflictSet.getHashedConflictSet(),
                 getWriteSetInfo().getHashedConflictSet());
 
-        try {
+        resScope.close();
+        try (Scope scope = this.transaction.runtime.getParameters().getTracer()
+                        .buildSpan("append").startActive(true)) {
             address = this.transaction.runtime.getStreamsView()
                 .append(
                     // a MultiObjectSMREntry that contains the update(s) to objects
@@ -313,7 +337,10 @@ public class OptimisticTransactionalContext extends AbstractTransactionalContext
         super.commitTransaction();
         commitAddress = address;
 
-        tryCommitAllProxies();
+        try (Scope scope = this.transaction.runtime.getParameters().getTracer()
+                .buildSpan("updateProxy").startActive(true)) {
+            tryCommitAllProxies();
+        }
         log.trace("Commit[{}] Written to {}", this, address);
         return address;
     }

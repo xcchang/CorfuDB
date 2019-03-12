@@ -263,6 +263,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
                                 TailsResponse tails = streamLog.getTails();
                                 currOp.getFuture().complete(tails);
                                 break;
+
                             default:
                                 log.warn("Unknown BatchWriterOperation {}", currOp);
                         }

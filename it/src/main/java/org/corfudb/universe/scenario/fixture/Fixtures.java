@@ -42,7 +42,7 @@ public interface Fixtures {
         public static final String DEFAULT_STREAM_NAME = "stream";
 
         // Default number of values written into CorfuTable
-        public static final int DEFAULT_TABLE_ITER = 100;
+        public static final int DEFAULT_TABLE_ITER = 10;
 
         // Default number of times to poll layout
         public static final int DEFAULT_WAIT_POLL_ITER = 300;
@@ -145,13 +145,17 @@ public interface Fixtures {
 
         static ImmutableList<CorfuServerParams> buildMultipleServers(int numNodes, String clusterName) {
 
+            CorfuServerParams.CorfuServerParamsBuilder builder =
+                    CorfuServerParams.serverParamsBuilder();
+
             List<CorfuServerParams> serversParams = IntStream
                     .rangeClosed(1, numNodes)
                     .map(i -> ServerUtil.getRandomOpenPort())
                     .boxed()
                     .sorted()
-                    .map(port -> CorfuServerParams.serverParamsBuilder()
+                    .map(port -> builder
                             .port(port)
+                            .traceSink("10.33.82.92")
                             .clusterName(clusterName)
                             .build()
                     )

@@ -141,7 +141,12 @@ public class NettyClientRouter extends SimpleChannelInboundHandler<CorfuMsg>
     /** The {@link CorfuRuntimeParameters} used to configure the
      *  router.
      */
-    private final CorfuRuntimeParameters parameters;
+    public final CorfuRuntimeParameters parameters;
+
+    @Override
+    public CorfuRuntimeParameters getParam() {
+        return parameters;
+    }
 
     /** A {@link CompletableFuture} which is completed when a connection,
      *  including a successful handshake completes and messages can be sent

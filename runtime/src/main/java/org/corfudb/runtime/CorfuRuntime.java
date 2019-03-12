@@ -3,12 +3,18 @@ package org.corfudb.runtime;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.jaegertracing.Configuration;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+
+import io.opentracing.Tracer;
+import io.opentracing.noop.NoopTracerFactory;
+
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Data;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.Singular;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +46,7 @@ import org.corfudb.runtime.view.StreamsView;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.GitRepositoryState;
 import org.corfudb.util.MetricsUtils;
+import org.corfudb.util.MicrosecondPrecisionClock;
 import org.corfudb.util.NodeLocator;
 import org.corfudb.util.Sleep;
 import org.corfudb.util.UuidUtils;
@@ -431,7 +438,16 @@ public class CorfuRuntime {
         volatile Runnable beforeRpcHandler = () -> {
         };
         //endregion
+
+        @Default
+        String tracerSInk = "";
+
+        @Setter
+        @Default
+        Tracer tracer = NoopTracerFactory.create();
     }
+
+
 
     /**
      * The parameters used to configure this {@link CorfuRuntime}.
@@ -619,6 +635,30 @@ public class CorfuRuntime {
         return new CorfuRuntime(parameters);
     }
 
+
+    public static Tracer newTracer(String service, String ip) {
+        Configuration.SenderConfiguration senderConfiguration =
+                new Configuration.SenderConfiguration()
+                        .withAgentHost(ip)
+                        .withAgentPort(5775);
+        Configuration.SamplerConfiguration samplerConfig =
+                new Configuration.SamplerConfiguration()
+                        .withType("const")
+                        .withParam(1);
+        Configuration.ReporterConfiguration reporterConfig =
+                new Configuration.ReporterConfiguration()
+                        .withFlushInterval(1000)
+                        .withMaxQueueSize(10000)
+                        // Note: Uncomment the following to report data to a tracer deployment.
+                        .withSender(senderConfiguration)
+                        .withLogSpans(true);
+        Configuration config = new Configuration(service)
+                .withSampler(samplerConfig)
+                .withReporter(reporterConfig);
+        return config.getTracerBuilder().withClock(new MicrosecondPrecisionClock()).build();
+    }
+
+
     /**
      * Construct a new {@link CorfuRuntime} given a {@link CorfuRuntimeParameters} instance.
      *
@@ -627,6 +667,11 @@ public class CorfuRuntime {
     private CorfuRuntime(@Nonnull CorfuRuntimeParameters parameters) {
         // Set the local parameters field
         this.parameters = parameters;
+
+        if (!this.parameters.getTracerSInk().isEmpty()) {
+            this.parameters.setTracer(newTracer("CorfuRuntime",
+                    this.parameters.getTracerSInk()));
+        }
 
         // Populate the initial set of layout servers
         bootstrapLayoutServers = parameters.getLayoutServers().stream()

@@ -52,6 +52,10 @@ public abstract class AbstractCorfuServer<T extends CorfuServerParams, U extends
             cmd.append(" -s");
         }
 
+        if (!params.getTraceSink().isEmpty()) {
+            cmd.append(" --tracer=").append(params.getTraceSink());
+        }
+
         cmd.append(" -d ").append(params.getLogLevel().toString()).append(" ");
 
         cmd.append(params.getPort());

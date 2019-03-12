@@ -106,7 +106,7 @@ public abstract class AbstractServerTest extends AbstractCorfuTest {
         return runtimeRouterMap.get(runtime).computeIfAbsent(endpoint,
                 x -> {
                     TestClientRouter tcn =
-                            new TestClientRouter(router);
+                            new TestClientRouter(router, runtime.getParameters());
                     tcn.addClient(new BaseHandler())
                             .addClient(new SequencerHandler())
                             .addClient(new LayoutHandler())

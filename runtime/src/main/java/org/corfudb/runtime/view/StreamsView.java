@@ -1,7 +1,10 @@
 package org.corfudb.runtime.view;
 
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -11,6 +14,9 @@ import javax.annotation.Nullable;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
+import io.opentracing.Scope;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapInjectAdapter;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -128,9 +134,12 @@ public class StreamsView extends AbstractView {
         ld.checkMaxWriteSize(maxWrite);
 
         // Go to the sequencer, grab an initial token.
+        Scope tokenScope = this.runtime.getParameters().getTracer()
+                .buildSpan("token").startActive(true);
         TokenResponse tokenResponse = conflictInfo == null
                 ? runtime.getSequencerView().next(streamIDs) // Token w/o conflict info
                 : runtime.getSequencerView().next(conflictInfo, streamIDs); // Token w/ conflict info
+        tokenScope.close();
 
         for (int x = 0; x < runtime.getParameters().getWriteRetry(); x++) {
 
@@ -162,7 +171,8 @@ public class StreamsView extends AbstractView {
             }
 
             // Attempt to write to the log
-            try {
+            try(Scope writeScope = this.runtime.getParameters().getTracer()
+                    .buildSpan("write").startActive(true)) {
                 runtime.getAddressSpaceView().write(tokenResponse, ld, cacheOption);
                 // If we're here, we succeeded, return the acquired token
                 return tokenResponse.getSequence();

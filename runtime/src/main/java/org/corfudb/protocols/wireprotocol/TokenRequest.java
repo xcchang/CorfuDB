@@ -2,11 +2,15 @@ package org.corfudb.protocols.wireprotocol;
 
 import io.netty.buffer.ByteBuf;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 
 /**
  * A token request is at the heart of the Corfu log protocol.
@@ -44,6 +48,9 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
     /* used for transaction resolution. */
     final TxResolutionInfo txnResolution;
 
+    @Getter
+    Map<String, String> traceCtx = Collections.emptyMap();
+
     /**
      * Constructor for generating TokenRequest.
      *
@@ -52,11 +59,12 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
      * @param conflictInfo transaction resolution information
      */
     public TokenRequest(Long numTokens, List<UUID> streams,
-                        TxResolutionInfo conflictInfo) {
+                        TxResolutionInfo conflictInfo, Map<String, String> traceCtx) {
         reqType = TK_TX;
         this.numTokens = numTokens;
         this.streams = streams;
         txnResolution = conflictInfo;
+        this.traceCtx = traceCtx;
     }
 
     /**
@@ -66,6 +74,10 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
      * @param streams streams UUIDs required in the token request
      */
     public TokenRequest(Long numTokens, List<UUID> streams) {
+        this(numTokens, streams, new HashMap<>());
+    }
+
+    public TokenRequest(Long numTokens, List<UUID> streams, Map<String, String> traceCtx) {
         if (numTokens == 0) {
             this.reqType = TK_QUERY;
         } else if (streams == null || streams.isEmpty()) {
@@ -76,6 +88,7 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
         this.numTokens = numTokens;
         this.streams = streams;
         txnResolution = null;
+        this.traceCtx = traceCtx;
     }
 
     /**
@@ -118,6 +131,8 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
                 txnResolution = null;
                 break;
         }
+
+        traceCtx = ICorfuPayload.mapFromBuffer(buf, String.class, String.class);
     }
 
     @Override
@@ -134,5 +149,7 @@ public class TokenRequest implements ICorfuPayload<TokenRequest> {
         if (reqType == TK_TX) {
             ICorfuPayload.serialize(buf, txnResolution);
         }
+
+        ICorfuPayload.serialize(buf, traceCtx);
     }
 }

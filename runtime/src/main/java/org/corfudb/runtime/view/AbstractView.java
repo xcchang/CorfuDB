@@ -7,7 +7,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nonnull;
 
+import io.opentracing.Scope;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.NetworkException;
 import org.corfudb.runtime.exceptions.ServerNotReadyException;
@@ -126,16 +128,25 @@ public abstract class AbstractView {
         final Duration retryRate = runtime.getParameters().getConnectionRetryRate();
         int systemDownTriggerCounter = 0;
         while (true) {
-
+            Scope layoutScore = runtime.getParameters().getTracer()
+                    .buildSpan("layoutGet").startActive(true);
+            //layoutScore.span().setTag("Stack", ExceptionUtils.getStackTrace(new Throwable()));
             final Layout layout = getLayoutUninterruptibly();
+            layoutScore.close();
 
-            try {
-                return function.apply(runtimeLayout.updateAndGet(rLayout -> {
-                    if (rLayout == null || rLayout.getLayout().getEpoch() != layout.getEpoch()) {
-                        return new RuntimeLayout(layout, runtime);
-                    }
-                    return rLayout;
-                }));
+            Scope runtimeLayoutScope = runtime.getParameters().getTracer()
+                    .buildSpan("RuntimeLayout").startActive(true);
+            RuntimeLayout layoutx = runtimeLayout.updateAndGet(rLayout -> {
+                if (rLayout == null || rLayout.getLayout().getEpoch() != layout.getEpoch()) {
+                    return new RuntimeLayout(layout, runtime);
+                }
+                return rLayout;
+            });
+            runtimeLayoutScope.close();
+
+            try(Scope apply = runtime.getParameters().getTracer()
+                    .buildSpan("apply").startActive(true);) {
+                return function.apply(layoutx);
             } catch (RuntimeException re) {
                 if (re.getCause() instanceof TimeoutException) {
                     log.warn("Timeout executing remote call, invalidating view and retrying "

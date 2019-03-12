@@ -37,7 +37,7 @@ public abstract class AbstractClientTest extends AbstractCorfuTest {
     @Before
     public void resetTest() {
         serverRouter = new TestServerRouter();
-        router = new TestClientRouter(serverRouter);
+        router = new TestClientRouter(serverRouter, null);
         getServersForTest().stream().forEach(serverRouter::addServer);
         getClientsForTest().stream().forEach(router::addClient);
     }
@@ -68,7 +68,7 @@ public abstract class AbstractClientTest extends AbstractCorfuTest {
         return runtimeRouterMap.get(runtime).computeIfAbsent(endpoint,
                 x -> {
                     TestClientRouter tcn =
-                            new TestClientRouter(serverRouter);
+                            new TestClientRouter(serverRouter, runtime.getParameters());
                     tcn.addClient(new BaseHandler())
                             .addClient(new SequencerHandler())
                             .addClient(new LayoutHandler())

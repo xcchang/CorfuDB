@@ -1,6 +1,8 @@
 package org.corfudb.runtime.view;
 
 import com.codahale.metrics.Timer;
+import io.opentracing.Scope;
+import io.opentracing.Span;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
@@ -81,10 +83,7 @@ public class ObjectsView extends AbstractView {
             log.trace("Inheriting parent's transaction type {}", type);
         }
 
-        TXBuild()
-                .type(type)
-                .build()
-                .begin();
+        TXBuild().type(type).build().begin();
     }
 
     /**
@@ -139,6 +138,7 @@ public class ObjectsView extends AbstractView {
      */
     @SuppressWarnings({"checkstyle:methodname", "checkstyle:abbreviation"})
     public long TXEnd() throws TransactionAbortedException {
+
         AbstractTransactionalContext context = TransactionalContext.getCurrentContext();
         if (context == null) {
             log.warn("Attempted to end a transaction, but no transaction active!");
@@ -156,8 +156,14 @@ public class ObjectsView extends AbstractView {
 
         // Create a timer to measure the transaction commit duration
         Timer txCommitDurationTimer = context.getMetrics().timer(TXN_COMMIT_TIMER_NAME);
+        Span span = runtime.getParameters().getTracer().buildSpan("commit").start();
+
+
         try (Timer.Context txCommitDuration =
-                     MetricsUtils.getConditionalContext(txCommitDurationTimer)){
+                     MetricsUtils.getConditionalContext(txCommitDurationTimer);
+             final Scope scope = runtime.getParameters().getTracer()
+                     .buildSpan("commit").startActive(true)
+        ) {
             return TransactionalContext.getCurrentContext().commitTransaction();
         } catch (TransactionAbortedException e) {
             log.warn("TXEnd[{}] Aborted Exception {}", context, e);
@@ -198,6 +204,8 @@ public class ObjectsView extends AbstractView {
             throw new UnrecoverableCorfuError("Unexpected exception during commit", e);
         } finally {
             TransactionalContext.removeContext();
+            Scope activeScope = runtime.getParameters().getTracer().scopeManager().active();
+            if (activeScope != null) activeScope.close();
         }
     }
 

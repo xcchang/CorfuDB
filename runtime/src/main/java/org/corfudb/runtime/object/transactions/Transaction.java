@@ -1,5 +1,7 @@
 package org.corfudb.runtime.object.transactions;
 
+import io.opentracing.Scope;
+import io.opentracing.Span;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Builder.Default;
@@ -47,6 +49,13 @@ public class Transaction {
     public void begin() {
         verify();
         TransactionalContext.newContext(type.get.apply(this));
+
+        Span span = runtime.getParameters().getTracer()
+                .buildSpan("tx-" +
+                        TransactionalContext.getCurrentContext().getTransactionID()).start();
+
+        Scope scope = runtime.getParameters().getTracer()
+                .scopeManager().activate(span, true);
     }
 
     public boolean isLoggingEnabled() {

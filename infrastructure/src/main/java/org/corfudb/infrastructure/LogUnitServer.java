@@ -5,6 +5,12 @@ import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelHandlerContext;
+import io.opentracing.Scope;
+import io.opentracing.SpanContext;
+import io.opentracing.Tracer;
+import io.opentracing.noop.NoopTracerFactory;
+import io.opentracing.propagation.Format;
+import io.opentracing.propagation.TextMapExtractAdapter;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +32,7 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.OverwriteException;
@@ -75,6 +82,9 @@ public class LogUnitServer extends AbstractServer {
     @Getter
     private final CorfuMsgHandler handler = CorfuMsgHandler.generateHandler(MethodHandles.lookup(), this);
 
+
+    @Getter
+    Tracer tracer = NoopTracerFactory.create();
     /**
      * This cache services requests for data at various addresses. In a memory implementation,
      * it is not backed by anything, but in a disk implementation it is backed by persistent
@@ -124,6 +134,11 @@ public class LogUnitServer extends AbstractServer {
                 .build(this::handleRetrieval);
 
         logCleaner = new StreamLogCompaction(streamLog, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER);
+
+        if (serverContext.getServerConfig().containsKey("--tracer")) {
+            this.tracer = CorfuRuntime.newTracer("LogUnitServer",
+                    (String) serverContext.getServerConfig().get("--tracer"));
+        }
     }
 
     /**
@@ -151,7 +166,11 @@ public class LogUnitServer extends AbstractServer {
         log.debug("log write: global: {}, streams: {}", msg.getPayload().getToken(),
                 msg.getPayload().getData().getBackpointerMap());
 
-        try {
+        SpanContext spanContext = tracer.extract(Format.Builtin.TEXT_MAP,
+                new TextMapExtractAdapter(msg.getPayload().getTraceCtx()));
+
+        try(Scope writeScope = tracer.buildSpan("write")
+                .asChildOf(spanContext).startActive(true)) {
             LogData logData = (LogData) msg.getPayload().getData();
             logData.setEpoch(msg.getEpoch());
             dataCache.put(msg.getPayload().getGlobalAddress(), logData);

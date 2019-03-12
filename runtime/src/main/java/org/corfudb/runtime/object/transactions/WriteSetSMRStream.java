@@ -7,6 +7,8 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
+import io.opentracing.Scope;
+import io.opentracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.protocols.logprotocol.SMREntry;
@@ -137,31 +139,36 @@ public class WriteSetSMRStream implements ISMRStream {
 
     @Override
     public List<SMREntry> remainingUpTo(long maxGlobal) {
-        // Check for any new contexts
-        if (TransactionalContext.getTransactionStack().size()
-                > contexts.size()) {
-            contexts = TransactionalContext.getTransactionStackAsList();
-        } else if (TransactionalContext.getTransactionStack().size()
-                < contexts.size()) {
-            mergeTransaction();
-        }
-        List<SMREntry> entryList = new LinkedList<>();
+        Tracer t = TransactionalContext.getCurrentContext().getTransaction()
+                .getRuntime().getParameters().getTracer();
+        try (Scope scope = t.buildSpan("remainingUpTo").startActive(true)) {
+
+            // Check for any new contexts
+            if (TransactionalContext.getTransactionStack().size()
+                    > contexts.size()) {
+                contexts = TransactionalContext.getTransactionStackAsList();
+            } else if (TransactionalContext.getTransactionStack().size()
+                    < contexts.size()) {
+                mergeTransaction();
+            }
+            List<SMREntry> entryList = new LinkedList<>();
 
 
-        for (int i = currentContext; i < contexts.size(); i++) {
-            final List<SMREntry> writeSet = contexts.get(i)
-                    .getWriteSetEntryList(id);
-            long readContextStart = i == currentContext ? currentContextPos + 1 : 0;
-            for (long j = readContextStart; j < writeSet.size(); j++) {
-                entryList.add(writeSet.get((int) j));
-                writePos++;
+            for (int i = currentContext; i < contexts.size(); i++) {
+                final List<SMREntry> writeSet = contexts.get(i)
+                        .getWriteSetEntryList(id);
+                long readContextStart = i == currentContext ? currentContextPos + 1 : 0;
+                for (long j = readContextStart; j < writeSet.size(); j++) {
+                    entryList.add(writeSet.get((int) j));
+                    writePos++;
+                }
+                if (writeSet.size() > 0) {
+                    currentContext = i;
+                    currentContextPos = writeSet.size() - 1;
+                }
             }
-            if (writeSet.size() > 0) {
-                currentContext = i;
-                currentContextPos = writeSet.size() - 1;
-            }
+            return entryList;
         }
-        return entryList;
     }
 
     @Override

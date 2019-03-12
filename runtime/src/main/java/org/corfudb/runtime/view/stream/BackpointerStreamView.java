@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 
 import com.google.common.collect.Range;
+import io.opentracing.Scope;
 import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.protocols.logprotocol.CheckpointEntry;
@@ -435,11 +436,20 @@ public class BackpointerStreamView extends AbstractQueuedStreamView {
         return BackpointerOp.INCLUDE;
     }
 
+    @Override
+    protected boolean fillReadQueue(final long maxGlobal,
+                                    final QueuedStreamContext context) {
+        try (Scope scope = runtime.getParameters().getTracer().buildSpan("fillReadQueue")
+                .startActive(true)) {
+            scope.span().setTag("maxGlobal", maxGlobal);
+            scope.span().setTag("queuedStreamContext", context.toString());
+            return fillReadQueueImpl(maxGlobal, context);
+        }
+    }
     /**
      * {@inheritDoc}
      */
-    @Override
-    protected boolean fillReadQueue(final long maxGlobal,
+    protected boolean fillReadQueueImpl(final long maxGlobal,
                                  final QueuedStreamContext context) {
         log.trace("Read_Fill_Queue[{}] Max: {}, Current: {}, Resolved: {} - {}", this,
                 maxGlobal, context.getGlobalPointer(), context.maxResolution, context.minResolution);

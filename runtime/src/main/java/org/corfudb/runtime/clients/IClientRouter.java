@@ -6,6 +6,7 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
+import org.corfudb.runtime.CorfuRuntime;
 
 /**
  * This is an interface in which all client routers must implement.
@@ -17,6 +18,7 @@ import org.corfudb.protocols.wireprotocol.CorfuMsg;
  */
 public interface IClientRouter {
 
+    CorfuRuntime.CorfuRuntimeParameters getParam();
 
     /**
      * Add a new client to the router.

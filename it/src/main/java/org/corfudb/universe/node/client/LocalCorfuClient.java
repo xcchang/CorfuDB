@@ -45,6 +45,7 @@ public class LocalCorfuClient implements CorfuClient {
         CorfuRuntimeParameters runtimeParams = CorfuRuntimeParameters
                 .builder()
                 .layoutServers(layoutServers)
+                .tracerSInk("10.33.82.92")
                 .systemDownHandler(this::systemDownHandler)
                 .build();
 

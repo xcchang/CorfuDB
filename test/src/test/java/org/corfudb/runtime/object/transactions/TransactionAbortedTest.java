@@ -6,6 +6,9 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.opentracing.Scope;
+import io.opentracing.Span;
+import org.apache.commons.lang.RandomStringUtils;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
@@ -33,6 +36,61 @@ public class TransactionAbortedTest extends AbstractTransactionContextTest {
         WWTXBegin();
     }
 
+    /*
+    @Test
+    public void trace() {
+        for (int i = 0; i < 500; i++) {
+            Map<String, String> map = getRuntime().getObjectsView()
+                    .build()
+                    .setType(CorfuTable.class)
+                    .setStreamName(this.getClass().getSimpleName() + "-" + i)
+                    .open();
+            map.put("a", "a");
+        }
+
+        Map<String, String> map = getRuntime().getObjectsView()
+                .build()
+                .setType(CorfuTable.class)
+                .setStreamName(this.getClass().getSimpleName())
+                .open();
+
+        Map<String, String> map2 = getRuntime().getObjectsView()
+                .build()
+                .setType(CorfuTable.class)
+                .setStreamName(this.getClass().getSimpleName() + "x")
+                .open();
+
+        for (int sample = 0; sample < 3; sample++) {
+            getRuntime().getObjectsView().TXBegin();
+            try (final Scope scope = getRuntime().getParameters().getTracer()
+                    .buildSpan("get").startActive(true)) {
+                map2.get("q");
+            }
+            for (int i = 0; i < 5; i++) {
+                try (final Scope scope = getRuntime().getParameters().getTracer()
+                        .buildSpan("put").startActive(true)) {
+                    map.put(RandomStringUtils.randomAlphanumeric(17).toUpperCase(),
+                            RandomStringUtils.randomAlphanumeric(17).toUpperCase());
+                }
+            }
+
+            for (int i = 0; i < 5; i++) {
+                try (final Scope scope = getRuntime().getParameters().getTracer()
+                        .buildSpan("put").startActive(true)) {
+                    map2.put(RandomStringUtils.randomAlphanumeric(17).toUpperCase(),
+                            RandomStringUtils.randomAlphanumeric(17).toUpperCase());
+                }
+            }
+            try (final Scope scope = getRuntime().getParameters().getTracer()
+                    .buildSpan("get").startActive(true)) {
+                map.get("q");
+            }
+
+            getRuntime().getObjectsView().TXEnd();
+        }
+
+    }
+*/
     @Test
     public void abortTransactionTest() throws Exception {
         CorfuRuntime runtime = getDefaultRuntime();

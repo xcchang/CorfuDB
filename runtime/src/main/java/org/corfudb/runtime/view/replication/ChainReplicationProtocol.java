@@ -1,6 +1,7 @@
 package org.corfudb.runtime.view.replication;
 
 import com.google.common.collect.Range;
+import io.opentracing.Scope;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
@@ -43,7 +44,8 @@ public class ChainReplicationProtocol extends AbstractReplicationProtocol {
                      data.getSerializedForm()) {
             log.trace("Write[{}]: chain head {}/{}", globalAddress, 1, numUnits);
             // In chain replication, we start at the chain head.
-            try {
+            try (Scope writeScope = runtimeLayout.getRuntime().getParameters().getTracer()
+                        .buildSpan("writeHead").startActive(true)) {
                 CFUtils.getUninterruptibly(
                         runtimeLayout.getLogUnitClient(globalAddress, 0)
                                 .write(sh.getSerialized()),
@@ -167,12 +169,13 @@ public class ChainReplicationProtocol extends AbstractReplicationProtocol {
         int numUnits = runtimeLayout.getLayout().getSegmentLength(globalAddress);
 
         for (int i = 1; i < numUnits; i++) {
+            try (Scope writeScope = runtimeLayout.getRuntime().getParameters().getTracer()
+                    .buildSpan("chain"+ i).startActive(true)) {
             log.trace("Propagate[{}]: chain {}/{}", Token.of(runtimeLayout.getLayout().getEpoch(),
                     globalAddress),
                     i + 1, numUnits);
             // In chain replication, we write synchronously to every unit
             // in the chain.
-            try {
                 if (data != null) {
                     CFUtils.getUninterruptibly(
                             runtimeLayout.getLogUnitClient(globalAddress, i)
