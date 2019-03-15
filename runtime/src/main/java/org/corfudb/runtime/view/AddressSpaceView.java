@@ -7,11 +7,14 @@ import com.codahale.metrics.MetricRegistry;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.UncheckedExecutionException;
+import com.google.common.collect.Sets;
 import io.netty.handler.timeout.TimeoutException;
+import lombok.Builder;
+import lombok.Builder.Default;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
@@ -36,15 +39,14 @@ import org.corfudb.util.Sleep;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 
@@ -55,6 +57,8 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 public class AddressSpaceView extends AbstractView {
+
+    private final Config config;
 
     /**
      * A cache for read results.
@@ -71,6 +75,7 @@ public class AddressSpaceView extends AbstractView {
      */
     public AddressSpaceView(@Nonnull final CorfuRuntime runtime) {
         super(runtime);
+        this.config = runtime.getParameters().getAddressSpaceConfig();
         MetricRegistry metrics = CorfuRuntime.getDefaultMetrics();
         final String pfx = String.format("%s0x%x.cache.", CorfuComponent.ADDRESS_SPACE_VIEW.toString(),
                                          this.hashCode());
@@ -108,7 +113,7 @@ public class AddressSpaceView extends AbstractView {
      *      know if the write went through or not. For sanity, we throw an OverwriteException
      *      and let the above layer retry.
      *
-     * @param address
+     * @param address address
      */
     private void validateStateOfWrittenEntry(long address, @Nonnull ILogData ld) {
         ILogData logData;
@@ -187,8 +192,12 @@ public class AddressSpaceView extends AbstractView {
         }, true);
 
         // Cache the successful write
-        if (!runtime.getParameters().isCacheDisabled() && cacheOption == CacheOption.WRITE_THROUGH) {
-            readCache.put(token.getSequence(), ld);
+        if (!config.isCacheDisabled() && cacheOption == CacheOption.WRITE_THROUGH) {
+            Set<UUID> noCache = Sets.intersection(config.getNotCachedStreams(), ld.getStreams());
+
+            if(noCache.isEmpty()) {
+                readCache.put(token.getSequence(), ld);
+            }
         }
     }
 
@@ -225,40 +234,47 @@ public class AddressSpaceView extends AbstractView {
      */
     public @Nonnull
     ILogData read(long address) {
-        if (!runtime.getParameters().isCacheDisabled()) {
-            // The VersionLockedObject and the Transaction layer will generate
-            // undoRecord(s) during a transaction commit, or object sync. These
-            // undo records are stored in transient fields and are not persisted.
-            // A missing undo record can cause a NoRollbackException, thus forcing
-            // a complete object rebuild that generates a "scanning" behavior
-            // which affects the LRU window. In essence, affecting other cache users
-            // and making the VersionLockedObject very sensitive to caching behavior.
-            // A concrete example of this would be unsynchronized readers/writes:
-            // 1. Thread A starts replicating write1
-            // 2. Thread B discovers the write (via stream tail query) and
-            //    tries to read write1
-            // 3. Thread B's read results in a cache miss and the reader thread
-            //    starts loading the value into the cache
-            // 4. Thread A completes its write and caches it with undo records
-            // 5. Thread B finishes loading and caches the loaded value replacing
-            //    the cached value from step 4 (i.e. loss of undo records computed
-            //    by thread A)
-            ILogData data = readCache.getIfPresent(address);
-            if (data == null) {
-                // Loading a value without the cache loader can result in
-                // redundant loading calls (i.e. multiple threads try to
-                // load the same value), but currently a redundant RPC
-                // is much cheaper than the cost of a NoRollBackException, therefore
-                // this trade-off is reasonable
-                final ILogData loadedVal = fetch(address);
-                data = readCache.asMap().computeIfAbsent(address, (k) -> loadedVal);
-                return data;
-            } else {
-                return data;
-            }
-        } else {
+        if (config.isCacheDisabled()) {
             return fetch(address);
         }
+
+        // The VersionLockedObject and the Transaction layer will generate
+        // undoRecord(s) during a transaction commit, or object sync. These
+        // undo records are stored in transient fields and are not persisted.
+        // A missing undo record can cause a NoRollbackException, thus forcing
+        // a complete object rebuild that generates a "scanning" behavior
+        // which affects the LRU window. In essence, affecting other cache users
+        // and making the VersionLockedObject very sensitive to caching behavior.
+        // A concrete example of this would be unsynchronized readers/writes:
+        // 1. Thread A starts replicating write1
+        // 2. Thread B discovers the write (via stream tail query) and
+        //    tries to read write1
+        // 3. Thread B's read results in a cache miss and the reader thread
+        //    starts loading the value into the cache
+        // 4. Thread A completes its write and caches it with undo records
+        // 5. Thread B finishes loading and caches the loaded value replacing
+        //    the cached value from step 4 (i.e. loss of undo records computed
+        //    by thread A)
+        ILogData data = readCache.getIfPresent(address);
+        if (data != null) {
+            return data;
+        }
+
+        // Loading a value without the cache loader can result in
+        // redundant loading calls (i.e. multiple threads try to
+        // load the same value), but currently a redundant RPC
+        // is much cheaper than the cost of a NoRollBackException, therefore
+        // this trade-off is reasonable
+        final ILogData loadedVal = fetch(address);
+
+        Set<UUID> noCache = Sets.intersection(config.getNotCachedStreams(), loadedVal.getStreams());
+
+        // Don't cache a stream
+        if(!noCache.isEmpty()) {
+            return loadedVal;
+        }
+
+        return readCache.asMap().computeIfAbsent(address, addr -> loadedVal);
     }
 
     /**
@@ -268,7 +284,7 @@ public class AddressSpaceView extends AbstractView {
      * @return A result, which be cached.
      */
     public Map<Long, ILogData> read(Iterable<Long> addresses) {
-        if (!runtime.getParameters().isCacheDisabled()) {
+        if (!config.isCacheDisabled()) {
             Map<Long, ILogData> result = new HashMap<>();
             Set<Long> addressesToFetch = new HashSet<>();
 
@@ -290,7 +306,7 @@ public class AddressSpaceView extends AbstractView {
                     // Note that based on code inspection it seems like operations
                     // on the cache's map view are reflected in the cache's statistics.
                     result.put(entry.getKey(), readCache.asMap()
-                            .computeIfAbsent(entry.getKey(), (k) -> entry.getValue()));
+                            .computeIfAbsent(entry.getKey(), address -> entry.getValue()));
                 }
             }
             return result;
@@ -428,8 +444,7 @@ public class AddressSpaceView extends AbstractView {
      * @param addresses collection of addresses to read from.
      * @return A result to be cached
      */
-    public @Nonnull
-    Map<Long, ILogData> fetchAll(Iterable<Long> addresses) {
+    public @Nonnull Map<Long, ILogData> fetchAll(Iterable<Long> addresses) {
         Map<Long, ILogData> result = new HashMap<>();
 
         Iterable<List<Long>> batches = Iterables.partition(addresses,
@@ -511,5 +526,23 @@ public class AddressSpaceView extends AbstractView {
     @VisibleForTesting
     Cache<Long, ILogData> getReadCache() {
         return readCache;
+    }
+
+    /**
+     * Address space configuration
+     */
+    @Builder
+    @Getter
+    public static class Config {
+        /**
+         * Whether or not to disable the cache.
+         */
+        @Default
+        @Setter
+        boolean cacheDisabled = false;
+
+        @Default
+        private final ImmutableSet<UUID> notCachedStreams = ImmutableSet.of();
+
     }
 }
