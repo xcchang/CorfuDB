@@ -19,6 +19,7 @@
         <module>generator</module>
         <module>migration</module>
         <module>it</module>
+        <module>performance</module>
 
     </modules>
 
