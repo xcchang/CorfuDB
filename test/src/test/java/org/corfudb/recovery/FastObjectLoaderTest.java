@@ -261,6 +261,7 @@ public class FastObjectLoaderTest extends AbstractViewTest {
 
         // Clear are interesting because if applied in wrong order the map might end up wrong
         clearAllMaps();
+
         populateMaps(1, getDefaultRuntime(), CorfuTable.class, false, 1);
 
         CorfuRuntime rt2 = Helpers.createNewRuntimeWithFastLoader(getDefaultConfigurationString());
@@ -330,10 +331,13 @@ public class FastObjectLoaderTest extends AbstractViewTest {
         populateMaps(SOME, getDefaultRuntime(), CorfuTable.class, false, 1);
         Token token = new Token(getDefaultRuntime().getLayoutView().getLayout().getEpoch(), 2);
         Helpers.trim(getDefaultRuntime(), token);
+        System.out.println("Create new runtime with fast loader");
 
         CorfuRuntime rt2 = Helpers.createNewRuntimeWithFastLoader(getDefaultConfigurationString());
+        System.out.println("Created succesfully");
 
         assertThatMapsAreBuilt(rt2);
+
         assertThatObjectCacheIsTheSameSize(getDefaultRuntime(), rt2);
     }
 

@@ -3,6 +3,9 @@ package org.corfudb.integration;
 import static org.assertj.core.api.Assertions.*;
 import static org.corfudb.integration.Harness.run;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.reflect.TypeToken;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.integration.cluster.Harness.Node;
@@ -13,11 +16,18 @@ import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.util.Sleep;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This integration test verifies the behaviour of the add node workflow. In particular, a single node
@@ -729,5 +739,272 @@ public class WorkflowIT extends AbstractIT {
 
         // (10) Normal read
         assertThat(table.get(0)).isEqualTo(String.valueOf(0));
+    }
+
+    // This test confirms that if two threads attempt to "loadAll" the same keys, all threads will
+    // reload and not wait for the other, causing inefficiencies.
+    @Test
+    public void testLoadingCacheLoadAllMultiThread() throws Exception {
+        LoadingCache<String, String> cache = CacheBuilder
+                .newBuilder()
+                .refreshAfterWrite(2, TimeUnit.SECONDS)
+                .build(new CacheLoader<String, String>() {
+                    @Override
+                    public String load(String s) throws Exception {
+                        System.out.println("Load = " + Thread.currentThread().getName() + " search for: " + s);
+                        return "world";
+                    }
+
+                    @Override
+                    public Map<String, String> loadAll(Iterable<? extends String> s) throws Exception {
+                        System.out.println("Load All = " + Thread.currentThread().getName() + " search for: " + s);
+                        Map<String, String> returnMap = new HashMap<>();
+                        returnMap.put("hello", "world");
+                        returnMap.put("bye", "corfu");
+                        return returnMap;
+                    }
+                });
+
+        List<String> request = new ArrayList<>();
+        request.add("hello");
+        request.add("bye");
+
+        Thread t1 = new Thread(() -> {
+            try {
+                System.out.println("First Thread started: " + Thread.currentThread().getName());
+                cache.getAll(request);
+            } catch (Exception e) {
+                System.out.println("Exception: " + e);
+            }
+        });
+
+        Thread t2 = new Thread(() -> {
+            try {
+                System.out.println("Second Thread started: " + Thread.currentThread().getName());
+                cache.getAll(request);
+            } catch (Exception e) {
+                System.out.println("Exception: " + e);
+            }
+        });
+
+
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+    }
+
+    // Test if write-through works for load all, i.e., block from fetching these addresses.
+    @Test
+    public void testLoadingCacheBlockingLoadLoadAllMultiThread() throws Exception {
+        LoadingCache<String, String> cache = CacheBuilder
+                .newBuilder()
+                .build(new CacheLoader<String, String>() {
+                    @Override
+                    public String load(String s) throws Exception {
+                        System.out.println("Load = " + Thread.currentThread().getName() + " search for: " + s);
+                        return "world";
+                    }
+
+                    @Override
+                    public Map<String, String> loadAll(Iterable<? extends String> s) throws Exception {
+                        System.out.println("Load All = " + Thread.currentThread().getName() + " search for: " + s);
+                        Map<String, String> returnMap = new HashMap<>();
+                        returnMap.put("hello", "world");
+                        returnMap.put("bye", "corfu");
+                        return returnMap;
+                    }
+                });
+
+        List<String> request = new ArrayList<>();
+        request.add("hello");
+        request.add("bye");
+
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+
+        final int sleepTime = 1000;
+
+        Thread t0 = new Thread(() -> {
+            try {
+                System.out.println("Write-through Thread started: " + Thread.currentThread().getName());
+                cache.asMap().compute("hello", (k, v) -> {
+                    try {
+                        countDownLatch.countDown();
+                        Thread.sleep(sleepTime);
+                    } catch (InterruptedException e) {
+                        //
+                    }
+                    return "ok";
+                });
+            } catch (Exception e) {
+                System.out.println("Exception: " + e);
+            }
+        });
+
+        Thread t1 = new Thread(() -> {
+            try {
+                countDownLatch.await();
+                System.out.println("First Thread started: " + Thread.currentThread().getName());
+                cache.get("hello");
+            } catch (Exception e) {
+                System.out.println("Exception: " + e);
+            }
+        });
+
+        Thread t2 = new Thread(() -> {
+            try {
+                countDownLatch.await();
+                System.out.println("Second Thread started: " + Thread.currentThread().getName());
+                cache.getAll(request);
+            } catch (Exception e) {
+                System.out.println("Exception: " + e);
+            }
+        });
+
+        t0.start();
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+
+        System.out.println("Hello value in cache: " + cache.get("hello"));
+    }
+
+    @Test
+    @Ignore
+    public void benchMarkFollowBackpointersAndSingleStep() throws Exception {
+        // Create Server & Runtime
+        Process server = runDefaultServer();
+        CorfuRuntime rt1 = createDefaultRuntime();
+        CorfuRuntime rt2 = createDefaultRuntime();
+        CorfuRuntime rt3 = createDefaultRuntime();
+
+        try {
+            final int multiplyFactor = 10;
+
+            CorfuTable<Integer, String> table1 = rt1.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("stream1")
+                    .open();
+
+            CorfuTable<Integer, String> table2 = rt1.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("stream2")
+                    .open();
+
+            System.out.println("**** Populate Stream 1, 10.000 entries");
+            for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_LARGE; i++) {
+                table1.put(i, String.valueOf(i));
+            }
+
+            System.out.println("**** Populate Stream 2, 10.000 entries");
+            for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_LARGE; i++) {
+                table2.put(i, String.valueOf(i));
+            }
+
+            System.out.println("**** Fill hole for Stream 1...");
+
+            Token holeToken = new Token(0L, PARAMETERS.NUM_ITERATIONS_LARGE * 2);
+            rt2.getLayoutView().getRuntimeLayout().getLogUnitClient("tcp://localhost:9000").fillHole(holeToken);
+
+            CorfuTable<Integer, String> rt2Table1 = rt2.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("stream1")
+                    .open();
+
+            System.out.println("**** Populate Stream 1 from rt2, 100.000 entries");
+            Long startTime = System.currentTimeMillis();
+            for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_LARGE * multiplyFactor; i++) {
+                rt2Table1.put(i, String.valueOf(i));
+            }
+            Long endTime = System.currentTimeMillis();
+
+            System.out.println("Total time to write 100K entries to 'Stream 1' by RT2: " + (endTime - startTime));
+
+            System.out.println("**** Get Stream 1 from rt1");
+
+            startTime = System.currentTimeMillis();
+            assertThat(table1.get((PARAMETERS.NUM_ITERATIONS_LARGE * multiplyFactor) - 1)).isEqualTo(String.valueOf((PARAMETERS.NUM_ITERATIONS_LARGE * multiplyFactor) - 1));
+            endTime = System.currentTimeMillis();
+
+            System.out.println("Total time partial synced runtime to catch up on 'Stream 1': " + (endTime - startTime));
+
+            CorfuTable<Integer, String> rt3Table1 = rt3.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("stream1")
+                    .open();
+
+            System.out.println("**** Get Stream 1 from rt3");
+            startTime = System.currentTimeMillis();
+            assertThat(rt3Table1.get((PARAMETERS.NUM_ITERATIONS_LARGE * multiplyFactor) - 1)).isEqualTo(String.valueOf((PARAMETERS.NUM_ITERATIONS_LARGE * multiplyFactor) - 1));
+            endTime = System.currentTimeMillis();
+
+            System.out.println("Total time new runtime to sync all 'Stream 1': " + (endTime - startTime));
+        } finally {
+            rt1.shutdown();
+            rt2.shutdown();
+            rt3.shutdown();
+            shutdownCorfuServer(server);
+        }
+    }
+
+    @Test
+    @Ignore
+    public void benchmarkMultiThreadedPuts() throws Exception {
+        // Create Server & Runtime
+        Process server = runDefaultServer();
+
+        CorfuRuntime rt1 = createDefaultRuntime();
+        CorfuRuntime rt2 = createDefaultRuntime();
+
+        // Fixed Thread Pool
+        final int numThreads = 10;
+        final int numKeys = 10000;
+
+        try {
+            CorfuTable<Integer, String> table = rt1.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("streamTable")
+                    .open();
+
+            ExecutorService executor = Executors.newFixedThreadPool(numThreads);
+            Long startTime = System.currentTimeMillis();
+
+            for (int i = 0; i < numKeys; i++) {
+                final int value = i;
+                executor.submit(() -> {
+                    rt1.getObjectsView().TXBuild().type(TransactionType.WRITE_AFTER_WRITE).build().begin();
+                    table.put(value, String.valueOf(value));
+                    rt1.getObjectsView().TXEnd();
+                });
+            }
+
+            executor.shutdown();
+            executor.awaitTermination(2, TimeUnit.MINUTES);
+            System.out.println(String.format("**** Multi-threaded puts (%s threads, %s keys) completed in: %s ms",
+                    numThreads, numKeys, (System.currentTimeMillis() - startTime)));
+
+            // Read from fresh runtime
+            CorfuTable<Integer, String> table2 = rt2.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<Integer, String>>() {
+                    })
+                    .setStreamName("streamTable")
+                    .open();
+
+            startTime = System.currentTimeMillis();
+            assertThat(table2.size()).isEqualTo(numKeys);
+            System.out.println(String.format("**** New runtime read completed in: %s ms", (System.currentTimeMillis() - startTime)));
+        } catch(Exception e) {
+            // Exception
+        } finally {
+            rt1.shutdown();
+            rt2.shutdown();
+            shutdownCorfuServer(server);
+        }
     }
 }

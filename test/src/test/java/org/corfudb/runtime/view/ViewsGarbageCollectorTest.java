@@ -56,6 +56,7 @@ public class ViewsGarbageCollectorTest extends AbstractViewTest {
         assertThat(sizeOfTableAfterGc)
                 .isLessThan(sizeOfTableAfterWrite - (numWrites * Long.BYTES * numOfSetsStreamSets));
         assertThat(rt.getAddressSpaceView().getReadCache().asMap()).isEmpty();
+        assertThat(rt.getAddressSpaceView().getWriteCache().asMap()).isEmpty();
         rt.shutdown();
         assertThat(rt.getGarbageCollector().isStarted()).isFalse();
     }

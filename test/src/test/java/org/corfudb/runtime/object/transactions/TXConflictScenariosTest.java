@@ -289,7 +289,6 @@ public abstract class TXConflictScenariosTest extends AbstractTransactionContext
 
         // state 1: do some puts/gets
         addTestStep( (task_num) -> {
-
             // put to a task-exclusive entry
             testMap.put(Integer.toString(task_num),
                     Integer.toString(task_num));
@@ -320,13 +319,18 @@ public abstract class TXConflictScenariosTest extends AbstractTransactionContext
 
         commitStatus = new AtomicIntegerArray(numTasks);
 
+        System.out.println("1");
+
         getAbortTestSM();
 
+        System.out.println("2");
         // invoke the execution engine
         if (testInterleaved)
             scheduleInterleaved(numThreads, numTasks);
         else
             scheduleThreaded(numThreads, numTasks);
+
+        System.out.println("3");
 
         int aborts = 0;
         for (int i = 0; i < numTasks; i++)

@@ -5,12 +5,16 @@ import static org.corfudb.util.Utils.getTails;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.netty.handler.timeout.TimeoutException;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
@@ -18,6 +22,7 @@ import org.corfudb.protocols.wireprotocol.IToken;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
+import org.corfudb.runtime.AddressLoader;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.exceptions.NetworkException;
@@ -35,13 +40,18 @@ import org.corfudb.util.Sleep;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 
@@ -64,20 +74,47 @@ public class AddressSpaceView extends AbstractView {
             .build(new CacheLoader<Long, ILogData>() {
                 @Override
                 public ILogData load(Long value) throws Exception {
-                    return cacheFetch(value);
+                    CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(new ArrayList<>(Arrays.asList(value)));
+                    Map<Long, ILogData> response = cf.get();
+                    return response.get(value);
                 }
 
                 @Override
                 public Map<Long, ILogData> loadAll(Iterable<? extends Long> keys) throws Exception {
-                    return cacheFetch((Iterable<Long>) keys);
+                    CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(Lists.newArrayList(keys));
+                    return cf.get();
                 }
             });
+
+    /**
+     * To dispatch tasks for failure or healed nodes detection.
+     */
+    @Getter
+    private final ExecutorService addressLoaderWorker;
+
+    AddressLoader loader;
 
     /**
      * Constructor for the Address Space View.
      */
     public AddressSpaceView(@Nonnull final CorfuRuntime runtime) {
         super(runtime);
+        this.loader = new AddressLoader(this::cacheFetch, readCache);
+
+        // Initialize background thread running AddressLoader.fetch / dispatcher
+        // Creating the detection worker thread pool.
+        // This thread pool is utilized to dispatch detection tasks at regular intervals in the
+        // detectorTaskScheduler.
+        this.addressLoaderWorker = Executors.newFixedThreadPool(
+                1,
+                new ThreadFactoryBuilder()
+                        .setDaemon(true)
+                        .setNameFormat("AddressLoader-%d")
+                        .build()
+        );
+
+        this.addressLoaderWorker.submit(loader);
+
         MetricRegistry metrics = CorfuRuntime.getDefaultMetrics();
         final String pfx = String.format("%s0x%x.cache.", CorfuComponent.ADDRESS_SPACE_VIEW.toString(),
                                          this.hashCode());
@@ -88,12 +125,12 @@ public class AddressSpaceView extends AbstractView {
         metrics.register(pfx + "misses", (Gauge<Long>) () -> readCache.stats().missCount());
     }
 
-
     /**
      * Remove all log entries that are less than the trim mark
      */
     public void gc(long trimMark) {
         readCache.asMap().entrySet().removeIf(e -> e.getKey() < trimMark);
+        loader.getWriteCache().asMap().entrySet().removeIf(e -> e.getKey() < trimMark);
     }
 
     /**
@@ -101,6 +138,7 @@ public class AddressSpaceView extends AbstractView {
      */
     public void resetCaches() {
         readCache.invalidateAll();
+        loader.getWriteCache().invalidateAll();
     }
 
 
@@ -170,8 +208,8 @@ public class AddressSpaceView extends AbstractView {
             // Do the write
             try {
                 l.getReplicationMode(token.getSequence())
-                        .getReplicationProtocol(runtime)
-                        .write(e, ld);
+                            .getReplicationProtocol(runtime)
+                            .write(e, ld);
             } catch (OverwriteException ex) {
                 if (ex.getOverWriteCause() == OverwriteCause.SAME_DATA){
                     // If we have an overwrite exception with the SAME_DATA cause, it means that the
@@ -195,7 +233,7 @@ public class AddressSpaceView extends AbstractView {
 
         // Cache the successful write
         if (!runtime.getParameters().isCacheDisabled() && cacheOption == CacheOption.WRITE_THROUGH) {
-            readCache.put(token.getSequence(), ld);
+            loader.getWriteCache().put(token.getSequence(), ld);
         }
     }
 
@@ -418,6 +456,7 @@ public class AddressSpaceView extends AbstractView {
     /** Force the client cache to be invalidated. */
     public void invalidateClientCache() {
         readCache.invalidateAll();
+        loader.getWriteCache().invalidateAll();
     }
 
     /**
@@ -476,7 +515,7 @@ public class AddressSpaceView extends AbstractView {
     Map<Long, ILogData> cacheFetch(Set<Long> addresses) {
         return layoutHelper(e -> e.getLayout().getReplicationMode(addresses.iterator().next())
                 .getReplicationProtocol(runtime)
-                .readRange(e, addresses));
+                .multiRead(e, new ArrayList<>(addresses), true));
     }
 
     /**
@@ -496,5 +535,15 @@ public class AddressSpaceView extends AbstractView {
     @VisibleForTesting
     LoadingCache<Long, ILogData> getReadCache() {
         return readCache;
+    }
+
+    @VisibleForTesting
+    Cache<Long, ILogData> getWriteCache() {
+        return loader.getWriteCache();
+    }
+
+    public void stop() {
+        this.loader.stop();
+        this.addressLoaderWorker.shutdownNow();
     }
 }

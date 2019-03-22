@@ -705,6 +705,9 @@ public class CorfuRuntime {
 
         stop(true);
 
+        // Shutdown address loader background thread
+        this.getAddressSpaceView().stop();
+
         // Shutdown the event loop
         if (parameters.shutdownNettyEventLoop) {
             nettyEventLoop.shutdownGracefully();
