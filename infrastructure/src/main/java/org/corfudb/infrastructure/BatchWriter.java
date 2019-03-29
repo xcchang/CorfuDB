@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import javax.annotation.Nonnull;
 
@@ -22,6 +23,7 @@ import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
+import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
 
@@ -71,10 +73,17 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
         writerService.submit(this::batchWriteProcessor);
     }
 
+    public void writeAsync(Runnable callback) {
+        //save to streamlog then put to the cache
+        operationsQueue.add(writeAction);
+
+        //write(message.getGlobalAddress(), (LogData) message.getData());
+    }
+
     @Override
     public void write(@Nonnull K key, @Nonnull V value) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<Void> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.WRITE,
                     (Long) key, (LogData) value, ((LogData) value).getEpoch(), null, cf));
             cf.get();
@@ -90,7 +99,7 @@ public class BatchWriter<K, V> implements CacheWriter<K, V>, AutoCloseable {
 
     public void bulkWrite(List<LogData> entries, long epoch) {
         try {
-            CompletableFuture<Void> cf = new CompletableFuture();
+            CompletableFuture<Void> cf = new CompletableFuture<>();
             operationsQueue.add(new BatchWriterOperation(BatchWriterOperation.Type.RANGE_WRITE,
                     null, null, epoch, entries, cf));
             cf.get();

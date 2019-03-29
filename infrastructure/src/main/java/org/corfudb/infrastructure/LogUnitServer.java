@@ -26,6 +26,7 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.OverwriteException;
@@ -81,7 +82,7 @@ public class LogUnitServer extends AbstractServer {
      * storage.
      */
     private final LoadingCache<Long, ILogData> dataCache;
-    private final StreamLog streamLog;
+    //private final StreamLog streamLog;
     private final StreamLogCompaction logCleaner;
     private final BatchWriter<Long, ILogData> batchWriter;
 
@@ -94,6 +95,7 @@ public class LogUnitServer extends AbstractServer {
 
     /**
      * Returns a new LogUnitServer.
+     *
      * @param serverContext context object providing settings and objects
      */
     public LogUnitServer(ServerContext serverContext) {
@@ -151,11 +153,46 @@ public class LogUnitServer extends AbstractServer {
         log.debug("log write: global: {}, streams: {}", msg.getPayload().getToken(),
                 msg.getPayload().getData().getBackpointerMap());
 
+        CorfuRuntime rt;
+        rt.getParameters().setConnectionTimeout()
+
+        StreamLogManager logManager = null;
+
+        logManager.writeAsync(() -> {
+            try {
+                streamLog.append(payload.getGlobalAddress(), logData);
+                r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
+            } catch (OverwriteException ex) {
+                r.sendResponse(ctx, msg, CorfuMsgType.ERROR_OVERWRITE.payloadMsg(ex.getOverWriteCause().getId()));
+            } catch (DataOutrankedException e) {
+                r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_OUTRANKED.msg());
+            } catch (ValueAdoptedException e) {
+                r.sendResponse(ctx, msg, CorfuMsgType.ERROR_VALUE_ADOPTED.payloadMsg(e
+                        .getReadResponse()));
+            }
+        });
+
         try {
-            LogData logData = (LogData) msg.getPayload().getData();
+            final WriteRequest payload = msg.getPayload();
+            LogData logData = (LogData) payload.getData();
             logData.setEpoch(msg.getEpoch());
-            dataCache.put(msg.getPayload().getGlobalAddress(), logData);
-            r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
+
+            batchWriter.writeAsync(() -> {
+                try {
+                    streamLog.append(payload.getGlobalAddress(), logData);
+                    r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
+                } catch (OverwriteException ex) {
+                    r.sendResponse(ctx, msg, CorfuMsgType.ERROR_OVERWRITE.payloadMsg(ex.getOverWriteCause().getId()));
+                } catch (DataOutrankedException e) {
+                    r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_OUTRANKED.msg());
+                } catch (ValueAdoptedException e) {
+                    r.sendResponse(ctx, msg, CorfuMsgType.ERROR_VALUE_ADOPTED.payloadMsg(e
+                            .getReadResponse()));
+                }
+            });
+
+            //dataCache.put(msg.getPayload().getGlobalAddress(), logData);
+            //r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
 
         } catch (OverwriteException ex) {
             r.sendResponse(ctx, msg, CorfuMsgType.ERROR_OVERWRITE.payloadMsg(ex.getOverWriteCause().getId()));
@@ -172,7 +209,7 @@ public class LogUnitServer extends AbstractServer {
      */
     @ServerHandler(type = CorfuMsgType.RANGE_WRITE)
     public void rangeWrite(CorfuPayloadMsg<RangeWriteMsg> msg,
-                            ChannelHandlerContext ctx, IServerRouter r) {
+                           ChannelHandlerContext ctx, IServerRouter r) {
         try {
             List<LogData> entries = msg.getPayload().getEntries();
             batchWriter.bulkWrite(entries, msg.getEpoch());
@@ -193,7 +230,7 @@ public class LogUnitServer extends AbstractServer {
         ReadResponse rr = new ReadResponse();
         try {
             for (Long l = msg.getPayload().getRange().lowerEndpoint();
-                    l < msg.getPayload().getRange().upperEndpoint() + 1L; l++) {
+                 l < msg.getPayload().getRange().upperEndpoint() + 1L; l++) {
                 ILogData e = dataCache.get(l);
                 if (e == null) {
                     rr.put(l, LogData.getEmpty(l));
@@ -285,9 +322,9 @@ public class LogUnitServer extends AbstractServer {
 
     /**
      * Seal the server with the epoch.
-     *
+     * <p>
      * - A seal operation is inserted in the queue and then we wait to flush all operations
-     *   in the queue before this operation.
+     * in the queue before this operation.
      * - All operations after this operation but stamped with an older epoch will be failed.
      */
     @Override
@@ -304,9 +341,9 @@ public class LogUnitServer extends AbstractServer {
     /**
      * Resets the log unit server via the BatchWriter.
      * Warning: Clears all data.
-     *
+     * <p>
      * - The epochWaterMark is set to prevent resetting log unit multiple times during
-     *   same epoch.
+     * same epoch.
      * - After this the reset operation is inserted which resets and clears all data.
      * - Finally the cache is invalidated to purge the existing entries.
      */
@@ -333,10 +370,10 @@ public class LogUnitServer extends AbstractServer {
      *
      * @param address The address to retrieve the entry from.
      * @return The log unit entry to retrieve into the cache.
-     *
-     *     This function should not care about trimmed addresses, as that is handled in
-     *     the read() and append(). Any address that cannot be retrieved should be returned as
-     *     unwritten (null).
+     * <p>
+     * This function should not care about trimmed addresses, as that is handled in
+     * the read() and append(). Any address that cannot be retrieved should be returned as
+     * unwritten (null).
      */
     private synchronized ILogData handleRetrieval(long address) {
         LogData entry = streamLog.read(address);
@@ -397,5 +434,9 @@ public class LogUnitServer extends AbstractServer {
                     .noSync((Boolean) opts.get("--no-sync"))
                     .build();
         }
+    }
+
+    public static class StreamLogManager {
+
     }
 }
