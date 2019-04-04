@@ -4,7 +4,7 @@
 
     <groupId>org.corfudb</groupId>
     <artifactId>corfu</artifactId>
-    <version>0.2.3-SNAPSHOT</version>
+    <version>0.2.3.2019-04-04.2</version>
 
     <modules>
         <module>infrastructure</module>
@@ -47,9 +47,9 @@
     </properties>
 
     <scm>
-        <connection>scm:git:git://github.com/CorfuDB/CorfuDB.git</connection>
-        <developerConnection>scm:git:git://github.com:CorfuDB/CorfuDB.git</developerConnection>
-        <url>http://github.com/CorfuDB/CorfuDB</url>
+        <connection>scm:git:https://${GH_TOKEN}@github.com/CorfuDB/CorfuDB</connection>
+        <developerConnection>scm:git:https://${GH_TOKEN}@github.com/CorfuDB/CorfuDB</developerConnection>
+        <url>https://github.com/CorfuDB/CorfuDB</url>
     </scm>
 
     <licenses>
@@ -242,6 +242,15 @@
         </pluginManagement>
 
         <plugins>
+            <plugin>
+                <artifactId>maven-scm-plugin</artifactId>
+                <version>1.11.2</version>
+                <configuration>
+                    <message>release ${version}</message>
+                    <includes>pom.xml, **/pom.xml</includes>
+                    <connectionType>connection</connectionType>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
