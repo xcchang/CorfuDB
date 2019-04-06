@@ -67,8 +67,6 @@ import org.corfudb.util.Utils;
 @Slf4j
 public class AddressSpaceView extends AbstractView {
 
-    private boolean useAddressLoader = true;
-
     /**
      * A cache for read results.
      */
@@ -94,6 +92,8 @@ public class AddressSpaceView extends AbstractView {
 
      AddressLoader loader;
 
+     boolean useAddressLoader;
+
     /**
      * Constructor for the Address Space View.
      */
@@ -101,7 +101,14 @@ public class AddressSpaceView extends AbstractView {
         super(runtime);
         MetricRegistry metrics = CorfuRuntime.getDefaultMetrics();
 
-        this.loader = new AddressLoader(this::cacheFetch, readCache);
+        // Fixme: for now, address loader is tested out only with the get streams address map approach (for stream
+        //  address discovery). This is not compatible with the follow backpointers mechanism (until thoroughly
+        // tested)
+        useAddressLoader = runtime.getParameters().isAddressLoaderEnabled() &&
+                !runtime.getParameters().isFollowBackpointersEnabled();
+
+        this.loader = new AddressLoader(this::cacheFetch, readCache,
+                runtime.getParameters().getReadBatchSize(), runtime.getParameters().getNumReaders());
 
         // Initialize background thread running AddressLoader.fetch / dispatcher
         // Creating the detection worker thread pool.
@@ -341,53 +348,56 @@ public class AddressSpaceView extends AbstractView {
      * @return A result, which be cached.
      */
     public Map<Long, ILogData> read(Iterable<Long> addresses) {
+
         Map<Long, ILogData> result = new HashMap<>();
 
         if (!runtime.getParameters().isCacheDisabled()) {
-            Set<Long> addressesToFetch = new HashSet<>();
+                Set<Long> addressesToFetch = new HashSet<>();
 
-            for (Long address : addresses) {
-                ILogData val = readCache.getIfPresent(address);
-                if (val == null) {
-                    addressesToFetch.add(address);
-                } else {
-                    result.put(address, val);
-                }
-            }
-
-            // At this point we computed a subset of the addresses that
-            // resulted in a cache miss and need to be fetched
-            if (!addressesToFetch.isEmpty()) {
-                Map<Long, ILogData> fetchedAddresses;
-
-                if (!useAddressLoader) {
-                    // No Address Loader
-                    fetchedAddresses = cacheFetch(addressesToFetch);
-
-                    for (Long address : fetchedAddresses.keySet()) {
-                        checkLogData(address, fetchedAddresses.get(address));
+                for (Long address : addresses) {
+                    ILogData val = readCache.getIfPresent(address);
+                    if (val == null) {
+                        addressesToFetch.add(address);
+                    } else {
+                        result.put(address, val);
                     }
-                } else {
-                    // Address Loader
-                    CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(Lists.newArrayList(addressesToFetch));
-                    fetchedAddresses = waitOnReads(cf);
                 }
 
-                for (Map.Entry<Long, ILogData> entry : fetchedAddresses.entrySet()) {
-                    // After fetching a value, we need to insert it in the cache.
-                    // Note that based on code inspection it seems like operations
-                    // on the cache's map view are reflected in the cache's statistics.
-                    result.put(entry.getKey(), readCache.asMap()
-                            .computeIfAbsent(entry.getKey(), (k) -> entry.getValue()));
+                // At this point we computed a subset of the addresses that
+                // resulted in a cache miss and need to be fetched
+                if (!addressesToFetch.isEmpty()) {
+
+                    Map<Long, ILogData> fetchedAddresses;
+
+                    if (!useAddressLoader) {
+                        // No Address Loader
+                        fetchedAddresses = fetchAll(addressesToFetch);
+                    } else {
+                        // Address Loader
+                        CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(Lists.newArrayList(addressesToFetch));
+                        fetchedAddresses = waitOnReads(cf);
+                    }
+                    for (Map.Entry<Long, ILogData> entry : fetchedAddresses.entrySet()) {
+                        // After fetching a value, we need to insert it in the cache.
+                        // Note that based on code inspection it seems like operations
+                        // on the cache's map view are reflected in the cache's statistics.
+                        result.put(entry.getKey(), readCache.asMap()
+                                .computeIfAbsent(entry.getKey(), (k) -> entry.getValue()));
+                    }
+                }
+                return result;
+            } else {
+            // Cache disabled
+                if (!useAddressLoader) {
+                    return fetchAll(addresses);
+                } else {
+                    CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(Lists.newArrayList(addresses));
+                    result.putAll(waitOnReads(cf));
                 }
             }
-        } else {
-            CompletableFuture<Map<Long, ILogData>> cf = loader.enqueueReads(Lists.newArrayList(addresses));
-            result.putAll(waitOnReads(cf));
-        }
 
-        return result;
-    }
+            return result;
+        }
 
     private Map<Long, ILogData> waitOnReads(CompletableFuture<Map<Long, ILogData>> cf) {
         try {

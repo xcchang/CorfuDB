@@ -38,8 +38,8 @@ public class AddressLoader implements Runnable {
 
     volatile boolean shutdown = false;
 
-    final int batchSize = 10;
-    final int numReaders = 4;
+    int batchSize;
+    int numReaders;
 
     /**
      * To dispatch tasks for failure or healed nodes detection.
@@ -47,10 +47,12 @@ public class AddressLoader implements Runnable {
     @Getter
     private final ExecutorService addressLoaderFetchWorker;
 
-    public AddressLoader(Function<Set<Long>, Map<Long, ILogData>> readFunction, Cache<Long, ILogData> readCache) {
+    public AddressLoader(Function<Set<Long>, Map<Long, ILogData>> readFunction, Cache<Long, ILogData> readCache, int batchSize, int numReaders) {
         // TODO: should it be bounded?
         this.pendingReadsQueue = new LinkedBlockingQueue<>();
         this.readFunction = readFunction;
+        this.batchSize = batchSize;
+        this.numReaders = numReaders;
         this.addressLoaderFetchWorker = Executors.newFixedThreadPool(
                 numReaders,
                 new ThreadFactoryBuilder()

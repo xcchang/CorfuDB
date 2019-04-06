@@ -44,6 +44,8 @@ public abstract class AbstractQueuedStreamView extends
         AbstractContextStreamView<AbstractQueuedStreamView
                 .QueuedStreamContext> {
 
+    int batchSize;
+
     /** Create a new queued stream view.
      *
      * @param streamId  The ID of the stream
@@ -52,6 +54,7 @@ public abstract class AbstractQueuedStreamView extends
     public AbstractQueuedStreamView(final CorfuRuntime runtime,
                                     final UUID streamId) {
         super(runtime, streamId, QueuedStreamContext::new);
+        batchSize = this.runtime.getParameters().getStreamBatchSize();
     }
 
     /** Add the given address to the resolved queue of the
@@ -76,6 +79,9 @@ public abstract class AbstractQueuedStreamView extends
     @Override
     protected ILogData getNextEntry(QueuedStreamContext context,
                                     long maxGlobal) {
+
+        boolean useBackpointers = this.runtime.getParameters().isFollowBackpointersEnabled();
+
         // If we have no entries to read, fill the read queue.
         // Return if the queue is still empty.
         if (context.readQueue.isEmpty() && context.readCpQueue.isEmpty()
@@ -106,44 +112,54 @@ public abstract class AbstractQueuedStreamView extends
             return null;
         }
 
-        // Otherwise we remove entries one at a time from the read queue.
-        boolean getNext = false;
-        do {
+        if (useBackpointers) {
             if (getFrom.size() > 0) {
                 final long thisRead = getFrom.pollFirst();
-                final int batchSize = 10;
-                int counter = 1;
-                List<Long> batchRead = new ArrayList<>();
-                batchRead.add(thisRead);
-                Iterator<Long> it = getFrom.iterator();
-
-                while (it.hasNext() && counter < batchSize) {
-                    batchRead.add(it.next());
-                    counter++;
-                }
-
-                log.trace("getNextEntry[{}]: reading {}, if not present read batch of addresses: {}", this, thisRead, batchRead);
-                ILogData ld = readRange(thisRead, batchRead);
-
+                ILogData ld = read(thisRead);
                 if (getFrom == context.readQueue) {
-                    // Validate data entry belongs to this stream, if not skip
-                    // This verification protects against the case when tokens were issued for a stream by the sequencer,
-                    // but never written to, when a sequencer failover occurs and therefore these tokens are reassigned
-                    // to potentially a new stream, causing invalidation of theses addresses for this stream.
-                    if (ld.containsStream(this.id)) {
-                        addToResolvedQueue(context, thisRead, ld);
-                        return ld;
+                    addToResolvedQueue(context, thisRead, ld);
+                }
+                return ld;
+            }
+        } else {
+            // Otherwise we remove entries one at a time from the read queue.
+            boolean getNext;
+            do {
+                if (getFrom.size() > 0) {
+                    final long thisRead = getFrom.pollFirst();
+                    int counter = 1;
+                    List<Long> batchRead = new ArrayList<>();
+                    batchRead.add(thisRead);
+                    Iterator<Long> it = getFrom.iterator();
+
+                    while (it.hasNext() && counter < batchSize) {
+                        batchRead.add(it.next());
+                        counter++;
+                    }
+
+                    log.trace("getNextEntry[{}]: reading {}, if not present read batch of addresses: {}", this, thisRead, batchRead);
+                    ILogData ld = readRange(thisRead, batchRead);
+
+                    if (getFrom == context.readQueue) {
+                        // Validate data entry belongs to this stream, if not skip
+                        // This verification protects against the case when tokens were issued for a stream by the sequencer,
+                        // but never written to, when a sequencer failover occurs and therefore these tokens are reassigned
+                        // to potentially a new stream, causing invalidation of theses addresses for this stream.
+                        if (ld.containsStream(this.id)) {
+                            addToResolvedQueue(context, thisRead, ld);
+                            return ld;
+                        } else {
+                            log.trace("getNextEntry[{}]: the data for address {} does not belong to this stream. Skip.", this, thisRead);
+                            getNext = true;
+                        }
                     } else {
-                        log.trace("getNextEntry[{}]: the data for address {} does not belong to this stream. Skip.", this, thisRead);
-                        getNext = true;
+                        return ld;
                     }
                 } else {
-                    return ld;
+                    getNext = false;
                 }
-            } else {
-                getNext = false;
-            }
-        } while(getNext);
+            } while (getNext);
+        }
 
         // None of the potential reads ended up being part of this
         // stream, so we return null.

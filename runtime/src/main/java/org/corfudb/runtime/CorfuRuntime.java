@@ -82,6 +82,7 @@ public class CorfuRuntime {
         @Default
         private final long nettyShutdownTimeout = 300;
 
+
         // region Object Layer Parameters
         /**
          * True, if undo logging is disabled.
@@ -160,6 +161,9 @@ public class CorfuRuntime {
          */
         @Default
         long cacheExpiryTime = Long.MAX_VALUE;
+
+        @Default
+        boolean addressLoaderEnabled = false;
         // endregion
 
         // region Handshake Parameters
@@ -168,9 +172,28 @@ public class CorfuRuntime {
          */
         @Default
         int handshakeTimeout = 10;
+
+        /**
+         * Address Batch Size: multi-read batch Size
+         */
+        @Default
+        int readBatchSize = 10;
+
+        /**
+         * Address Loader number of fetcher threads
+         */
+        @Default
+        int numReaders = 1;
         // endregion
 
         // region Stream Parameters
+        /**
+         * True, if strategy to discover the address space of a stream relies on the follow backpointers.
+         * False, if strategy to discover the address space of a stream relies on the get stream address map.
+         */
+        @Default
+        boolean followBackpointersEnabled = false;
+
         /**
          * Whether or not to disable backpointers.
          */
@@ -196,6 +219,12 @@ public class CorfuRuntime {
          */
         @Default
         int trimRetry = 2;
+
+        /**
+         * Stream Batch Size: number of addresses to fetch in advance
+         */
+        @Default
+        int streamBatchSize = 10;
         // endregion
 
         //region        Security parameters
