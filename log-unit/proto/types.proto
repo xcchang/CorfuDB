@@ -1,0 +1,7 @@
+option java_package = "org.corfudb.infrastructure.log";
+
+message StreamLogAddress {
+    required sfixed64 address = 1;
+    required sfixed64 offset = 2;
+    required sfixed32 length = 3;
+}

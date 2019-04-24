@@ -3,6 +3,7 @@ package org.corfudb.protocols.wireprotocol;
 import io.netty.buffer.ByteBuf;
 
 import java.lang.reflect.ParameterizedType;
+import java.nio.ByteBuffer;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;

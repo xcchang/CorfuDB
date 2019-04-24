@@ -33,8 +33,7 @@ public class OptimisticTxOperation extends Operation {
             for (int x = 0; x < operations.size(); x++) {
                 if (operations.get(x) instanceof OptimisticTxOperation
                         || operations.get(x) instanceof SnapshotTxOperation
-                        || operations.get(x) instanceof NestedTxOperation)
-                {
+                        || operations.get(x) instanceof NestedTxOperation) {
                     continue;
                 }
 

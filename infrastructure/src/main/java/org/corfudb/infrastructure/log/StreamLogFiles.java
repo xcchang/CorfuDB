@@ -850,8 +850,9 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @param entry   The LogData to append.
      * @return Returns metadata for the written record
      */
-    private AddressMetaData writeRecord(SegmentHandle segment, long address,
-                                        LogData entry) throws IOException {
+    private AddressMetaData writeRecord(SegmentHandle segment, long address, LogData entry)
+            throws IOException {
+
         LogEntry logEntry = getLogEntry(address, entry);
         Metadata metadata = getMetadata(logEntry);
 
