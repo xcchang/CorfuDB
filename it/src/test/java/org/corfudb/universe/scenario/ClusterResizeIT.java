@@ -30,6 +30,8 @@ public class ClusterResizeIT extends GenericIntegrationTest {
     @Test(timeout = 300000)
     public void clusterResizeTest() {
         getScenario().describe((fixture, testCase) -> {
+            ScenarioUtils.waitUninterruptibly(Duration.ofSeconds(15000));
+
             ClientParams clientFixture = fixture.getClient();
 
             CorfuCluster corfuCluster = universe.getGroup(fixture.getCorfuCluster().getName());

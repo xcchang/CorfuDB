@@ -6,6 +6,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
+import com.google.common.cache.CacheStats;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.UncheckedExecutionException;
@@ -19,6 +20,7 @@ import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.exceptions.NetworkException;
 import org.corfudb.runtime.exceptions.OverwriteCause;
@@ -37,15 +39,14 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 
 /**
@@ -56,39 +57,36 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class AddressSpaceView extends AbstractView {
 
-    /**
-     * A cache for read results.
-     */
-    final LoadingCache<Long, ILogData> readCache = CacheBuilder.newBuilder()
-            .maximumSize(runtime.getParameters().getNumCacheEntries())
-            .expireAfterAccess(runtime.getParameters().getCacheExpiryTime(), TimeUnit.SECONDS)
-            .expireAfterWrite(runtime.getParameters().getCacheExpiryTime(), TimeUnit.SECONDS)
-            .recordStats()
-            .build(new CacheLoader<Long, ILogData>() {
-                @Override
-                public ILogData load(Long value) throws Exception {
-                    return fetch(value);
-                }
-
-                @Override
-                public Map<Long, ILogData> loadAll(Iterable<? extends Long> keys) throws Exception {
-                    return fetchAll((Iterable<Long>) keys, true);
-                }
-            });
+    private final AddressSpaceViewCache<Long, ILogData> cache;
 
     /**
      * Constructor for the Address Space View.
      */
     public AddressSpaceView(@Nonnull final CorfuRuntime runtime) {
         super(runtime);
+        this.cache = new AddressSpaceViewCache<>(runtime.getParameters(), new CacheLoader<Long, ILogData>() {
+            @Override
+            public ILogData load(Long value) {
+                return fetch(value);
+            }
+
+            @Override
+            public Map<Long, ILogData> loadAll(Iterable<? extends Long> keys) {
+                return fetchAll((Iterable<Long>) keys, true);
+            }
+        });
+
         MetricRegistry metrics = CorfuRuntime.getDefaultMetrics();
-        final String pfx = String.format("%s0x%x.cache.", CorfuComponent.ADDRESS_SPACE_VIEW.toString(),
-                                         this.hashCode());
-        metrics.register(pfx + "cache-size", (Gauge<Long>) readCache::size);
-        metrics.register(pfx + "evictions", (Gauge<Long>) () -> readCache.stats().evictionCount());
-        metrics.register(pfx + "hit-rate", (Gauge<Double>) () -> readCache.stats().hitRate());
-        metrics.register(pfx + "hits", (Gauge<Long>) () -> readCache.stats().hitCount());
-        metrics.register(pfx + "misses", (Gauge<Long>) () -> readCache.stats().missCount());
+        final String pfx = String.format(
+                "%s0x%x.cache.", CorfuComponent.ADDRESS_SPACE_VIEW.toString(), this.hashCode()
+        );
+
+        CacheStats cacheStats = cache.getUnderlyingCache().stats();
+        metrics.register(pfx + "cache-size", (Gauge<Long>) cache::size);
+        metrics.register(pfx + "evictions", (Gauge<Long>) cacheStats::evictionCount);
+        metrics.register(pfx + "hit-rate", (Gauge<Double>) cacheStats::hitRate);
+        metrics.register(pfx + "hits", (Gauge<Long>) cacheStats::hitCount);
+        metrics.register(pfx + "misses", (Gauge<Long>) cacheStats::missCount);
     }
 
 
@@ -96,27 +94,27 @@ public class AddressSpaceView extends AbstractView {
      * Remove all log entries that are less than the trim mark
      */
     public void gc(long trimMark) {
-        readCache.asMap().entrySet().removeIf(e -> e.getKey() < trimMark);
+        cache.clean(e -> e.getKey() < trimMark);
     }
 
     /**
      * Reset all in-memory caches.
      */
     public void resetCaches() {
-        readCache.invalidateAll();
+        cache.resetCaches();
     }
 
 
     /**
      * Validates the state of a write after an exception occurred during the process
-     *
+     * <p>
      * There are [currently] three different scenarios:
-     *   1. The data was persisted to some log units and we were able to recover it.
-     *   2. The data was not persisted and another client (or this client) hole filled.
-     *      In that case, we return an OverwriteException and let the upper layer handle it.
-     *   3. The address we tried to write to was trimmed. In this case, there is no way to
-     *      know if the write went through or not. For sanity, we throw an OverwriteException
-     *      and let the above layer retry.
+     * 1. The data was persisted to some log units and we were able to recover it.
+     * 2. The data was not persisted and another client (or this client) hole filled.
+     * In that case, we return an OverwriteException and let the upper layer handle it.
+     * 3. The address we tried to write to was trimmed. In this case, there is no way to
+     * know if the write went through or not. For sanity, we throw an OverwriteException
+     * and let the above layer retry.
      *
      * @param address
      */
@@ -129,7 +127,7 @@ public class AddressSpaceView extends AbstractView {
             throw new UnrecoverableCorfuError("We cannot determine state of an update because of a trim.");
         }
 
-        if (!logData.equals(ld)){
+        if (!logData.equals(ld)) {
             throw new OverwriteException(OverwriteCause.DIFF_DATA);
         }
     }
@@ -141,13 +139,13 @@ public class AddressSpaceView extends AbstractView {
      * has been adopted, or a WrongEpochException if the
      * token epoch is invalid.
      *
-     * @param token        The token to use for the write.
-     * @param data         The data to write.
-     * @param cacheOption  The caching behaviour for this write
-     * @throws OverwriteException   If the globalAddress given
-     *                              by the token has adopted
-     *                              another value.
-     * @throws WrongEpochException  If the token epoch is invalid.
+     * @param token       The token to use for the write.
+     * @param data        The data to write.
+     * @param cacheOption The caching behaviour for this write
+     * @throws OverwriteException  If the globalAddress given
+     *                             by the token has adopted
+     *                             another value.
+     * @throws WrongEpochException If the token epoch is invalid.
      */
     public void write(@Nonnull IToken token, @Nonnull Object data, @Nonnull CacheOption cacheOption) {
         ILogData ld;
@@ -176,7 +174,7 @@ public class AddressSpaceView extends AbstractView {
                         .getReplicationProtocol(runtime)
                         .write(e, ld);
             } catch (OverwriteException ex) {
-                if (ex.getOverWriteCause() == OverwriteCause.SAME_DATA){
+                if (ex.getOverWriteCause() == OverwriteCause.SAME_DATA) {
                     // If we have an overwrite exception with the SAME_DATA cause, it means that the
                     // server suspects our data has already been written, in this case we need to
                     // validate the state of the write.
@@ -199,7 +197,7 @@ public class AddressSpaceView extends AbstractView {
 
         // Cache the successful write
         if (!runtime.getParameters().isCacheDisabled() && cacheOption == CacheOption.WRITE_THROUGH) {
-            readCache.put(token.getSequence(), ld);
+            cache.put(token.getSequence(), ld);
         }
     }
 
@@ -218,15 +216,16 @@ public class AddressSpaceView extends AbstractView {
      * committed value, or NULL, if no value has
      * been committed.
      *
-     * @param address   The address to read from.
-     * @return          Committed data stored in the
-     *                  log, or NULL, if no value
-     *                  has been committed.
+     * @param address The address to read from.
+     * @return Committed data stored in the
+     * log, or NULL, if no value
+     * has been committed.
      */
-    public @Nullable ILogData peek(final long address) {
+    public @Nullable
+    ILogData peek(final long address) {
         return layoutHelper(e -> e.getLayout().getReplicationMode(address)
-                    .getReplicationProtocol(runtime)
-                    .peek(e, address));
+                .getReplicationProtocol(runtime)
+                .peek(e, address));
     }
 
     /**
@@ -238,19 +237,7 @@ public class AddressSpaceView extends AbstractView {
     public @Nonnull
     ILogData read(long address) {
         if (!runtime.getParameters().isCacheDisabled()) {
-            try {
-                return readCache.get(address);
-            } catch (ExecutionException | UncheckedExecutionException e) {
-                // Guava wraps the exceptions thrown from the lower layers, therefore
-                // we need to unwrap them before throwing them to the upper layers that
-                // don't understand the guava exceptions
-                Throwable cause = e.getCause();
-                if (cause instanceof RuntimeException) {
-                    throw (RuntimeException) cause;
-                } else {
-                    throw new RuntimeException(cause);
-                }
-            }
+            return cache.get(address);
         }
 
         return fetch(address);
@@ -259,32 +246,26 @@ public class AddressSpaceView extends AbstractView {
     /**
      * This method reads a batch of addresses if 'nextRead' is not found in the cache.
      * In the case of a cache miss, it piggybacks on the read for nextRead.
-     *
+     * <p>
      * If 'nextRead' is present in the cache, it directly returns this data.
      *
-     * @param nextRead current address of interest
+     * @param nextRead  current address of interest
      * @param addresses batch of addresses to read (bring into the cache) in case there is a cache miss (includes
      *                  nextRead)
      * @return data for current 'address' of interest.
      */
-    public @Nonnull ILogData predictiveReadRange(Long nextRead, List<Long> addresses) {
+    public @Nonnull
+    ILogData predictiveReadRange(Long nextRead, List<Long> addresses) {
         if (runtime.getParameters().isCacheDisabled()) {
             return fetch(nextRead);
         }
 
-        ILogData data = readCache.getIfPresent(nextRead);
-        if (data == null) {
-            log.trace("predictiveReadRange: request to read {}", addresses);
-            Map<Long, ILogData> mapAddresses = this.read(addresses, true);
-            data = mapAddresses.get(nextRead);
-        }
-
-        return data;
+        return cache.getNextRead(nextRead, () -> read(addresses, true));
     }
 
     /**
      * Read the given object from a range of addresses.
-     *
+     * <p>
      * - If the waitForWrite flag is set to true, when an empty address is encountered,
      * it waits for one hole to be filled. All the rest empty addresses within the list
      * are hole filled directly and the reader does not wait.
@@ -297,7 +278,7 @@ public class AddressSpaceView extends AbstractView {
     public Map<Long, ILogData> read(Iterable<Long> addresses, boolean waitForWrite) {
         if (!runtime.getParameters().isCacheDisabled() && waitForWrite) {
             try {
-                return readCache.getAll(addresses);
+                return cache.getAll(addresses);
             } catch (ExecutionException | UncheckedExecutionException e) {
                 Throwable cause = e.getCause();
                 if (cause instanceof RuntimeException) {
@@ -362,8 +343,9 @@ public class AddressSpaceView extends AbstractView {
 
     /**
      * Get log address space, which includes:
-     *     1. Addresses belonging to each stream.
-     *     2. Log Tail.
+     * 1. Addresses belonging to each stream.
+     * 2. Log Tail.
+     *
      * @return
      */
     public StreamsAddressResponse getLogAddressSpace() {
@@ -398,16 +380,17 @@ public class AddressSpaceView extends AbstractView {
                 runtime.getSequencerView().trimCache(address.getSequence());
 
                 layoutHelper(e -> {
-                            e.getLayout().getPrefixSegments(address.getSequence()).stream()
-                                    .flatMap(seg -> seg.getStripes().stream())
-                                    .flatMap(stripe -> stripe.getLogServers().stream())
-                                    .map(e::getLogUnitClient)
-                                    .map(client -> client.prefixTrim(address))
-                                    .forEach(cf -> {CFUtils.getUninterruptibly(cf,
-                                            NetworkException.class, TimeoutException.class,
-                                            WrongEpochException.class);
-                                    });
-                            return null;
+                    e.getLayout().getPrefixSegments(address.getSequence()).stream()
+                            .flatMap(seg -> seg.getStripes().stream())
+                            .flatMap(stripe -> stripe.getLogServers().stream())
+                            .map(e::getLogUnitClient)
+                            .map(client -> client.prefixTrim(address))
+                            .forEach(cf -> {
+                                CFUtils.getUninterruptibly(cf,
+                                        NetworkException.class, TimeoutException.class,
+                                        WrongEpochException.class);
+                            });
+                    return null;
                 }, true);
                 break;
             } catch (NetworkException | TimeoutException e) {
@@ -425,10 +408,10 @@ public class AddressSpaceView extends AbstractView {
         }
     }
 
-    /** Force compaction on an address space, which will force
+    /**
+     * Force compaction on an address space, which will force
      * all log units to free space, and process any outstanding
      * trim requests.
-     *
      */
     public void gc() {
         log.debug("GarbageCollect");
@@ -463,7 +446,7 @@ public class AddressSpaceView extends AbstractView {
      * Force the client cache to be invalidated.
      */
     public void invalidateClientCache() {
-        readCache.invalidateAll();
+        cache.resetCaches();
     }
 
     /**
@@ -530,8 +513,8 @@ public class AddressSpaceView extends AbstractView {
      * @param address an address to read from.
      * @return the log data read at address
      */
-    public @Nonnull
-    ILogData fetch(final long address) {
+    @Nonnull
+    public ILogData fetch(final long address) {
         ILogData result = layoutHelper(e -> e.getLayout().getReplicationMode(address)
                 .getReplicationProtocol(runtime)
                 .read(e, address)
@@ -543,6 +526,77 @@ public class AddressSpaceView extends AbstractView {
 
     @VisibleForTesting
     Cache<Long, ILogData> getReadCache() {
-        return readCache;
+        return cache.getUnderlyingCache();
+    }
+
+    public static class AddressSpaceViewCache<K, V> {
+
+        private final CorfuRuntimeParameters rtParameters;
+
+        /**
+         * A cache for read results.
+         */
+        private final LoadingCache<K, V> cache;
+
+        public AddressSpaceViewCache(CorfuRuntimeParameters rtParameters, CacheLoader cacheLoader) {
+            this.rtParameters = rtParameters;
+
+            cache = CacheBuilder.newBuilder()
+                    .maximumSize(rtParameters.getNumCacheEntries())
+                    .expireAfterAccess(rtParameters.getCacheExpiryTime(), TimeUnit.SECONDS)
+                    .expireAfterWrite(rtParameters.getCacheExpiryTime(), TimeUnit.SECONDS)
+                    .recordStats()
+                    .build(cacheLoader);
+        }
+
+        public Long size() {
+            return cache.size();
+        }
+
+        public LoadingCache<K, V> getUnderlyingCache() {
+            return cache;
+        }
+
+        public void clean(Predicate<Map.Entry<K, V>> entryPredicate) {
+            cache.asMap().entrySet().removeIf(entryPredicate);
+        }
+
+        public void resetCaches() {
+            cache.invalidateAll();
+        }
+
+        public void put(K sequence, V logData) {
+            cache.put(sequence, logData);
+        }
+
+        public V get(K address) {
+            try {
+                return cache.get(address);
+            } catch (ExecutionException | UncheckedExecutionException e) {
+                // Guava wraps the exceptions thrown from the lower layers, therefore
+                // we need to unwrap them before throwing them to the upper layers that
+                // don't understand the guava exceptions
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException) {
+                    throw (RuntimeException) cause;
+                } else {
+                    throw new RuntimeException(cause);
+                }
+            }
+        }
+
+        public V getNextRead(K nextRead, Supplier<Map<K, V>> addressesReader) {
+            V data = cache.getIfPresent(nextRead);
+            if (data == null) {
+                Map<K, V> mapAddresses = addressesReader.get();
+                data = mapAddresses.get(nextRead);
+            }
+
+            return data;
+        }
+
+        public Map<K, V> getAll(Iterable<K> addresses) throws ExecutionException {
+            return cache.getAll(addresses);
+        }
     }
 }
