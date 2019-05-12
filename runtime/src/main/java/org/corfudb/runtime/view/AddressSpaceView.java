@@ -39,9 +39,11 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -585,6 +587,17 @@ public class AddressSpaceView extends AbstractView {
             }
         }
 
+
+        /*public V getAsMap(K address){
+            V data = cache.getIfPresent(address);
+            if (data == null) {
+                final V loadedVal = (V) UUID.randomUUID().toString();
+                return cache.asMap().computeIfAbsent(address, (k) -> loadedVal);
+            }
+
+            return data;
+        }*/
+
         public V getNextRead(K nextRead, Supplier<Map<K, V>> addressesReader) {
             V data = cache.getIfPresent(nextRead);
             if (data == null) {
@@ -597,6 +610,14 @@ public class AddressSpaceView extends AbstractView {
 
         public Map<K, V> getAll(Iterable<K> addresses) throws ExecutionException {
             return cache.getAll(addresses);
+        }
+
+        public Map<K, V> getAllAsMap(Iterable<K> addresses) throws ExecutionException {
+            Map<K, V> res = new HashMap<>();
+            for (K address : addresses) {
+                res.put(address, cache.get(address, () -> (V) UUID.randomUUID().toString()));
+            }
+            return res;
         }
     }
 }
