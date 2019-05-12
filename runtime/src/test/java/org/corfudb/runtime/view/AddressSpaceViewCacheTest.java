@@ -35,6 +35,8 @@ public class AddressSpaceViewCacheTest {
         //eviction
         //asMap
 
+        ExecutorService cacheExecutor = Executors.newFixedThreadPool(6);
+
         CorfuRuntimeParameters params = CorfuRuntimeParameters.builder()
                 .numCacheEntries(1)
                 .build();
@@ -60,30 +62,46 @@ public class AddressSpaceViewCacheTest {
         final AddressSpaceViewCache<Long, String> cache = new AddressSpaceViewCache<>(params, cacheLoader);
         ExecutorService executor = Executors.newFixedThreadPool(6);
 
-        final Thread t1 = new Thread(() -> {
-            cache.put(1L, UUID.randomUUID().toString());
-            cache.put(1L, UUID.randomUUID().toString());
-            cache.put(1L, UUID.randomUUID().toString());
-            cache.put(1L, UUID.randomUUID().toString());
+
+        Thread t1 = new Thread(() -> {
+            while (true) {
+                cache.put(RND.nextLong(), UUID.randomUUID().toString());
+                cache.put(RND.nextLong(), UUID.randomUUID().toString());
+                cache.put(RND.nextLong(), UUID.randomUUID().toString());
+                cache.put(RND.nextLong(), UUID.randomUUID().toString());
+                cache.put(RND.nextLong(), UUID.randomUUID().toString());
+            }
         });
         t1.setName("t1");
 
-        final Thread t2 = new Thread(() -> {
-            /*try {
-                Thread.sleep(60000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }*/
-            cache.getUnderlyingCache().invalidateAll();
+        Thread t2 = new Thread(() -> {
+            long start = System.currentTimeMillis();
+            while (true) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                if (Duration.ofMillis(System.currentTimeMillis() - start).getSeconds() > 3){
+                    System.out.println("invalidate");
+                    start = System.currentTimeMillis();
+                }
+                cache.getUnderlyingCache().invalidateAll();
+                cache.getUnderlyingCache().invalidateAll();
+                cache.getUnderlyingCache().invalidateAll();
+            }
         });
         t2.setName("t2");
 
         t1.start();
+        Thread.sleep(1000);
+        System.out.println("Start t2!!!!!!!!!!!!!");
         t2.start();
 
-        //yay(cache, executor);
-
         Thread.sleep(1_000_000);
+
+
+        //yay(cache, executor);
     }
 
     private void yay(AddressSpaceViewCache<Long, String> cache, ExecutorService executor) throws InterruptedException {
