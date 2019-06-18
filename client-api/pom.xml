@@ -19,6 +19,12 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>org.corfudb</groupId>
+            <artifactId>corfudb-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- external dependencies -->
         <dependency>
             <groupId>com.google.protobuf</groupId>

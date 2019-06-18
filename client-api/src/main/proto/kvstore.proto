@@ -150,3 +150,13 @@ message TransactionBuilder {
 message TxBuilderOperation {
     Command command = 1;
 }
+
+
+//nsx
+message User {
+    string name = 1;
+}
+
+message Address {
+    string addr = 1;
+}
