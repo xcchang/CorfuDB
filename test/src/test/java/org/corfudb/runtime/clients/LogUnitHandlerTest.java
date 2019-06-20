@@ -412,7 +412,7 @@ public class LogUnitHandlerTest extends AbstractClientTest {
     public void CorruptedDataReadThrowsException() throws Exception {
         byte[] testString = "hello world".getBytes();
         client.write(0, null, testString, Collections.emptyMap()).get();
-        client.write(StreamLogFiles.RECORDS_PER_LOG_FILE + 1, null,
+        client.write(StreamLogFiles.RECORDS_PER_SEGMENT + 1, null,
                 testString, Collections.emptyMap()).get();
 
         // Corrupt the written log entry
