@@ -59,13 +59,10 @@ public class LogMetadata {
             // Update stream tails
             long currentStreamTail = streamTails.getOrDefault(streamId, Address.NON_ADDRESS);
             streamTails.put(streamId, Math.max(currentStreamTail, entryAddress));
-
+            final long backpointer = entry.getBackpointer(streamId);
             // Update stream address map (used for sequencer recovery)
             // Since entries might have been written in random order
             // We update the trim mark to be the min of all backpointer addresses.
-            streamsAddressSpaceMap.computeIfAbsent(streamId, k ->
-                    new StreamAddressSpace(Address.NON_EXIST, new Roaring64NavigableMap()));
-
             streamsAddressSpaceMap.compute(streamId, (id, addressSpace) -> {
                 // If restarting the log unit, i.e., scanning all records in the log for initialization,
                 // update the stream trim mark as we read (as entries might not be ordered).
@@ -74,10 +71,9 @@ public class LogMetadata {
                 // states of the actual address map. In the case of log updates, the trim mark will be set
                 // as prefix trims are performed.
                 if (addressSpace == null) {
-                    Long streamTrimMark = Address.NON_EXIST;
+                    long streamTrimMark = Address.NON_EXIST;
                     if (initialize) {
-                        streamTrimMark = getStreamTrimMark(Long.MAX_VALUE,
-                                entry.getBackpointer(streamId), globalTrimMark);
+                        streamTrimMark = backpointer;
                     }
                     Roaring64NavigableMap addressMap = new Roaring64NavigableMap();
                     addressMap.addLong(entryAddress);
@@ -86,7 +82,7 @@ public class LogMetadata {
 
                 if (initialize) {
                     long streamTrimMark = getStreamTrimMark(addressSpace.getTrimMark(),
-                            entry.getBackpointer(streamId), globalTrimMark);
+                            backpointer, globalTrimMark);
                     addressSpace.setTrimMark(streamTrimMark);
                 }
 
