@@ -16,7 +16,6 @@ import org.corfudb.runtime.exceptions.AppendException;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.StaleTokenException;
 import org.corfudb.runtime.exceptions.TrimmedException;
-import org.corfudb.runtime.object.transactions.TransactionalContext;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.ReadOptions;
 import org.corfudb.runtime.view.StreamOptions;
@@ -69,7 +68,6 @@ public abstract class AbstractQueuedStreamView extends
         super(runtime, streamId, QueuedStreamContext::new);
         this.readOptions = ReadOptions.builder()
                 .clientCacheable(streamOptions.isCacheEntries())
-                .ignoreTrim(streamOptions.isIgnoreTrimmed())
                 .build();
     }
 
@@ -768,8 +766,12 @@ public abstract class AbstractQueuedStreamView extends
 
         if (prevAddress != null) {
             log.trace("previous[{}]: updated read queue {}", this, context.readQueue);
+
+            final long readAddress = prevAddress;
             context.setGlobalPointer(prevAddress);
-            return read(prevAddress);
+
+            // The ILogData returned by previous() would be used for rollback.
+            return read(readAddress);
         }
 
         if (context.checkpoint.id == null) {
@@ -805,6 +807,8 @@ public abstract class AbstractQueuedStreamView extends
         if (Address.nonAddress(context.getGlobalPointer())) {
             return null;
         }
+
+        // The ILogData returned by current() would be used for rollback.
         return read(context.getGlobalPointer());
     }
 

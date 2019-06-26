@@ -8,10 +8,10 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
+import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.util.Utils;
@@ -43,13 +43,6 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
      * The runtime the stream view was created with.
      */
     final CorfuRuntime runtime;
-
-    /**
-     * The compaction mark of this stream.
-     */
-    @Getter
-    @Setter
-    volatile long compactionMark = Address.NON_ADDRESS;
 
     /**
      * An ordered set of stream contexts, which store information
@@ -136,8 +129,10 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
         }
 
         // Get the next entry from the underlying implementation.
-        final ILogData entry =
-                getNextEntry(getCurrentContext(), maxGlobal);
+        ILogData entry;
+        do {
+            entry = streamReadWithCheck(() -> getNextEntry(getCurrentContext(), maxGlobal), maxGlobal);
+        } while (entry == LogData.COMPACTED);
 
         if (entry != null) {
             // Update the pointer.
@@ -257,17 +252,19 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
         final List<ILogData> dataList = new ArrayList<>();
         ILogData thisData;
 
-        while ((thisData = getNextEntry(context, maxGlobal)) != null) {
-            // Add this read to the list of reads to return.
-            dataList.add(thisData);
+        while ((thisData = streamReadWithCheck(()->getNextEntry(context, maxGlobal), maxGlobal)) != null) {
+            if (thisData != LogData.COMPACTED) {
+                // Add this read to the list of reads to return.
+                dataList.add(thisData);
 
-            // Update the pointer, because the underlying implementation
-            // will expect it to be updated when we call getNextEntry() again.
-            updatePointer(thisData);
+                // Update the pointer, because the underlying implementation
+                // will expect it to be updated when we call getNextEntry() again.
+                updatePointer(thisData);
 
-            // If this entry changes the context, don't continue reading.
-            if (contextCheckFn.apply(thisData)) {
-                break;
+                // If this entry changes the context, don't continue reading.
+                if (contextCheckFn.apply(thisData)) {
+                    break;
+                }
             }
         }
 
@@ -345,5 +342,10 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
     @Override
     public String toString() {
         return Utils.toReadableId(baseContext.id) + "@" + getCurrentContext().getGlobalPointer();
+    }
+
+    @Override
+    public long getCompactionMark() {
+        return runtime.getAddressSpaceView().getCompactionMark();
     }
 }

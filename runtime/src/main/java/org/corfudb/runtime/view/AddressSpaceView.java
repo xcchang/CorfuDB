@@ -9,7 +9,9 @@ import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.netty.handler.timeout.TimeoutException;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.logprotocol.SMRGarbageEntry;
 import org.corfudb.protocols.wireprotocol.DataType;
@@ -30,7 +32,6 @@ import org.corfudb.runtime.exceptions.StaleTokenException;
 import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.exceptions.WriteSizeException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
-import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 
 import org.corfudb.util.CFUtils;
@@ -79,8 +80,11 @@ public class AddressSpaceView extends AbstractView {
 
     final private long defaultMaxCacheEntries = 5000;
 
+    @Getter
+    @Setter
+    private volatile long compactionMark = Address.NON_ADDRESS;
+
     private final ReadOptions defaultReadOptions = ReadOptions.builder()
-            .ignoreTrim(false)
             .waitForHole(true)
             .clientCacheable(true)
             .serverCacheable(true)
@@ -170,8 +174,8 @@ public class AddressSpaceView extends AbstractView {
         try {
             logData = read(address);
         } catch (TrimmedException te) {
-            // We cannot know if the write went through or not
-            throw new UnrecoverableCorfuError("We cannot determine state of an update because of a trim.");
+            // We know the write went through because some runtime read this logData and marked it as garbage.
+            return;
         }
 
         if (!logData.equals(ld)){
@@ -737,11 +741,7 @@ public class AddressSpaceView extends AbstractView {
         }
 
         if (!trimmedAddresses.isEmpty()) {
-            if (!options.isIgnoreTrim()) {
-                throw new TrimmedException(trimmedAddresses);
-            }
-
-            log.warn("read: ignoring trimmed addresses {}", trimmedAddresses);
+            throw new TrimmedException(trimmedAddresses);
         }
 
         return result;
@@ -762,7 +762,7 @@ public class AddressSpaceView extends AbstractView {
                     + address + " on read");
         }
 
-        if (logData.isTrimmed()) {
+        if (logData.isCompacted()) {
             if (throwException) {
                 throw new TrimmedException(String.format("Trimmed address %s", address));
             }

@@ -430,7 +430,6 @@ public class FastObjectLoader {
     private void cleanUpForRetry() {
         runtime.getAddressSpaceView().invalidateClientCache();
         runtime.getObjectsView().getObjectCache().clear();
-        runtime.getStreamsView().getStreamCache().clear();
 
         // Re ask for the Head, if it changes while we were trying.
         findAndSetLogHead();
@@ -532,7 +531,8 @@ public class FastObjectLoader {
                 invokeNecromancer(range, logDataProcessor);
 
             } catch (TrimmedException ex) {
-                log.warn("Error loading data", ex);
+                // Should not encounter TrimmedException, which indicates bugs.
+                log.error("Loading data encounter TrimmedException", ex);
                 handleRetry();
             }
         }

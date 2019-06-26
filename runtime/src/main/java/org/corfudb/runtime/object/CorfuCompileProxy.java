@@ -17,7 +17,6 @@ import org.corfudb.runtime.exceptions.AbortCause;
 import org.corfudb.runtime.exceptions.NetworkException;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.exceptions.TrimmedException;
-import org.corfudb.runtime.exceptions.TrimmedUpcallException;
 import org.corfudb.runtime.object.transactions.AbstractTransactionalContext;
 import org.corfudb.runtime.object.transactions.TransactionalContext;
 import org.corfudb.runtime.view.Address;
@@ -195,29 +194,22 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
         }
 
         // Perform underlying access
-        for (int x = 0; x < rt.getParameters().getTrimRetry(); x++) {
-            // Linearize this read against a timestamp
-            final long timestamp = rt.getSequencerView()
-                            .query(getStreamID());
-            log.debug("Access[{}] conflictObj={} version={}", this, conflictObject, timestamp);
-
+        // retry until succeeded
+        while (true) {
             try {
+                // Linearize this read against a timestamp
+                final long timestamp = rt.getSequencerView()
+                        .query(getStreamID());
+                log.debug("Access[{}] conflictObj={} version={}", this, conflictObject, timestamp);
+
                 return underlyingObject.access(o -> o.getVersionUnsafe() >= timestamp
                                 && !o.isOptimisticallyModifiedUnsafe(),
                         o -> o.syncObjectUnsafe(timestamp),
                         o -> accessMethod.access(o));
-            } catch (TrimmedException te) {
-                log.warn("accessInner: Encountered a trim exception while accessing version {} on attempt {}",
-                        timestamp, x);
-                // We encountered a TRIM during sync, reset the object
-                underlyingObject.update(o -> {
-                    o.resetUnsafe();
-                    return null;
-                });
+            } catch (TrimmedException tex) {
+                log.debug("TrimmedException during non-transactional object access", tex);
             }
         }
-
-        throw new TrimmedException();
     }
 
     /**
@@ -307,38 +299,25 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
             return ret == VersionLockedObject.NullValue.NULL_VALUE ? null : ret;
         }
 
-        for (int x = 0; x < rt.getParameters().getTrimRetry(); x++) {
-            try {
-                return underlyingObject.update(o -> {
-                    o.syncObjectUnsafe(timestamp);
-                    if (o.getUpcallResults().containsKey(timestamp)) {
-                        log.trace("Upcall[{}] {} Sync'd", this, timestamp);
-                        R ret = (R) o.getUpcallResults().get(timestamp);
-                        o.getUpcallResults().remove(timestamp);
-                        return ret == VersionLockedObject.NullValue.NULL_VALUE ? null : ret;
-                    }
 
-                    // The version is already ahead, but we don't have the result.
-                    // The only way to get the correct result
-                    // of the upcall would be to rollback. For now, we throw an exception
-                    // since this is generally not expected. --- and probably a bug if it happens.
-                    throw new RuntimeException("Attempted to get the result "
-                            + "of an upcall@" + timestamp + " but we are @"
-                            + underlyingObject.getVersionUnsafe()
-                            + " and we don't have a copy");
-                });
-            } catch (TrimmedException ex) {
-                log.warn("getUpcallResultInner: Encountered a trim exception while accessing version {} on attempt {}",
-                        timestamp, x);
-                // We encountered a TRIM during sync, reset the object
-                underlyingObject.update(o -> {
-                    o.resetUnsafe();
-                    return null;
-                });
+        return underlyingObject.update(o -> {
+            o.syncObjectUnsafe(timestamp);
+            if (o.getUpcallResults().containsKey(timestamp)) {
+                log.trace("Upcall[{}] {} Sync'd", this, timestamp);
+                R ret = (R) o.getUpcallResults().get(timestamp);
+                o.getUpcallResults().remove(timestamp);
+                return ret == VersionLockedObject.NullValue.NULL_VALUE ? null : ret;
             }
-        }
 
-        throw new TrimmedUpcallException(timestamp);
+            // The version is already ahead, but we don't have the result.
+            // The only way to get the correct result
+            // of the upcall would be to rollback. For now, we throw an exception
+            // since this is generally not expected. --- and probably a bug if it happens.
+            throw new RuntimeException("Attempted to get the result "
+                    + "of an upcall@" + timestamp + " but we are @"
+                    + underlyingObject.getVersionUnsafe()
+                    + " and we don't have a copy");
+        });
     }
 
     /**

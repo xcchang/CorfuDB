@@ -91,6 +91,7 @@ public class QuorumReplicationProtocol extends AbstractReplicationProtocol {
                 return null;
             }
             if (readResponse != null) {
+                updateCompactionMark(runtimeLayout.getRuntime(), readResponse.getCompactionMark());
                 LogData result = readResponse.getAddresses().get(address);
                 if (result != null && !isEmptyType(result.getType())) {
                     return result;
@@ -292,7 +293,7 @@ public class QuorumReplicationProtocol extends AbstractReplicationProtocol {
         public int compare(ReadResponse o1, ReadResponse o2) {
             LogData ld1 = o1.getAddresses().get(logPosition);
             LogData ld2 = o2.getAddresses().get(logPosition);
-            if(ld1.isTrimmed() || ld2.isTrimmed()) {
+            if(ld1.isCompacted() || ld2.isCompacted()) {
                 throw new TrimmedException();
             }
             IMetadata.DataRank rank1 = ld1.getRank();

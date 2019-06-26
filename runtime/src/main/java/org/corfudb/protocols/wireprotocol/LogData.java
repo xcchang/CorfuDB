@@ -2,6 +2,7 @@ package org.corfudb.protocols.wireprotocol;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import lombok.Data;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.logprotocol.CheckpointEntry;
@@ -20,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
 
     public final static LogData EMPTY = new LogData(DataType.EMPTY);
+    public final static LogData COMPACTED = new LogData(DataType.COMPACTED);
 
     public static final int NOT_KNOWN = -1;
 
@@ -34,12 +36,6 @@ public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
     private int lastKnownSize = NOT_KNOWN;
 
     private final transient AtomicReference<Object> payload = new AtomicReference<>();
-
-    public static LogData getTrimmed(long address) {
-        LogData logData = new LogData(DataType.TRIMMED);
-        logData.setGlobalAddress(address);
-        return logData;
-    }
 
     public static LogData getHole(long address) {
         LogData logData = new LogData(DataType.HOLE);
