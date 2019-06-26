@@ -2,6 +2,7 @@ package org.corfudb.runtime.view;
 
 import static java.util.Objects.requireNonNull;
 
+import com.google.common.collect.ImmutableList;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import lombok.Data;
@@ -16,6 +17,7 @@ import org.corfudb.runtime.view.replication.IReplicationProtocol;
 import org.corfudb.runtime.view.replication.NeverHoleFillPolicy;
 import org.corfudb.runtime.view.replication.QuorumReplicationProtocol;
 import org.corfudb.runtime.view.replication.ReadWaitHoleFillPolicy;
+import org.corfudb.runtime.view.stream.AddressMapStreamView;
 import org.corfudb.runtime.view.stream.BackpointerStreamView;
 import org.corfudb.runtime.view.stream.IStreamView;
 import org.corfudb.runtime.view.stream.ThreadSafeStreamView;
@@ -251,13 +253,8 @@ public class Layout {
      * @param globalAddress The global address.
      */
     public LayoutStripe getStripe(long globalAddress) {
-        for (LayoutSegment ls : segments) {
-            if (ls.start <= globalAddress && (ls.end > globalAddress || ls.end == -1)) {
-                // TODO: this does not account for shifting segments.
-                return ls.getStripes().get((int) (globalAddress % ls.getNumberOfStripes()));
-            }
-        }
-        throw new RuntimeException("Unmapped address!");
+        LayoutSegment ls = getSegment(globalAddress);
+        return ls.getStripes().get((int) (globalAddress % ls.getNumberOfStripes()));
     }
 
     /**
@@ -356,11 +353,11 @@ public class Layout {
         epoch += 1;
     }
 
-    public List<String> getActiveLayoutServers() {
+    public ImmutableList<String> getActiveLayoutServers() {
         return layoutServers.stream()
                 // Unresponsive servers are excluded as they do not respond with a WrongEpochException.
                 .filter(s -> !unresponsiveServers.contains(s))
-                .collect(Collectors.toList());
+                .collect(ImmutableList.toImmutableList());
     }
 
     public enum ReplicationMode {
@@ -385,7 +382,11 @@ public class Layout {
 
             @Override
             public IStreamView getUnsafeStreamView(CorfuRuntime r, UUID streamId, StreamOptions options) {
-                return new BackpointerStreamView(r, streamId, options);
+                if (r.getParameters().isFollowBackpointersEnabled()) {
+                    return new BackpointerStreamView(r, streamId, options);
+                } else {
+                    return new AddressMapStreamView(r, streamId, options);
+                }
             }
 
             @Override
@@ -394,7 +395,7 @@ public class Layout {
                     return new ChainReplicationProtocol(new NeverHoleFillPolicy(100));
                 } else {
                     return new ChainReplicationProtocol(
-                            new ReadWaitHoleFillPolicy(r.getParameters().getRequestTimeout(),
+                            new ReadWaitHoleFillPolicy(r.getParameters().getHoleFillTimeout(),
                                     r.getParameters().getHoleFillRetryThreshold()));
                 }
             }
@@ -428,7 +429,11 @@ public class Layout {
 
             @Override
             public IStreamView getUnsafeStreamView(CorfuRuntime r, UUID streamId, StreamOptions options) {
-                return new BackpointerStreamView(r, streamId, options);
+                if (r.getParameters().isFollowBackpointersEnabled()) {
+                    return new BackpointerStreamView(r, streamId, options);
+                } else {
+                    return new AddressMapStreamView(r, streamId, options);
+                }
             }
 
             @Override
@@ -437,7 +442,7 @@ public class Layout {
                     return new QuorumReplicationProtocol(new NeverHoleFillPolicy(100));
                 } else {
                     return new QuorumReplicationProtocol(
-                            new ReadWaitHoleFillPolicy(r.getParameters().getRequestTimeout(),
+                            new ReadWaitHoleFillPolicy(r.getParameters().getHoleFillTimeout(),
                                     r.getParameters().getHoleFillRetryThreshold()));
                 }
             }

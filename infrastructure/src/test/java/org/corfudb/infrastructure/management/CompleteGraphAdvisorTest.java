@@ -1,43 +1,62 @@
 package org.corfudb.infrastructure.management;
 
+import static org.corfudb.infrastructure.management.NodeStateTestUtil.A;
+import static org.corfudb.infrastructure.management.NodeStateTestUtil.B;
+import static org.corfudb.infrastructure.management.NodeStateTestUtil.C;
+import static org.corfudb.infrastructure.management.NodeStateTestUtil.nodeState;
+import static org.corfudb.protocols.wireprotocol.ClusterState.buildClusterState;
 import static org.corfudb.protocols.wireprotocol.failuredetector.NodeConnectivity.ConnectionStatus.FAILED;
 import static org.corfudb.protocols.wireprotocol.failuredetector.NodeConnectivity.ConnectionStatus.OK;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import com.google.common.collect.ImmutableMap;
 import org.corfudb.protocols.wireprotocol.ClusterState;
 import org.corfudb.protocols.wireprotocol.NodeState;
-import org.corfudb.protocols.wireprotocol.NodeState.HeartbeatTimestamp;
-import org.corfudb.protocols.wireprotocol.failuredetector.NodeConnectivity;
-import org.corfudb.protocols.wireprotocol.SequencerMetrics;
-import org.corfudb.protocols.wireprotocol.failuredetector.NodeConnectivity.ConnectionStatus;
-import org.corfudb.protocols.wireprotocol.failuredetector.NodeConnectivity.NodeConnectivityType;
 import org.corfudb.protocols.wireprotocol.failuredetector.NodeRank;
-import org.corfudb.runtime.view.Layout;
 import org.junit.Test;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class CompleteGraphAdvisorTest {
-    private static final List<String> NODE_NAMES = Arrays.asList("a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k");
+
+    private final long epoch = 1;
+
+    /**
+     * By definition, a fully connected node can not be added to the unresponsive list.
+     * Failed connection(s) between unresponsive and fully connected node(s)
+     * can't be used to determine if a fully connected node is failed.
+     */
+    @Test
+    public void testUnresponsiveAndFullyConnectedNode() {
+        final String localEndpoint = A;
+        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor(localEndpoint);
+
+        ClusterState clusterState = buildClusterState(
+                localEndpoint,
+                nodeState(A, epoch, OK, OK, OK),
+                nodeState(B, epoch, OK, OK, FAILED),
+                nodeState(C, epoch, OK, FAILED, OK)
+        );
+
+        List<String> unresponsiveServers = Collections.singletonList("b");
+        Optional<NodeRank> failedServer = advisor.failedServer(clusterState, unresponsiveServers);
+        assertFalse(failedServer.isPresent());
+    }
 
     @Test
     public void testFailedServer_disconnected_c() {
-        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor("a");
+        final String localEndpoint = "a";
+        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor(localEndpoint);
 
         ClusterState clusterState = buildClusterState(
-                nodeState("a", OK, OK, FAILED),
-                nodeState("b", OK, OK, FAILED),
-                unavailable("c")
+                localEndpoint,
+                nodeState("a", epoch, OK, OK, FAILED),
+                nodeState("b", epoch, OK, OK, FAILED),
+                NodeState.getUnavailableNodeState("c")
         );
 
         List<String> unresponsiveServers = new ArrayList<>();
@@ -48,12 +67,14 @@ public class CompleteGraphAdvisorTest {
 
     @Test
     public void testFailedServer_asymmetricFailureBetween_b_c() {
-        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor("a");
+        final String localEndpoint = "a";
+        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor(localEndpoint);
 
         ClusterState clusterState = buildClusterState(
-                nodeState("a", OK, OK, OK),
-                nodeState("b", OK, OK, FAILED),
-                nodeState("c", OK, FAILED, OK)
+                localEndpoint,
+                nodeState("a", epoch, OK, OK, OK),
+                nodeState("b", epoch, OK, OK, FAILED),
+                nodeState("c", epoch, OK, FAILED, OK)
         );
 
         List<String> unresponsiveServers = new ArrayList<>();
@@ -68,12 +89,14 @@ public class CompleteGraphAdvisorTest {
      */
     @Test
     public void testFailedServer_allDisconnected_from_b_perspective() {
-        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor("b");
+        final String localEndpoint = "b";
+        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor(localEndpoint);
 
         ClusterState clusterState = buildClusterState(
-                unavailable("a"),
-                nodeState("b", OK, OK, OK),
-                unavailable("c")
+                localEndpoint,
+                NodeState.getUnavailableNodeState("a"),
+                nodeState("b", epoch, OK, OK, OK),
+                NodeState.getUnavailableNodeState("c")
         );
 
         List<String> unresponsiveServers = new ArrayList<>();
@@ -95,20 +118,23 @@ public class CompleteGraphAdvisorTest {
         CompleteGraphAdvisor nodeCAdvisor = new CompleteGraphAdvisor("c");
 
         ClusterState nodeAClusterState = buildClusterState(
-                nodeState("a", OK, OK, OK),
-                nodeState("b", OK, OK, FAILED),
-                nodeState("c", OK, FAILED, OK)
+                "a",
+                nodeState("a", epoch, OK, OK, OK),
+                nodeState("b", epoch, OK, OK, FAILED),
+                nodeState("c", epoch, OK, FAILED, OK)
         );
 
         ClusterState nodeBClusterState = buildClusterState(
-                nodeState("a", OK, OK, OK),
-                nodeState("b", OK, OK, FAILED),
-                unavailable("c")
+                "b",
+                nodeState("a", epoch, OK, OK, OK),
+                nodeState("b", epoch, OK, OK, FAILED),
+                NodeState.getUnavailableNodeState("c")
         );
         ClusterState nodeCClusterState = buildClusterState(
-                nodeState("a", OK, OK, OK),
-                unavailable("b"),
-                nodeState("c", OK, FAILED, OK)
+                "c",
+                nodeState("a", epoch, OK, OK, OK),
+                NodeState.getUnavailableNodeState("b"),
+                nodeState("c", epoch, OK, FAILED, OK)
         );
 
         List<String> unresponsiveServers = new ArrayList<>();
@@ -129,61 +155,21 @@ public class CompleteGraphAdvisorTest {
 
     @Test
     public void testHealedServer() {
-        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor("c");
+        final String localEndpoint = "c";
+        CompleteGraphAdvisor advisor = new CompleteGraphAdvisor(localEndpoint);
 
         ClusterState clusterState = buildClusterState(
-                nodeState("a", OK, FAILED, OK),
-                nodeState("b", FAILED, OK, OK),
-                nodeState("c", OK, OK, OK)
+                localEndpoint,
+                nodeState("a", epoch, OK, FAILED, OK),
+                nodeState("b", epoch, FAILED, OK, OK),
+                nodeState("c", epoch, OK, OK, OK)
         );
 
         List<String> unresponsiveServers = new ArrayList<>();
-        unresponsiveServers.add("c");
+        unresponsiveServers.add(localEndpoint);
 
         Optional<NodeRank> healedServer = advisor.healedServer(clusterState, unresponsiveServers);
         assertTrue(healedServer.isPresent());
-        assertEquals(new NodeRank("c", clusterState.size()), healedServer.get());
-    }
-
-    private NodeState nodeState(String endpoint, ConnectionStatus... connectionStates) {
-        Map<String, ConnectionStatus> connectivity = new HashMap<>();
-        for (int i = 0; i < connectionStates.length; i++) {
-            connectivity.put(NODE_NAMES.get(i), connectionStates[i]);
-        }
-
-        NodeConnectivity nodeConnectivity = NodeConnectivity.builder()
-                .endpoint(endpoint)
-                .type(NodeConnectivityType.CONNECTED)
-                .connectivity(ImmutableMap.copyOf(connectivity))
-                .build();
-
-        return NodeState.builder()
-                .sequencerMetrics(SequencerMetrics.READY)
-                .heartbeat(new HeartbeatTimestamp(0, 0))
-                .connectivity(nodeConnectivity)
-                .build();
-    }
-
-    private ClusterState buildClusterState(NodeState... states) {
-        Map<String, NodeState> graph = Arrays.stream(states)
-                .collect(Collectors.toMap(state -> state.getConnectivity().getEndpoint(), Function.identity()));
-
-        return ClusterState.builder()
-                .nodes(ImmutableMap.copyOf(graph))
-                .build();
-    }
-
-    private NodeState unavailable(String endpoint) {
-        NodeConnectivity connectivity = NodeConnectivity.builder()
-                .endpoint(endpoint)
-                .type(NodeConnectivityType.UNAVAILABLE)
-                .connectivity(ImmutableMap.of())
-                .build();
-
-        return new NodeState(
-                connectivity,
-                new HeartbeatTimestamp(Layout.INVALID_EPOCH, 0),
-                SequencerMetrics.UNKNOWN
-        );
+        assertEquals(new NodeRank(localEndpoint, clusterState.size()), healedServer.get());
     }
 }

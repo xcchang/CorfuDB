@@ -2,39 +2,53 @@ package org.corfudb.infrastructure;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import org.apache.commons.io.FileUtils;
 import org.assertj.core.api.Assertions;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.protocols.wireprotocol.*;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
 import org.corfudb.runtime.view.Address;
+import org.corfudb.runtime.view.stream.StreamAddressSpace;
+import org.corfudb.util.Sleep;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.time.Duration;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Random;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.corfudb.infrastructure.LogUnitServerAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
 
 /**
  * Created by mwei on 2/4/16.
  */
 public class LogUnitServerTest extends AbstractServerTest {
 
-    private static final double minHeapRatio = 0.1;
-    private static final double maxHeapRatio = 0.9;
-
     @Override
     public AbstractServer getDefaultServer() {
         return new LogUnitServer(new ServerContextBuilder().build());
+    }
+
+    /**
+     * Waits for the log unit batch writer to drain the operation queue and
+     * reply to all requests.
+     * @param lu log unit to wait for
+     */
+    static void waitForLogUnit(LogUnitServer lu) throws Exception {
+        lu.getBatchWriter().stopProcessor();
+        lu.getBatchWriter().startProcessor();
+        lu.stopHandler();
+        lu.startHandler();
     }
 
     @Test
@@ -55,13 +69,12 @@ public class LogUnitServerTest extends AbstractServerTest {
         ByteBuf b = Unpooled.buffer();
         Serializers.CORFU.serialize("0".getBytes(), b);
         WriteRequest m = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         m.setGlobalAddress(ADDRESS_0);
         m.setBackpointerMap(Collections.emptyMap());
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m));
-
+        waitForLogUnit(s1);
         assertThat(s1)
                 .containsDataAtAddress(ADDRESS_0);
         assertThat(s1)
@@ -70,13 +83,14 @@ public class LogUnitServerTest extends AbstractServerTest {
 
         // repeat: this should throw an exception
         WriteRequest m2 = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         m2.setGlobalAddress(ADDRESS_0);
         m2.setBackpointerMap(Collections.emptyMap());
 
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m2));
+        waitForLogUnit(s1);
+
         Assertions.assertThat(getLastMessage().getMsgType())
                 .isEqualTo(CorfuMsgType.ERROR_OVERWRITE);
 
@@ -110,6 +124,8 @@ public class LogUnitServerTest extends AbstractServerTest {
         //and 10000000
         rawWrite(HIGH_ADDRESS, high_payload, streamName);
 
+        waitForLogUnit(s1);
+
         s1.shutdown();
 
         LogUnitServer s2 = new LogUnitServer(new ServerContextBuilder()
@@ -129,11 +145,59 @@ public class LogUnitServerTest extends AbstractServerTest {
                 .matchesDataAtAddress(HIGH_ADDRESS, high_payload.getBytes());
     }
 
+    /**
+     * Test that corfu refuses to start if the filesystem/directory is/becomes read-only
+     *
+     * @throws Exception
+     */
+    @Test
+    public void cantOpenReadOnlyLogFiles() throws Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+
+        LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(s1);
+
+        final long LOW_ADDRESS = 0L; final String low_payload = "0";
+        final long MID_ADDRESS = 100L; final String mid_payload = "100";
+        final long HIGH_ADDRESS = 10000000L; final String high_payload = "100000";
+        final String streamName = "a";
+        //write at 0, 100 & 10_000_000
+        rawWrite(LOW_ADDRESS, low_payload, streamName);
+        rawWrite(MID_ADDRESS, mid_payload, streamName);
+        rawWrite(HIGH_ADDRESS, high_payload, streamName);
+
+        s1.shutdown();
+
+        try {
+            File serviceDirectory = new File(serviceDir);
+            serviceDirectory.setWritable(false);
+        } catch(SecurityException e) {
+            fail("Should not hit security exception"+e.toString());
+        }
+
+        try {
+            LogUnitServer s2 = new LogUnitServer(new ServerContextBuilder()
+                    .setLogPath(serviceDir)
+                    .setMemory(false)
+                    .build());
+            fail("Should have failed to startup in read-only mode");
+        } catch (UnrecoverableCorfuError e) {
+            // Correctly failed to open on read-only directory
+        }
+        // In case the directory is re-used for other tests, restore its write permissions.
+        File serviceDirectory = new File(serviceDir);
+        serviceDirectory.setWritable(true);
+    }
+
     protected void rawWrite(long addr, String s, String streamName) {
         ByteBuf b = Unpooled.buffer();
         Serializers.CORFU.serialize(s.getBytes(), b);
         WriteRequest m = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         m.setGlobalAddress(addr);
@@ -162,6 +226,8 @@ public class LogUnitServerTest extends AbstractServerTest {
 
         for (int i = 0; i < num_iterations_very_low; i++)
             rawWrite(START_ADDRESS+i, low_payload+i, streamName);
+
+        waitForLogUnit(s1);
 
         for (int i = 0; i < num_iterations_very_low; i++)
             assertThat(s1)
@@ -193,6 +259,7 @@ public class LogUnitServerTest extends AbstractServerTest {
         for (int i = 0; i < num_iterations_very_low; i++)
             rawWrite(START_ADDRESS+num_iterations_very_low+i, low_payload+i, streamName);
 
+        waitForLogUnit(s2);
         for (int i = 0; i < num_iterations_very_low; i++)
             assertThat(s2)
                     .containsDataAtAddress
@@ -235,8 +302,75 @@ public class LogUnitServerTest extends AbstractServerTest {
 
     }
 
+    /**
+     * This test verifies that on Log Unit reset/restart, a stream address map and its corresponding
+     * trim mark is properly set.
+     *
+     * @throws Exception
+     */
     @Test
-    public void checkUnCachedWrites() {
+    public void checkLogUnitResetStreamRebuilt() throws Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        final long maxAddress = 20000L;
+        final long minAddress = 10000L;
+        final long trimMark = 15000L;
+        UUID streamID = UUID.randomUUID();
+
+        LogUnitServer logUnitServer = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(logUnitServer);
+
+        // Write 10K entries in descending order for the range 20k-10K
+        for (long i = maxAddress; i >= minAddress; i--) {
+            ByteBuf b = Unpooled.buffer();
+            Serializers.CORFU.serialize("Payload".getBytes(), b);
+            WriteRequest m = WriteRequest.builder()
+                    .data(new LogData(DataType.DATA, b))
+                    .build();
+            m.setGlobalAddress(i);
+            long backpointer = i - 1;
+            if (i == minAddress) {
+                // Last entry, backpointer is -6 (non-exist).
+                backpointer = Address.NON_EXIST;
+            }
+            m.setBackpointerMap(Collections.singletonMap(streamID, backpointer));
+            sendMessage(CorfuMsgType.WRITE.payloadMsg(m));
+        }
+
+        logUnitServer.getBatchWriter().stopProcessor();
+
+        // Retrieve address space from current log unit server (write path)
+        StreamAddressSpace addressSpace = logUnitServer.getStreamAddressSpace(streamID);
+        assertThat(addressSpace.getTrimMark()).isEqualTo(Address.NON_EXIST);
+        assertThat(addressSpace.getAddressMap().getLongCardinality()).isEqualTo(minAddress + 1);
+
+        // Instantiate new log unit server (restarts) so the log is read and address maps are rebuilt.
+        LogUnitServer newServer = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        // Retrieve address space from new initialized log unit server (bootstrap path)
+        addressSpace = newServer.getStreamAddressSpace(streamID);
+        assertThat(addressSpace.getTrimMark()).isEqualTo(Address.NON_EXIST);
+        assertThat(addressSpace.getAddressMap().getLongCardinality()).isEqualTo(minAddress + 1);
+
+        // Trim the log, and verify that trim mark is updated on log unit
+        newServer.prefixTrim(trimMark);
+        newServer.getBatchWriter().stopProcessor();
+
+        // Retrieve address space from current log unit server (after a prefix trim)
+        addressSpace = newServer.getStreamAddressSpace(streamID);
+        assertThat(addressSpace.getTrimMark()).isEqualTo(trimMark);
+        assertThat(addressSpace.getAddressMap().getLongCardinality()).isEqualTo(maxAddress - trimMark);
+    }
+
+    @Test
+    public void checkUnCachedWrites() throws Exception {
         String serviceDir = PARAMETERS.TEST_TEMP_DIR;
 
         LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
@@ -250,18 +384,17 @@ public class LogUnitServerTest extends AbstractServerTest {
         ByteBuf b = Unpooled.buffer();
         Serializers.CORFU.serialize("0".getBytes(), b);
         WriteRequest m = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         final Long globalAddress = 0L;
         m.setGlobalAddress(globalAddress);
-        Set<UUID> streamSet = new HashSet(Collections.singleton(CorfuRuntime.getStreamID("a")));
         Map<UUID, Long> uuidLongMap = new HashMap();
         UUID uuid = new UUID(1,1);
         final Long address = 5L;
         uuidLongMap.put(uuid, address);
         m.setBackpointerMap(uuidLongMap);
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m));
+        waitForLogUnit(s1);
 
         s1 = new LogUnitServer(new ServerContextBuilder()
                 .setLogPath(serviceDir)
@@ -344,14 +477,13 @@ public class LogUnitServerTest extends AbstractServerTest {
         ByteBuf b = Unpooled.buffer();
         Serializers.CORFU.serialize("0".getBytes(), b);
         WriteRequest m = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         m.setGlobalAddress(ADDRESS_0);
         m.setRank(new IMetadata.DataRank(0));
         m.setBackpointerMap(Collections.emptyMap());
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m));
-
+        waitForLogUnit(s1);
         assertThat(s1)
                 .containsDataAtAddress(ADDRESS_0);
         assertThat(s1)
@@ -363,7 +495,6 @@ public class LogUnitServerTest extends AbstractServerTest {
         b = Unpooled.buffer();
         Serializers.CORFU.serialize("1".getBytes(), b);
         m = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
         m.setGlobalAddress(ADDRESS_0);
@@ -371,7 +502,6 @@ public class LogUnitServerTest extends AbstractServerTest {
 
 
         WriteRequest m2 = WriteRequest.builder()
-                .writeMode(WriteMode.NORMAL)
                 .data(new LogData(DataType.DATA, b))
                 .build();
 
@@ -380,6 +510,7 @@ public class LogUnitServerTest extends AbstractServerTest {
         m2.setBackpointerMap(Collections.emptyMap());
 
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m2));
+        waitForLogUnit(s1);
         Assertions.assertThat(getLastMessage().getMsgType())
                 .isEqualTo(CorfuMsgType.WRITE_OK);
 
@@ -404,23 +535,5 @@ public class LogUnitServerTest extends AbstractServerTest {
                 .matchesDataAtAddress(ADDRESS_0, "1".getBytes());
 
     }
-
-    @Test
-    public void CheckCacheSizeIsCorrectRatio() throws Exception {
-
-        Random r = new Random(System.currentTimeMillis());
-        double randomCacheRatio = minHeapRatio + (maxHeapRatio - minHeapRatio) * r.nextDouble();
-        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
-        LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
-                .setLogPath(serviceDir)
-                .setMemory(false)
-                .setCacheSizeHeapRatio(String.valueOf(randomCacheRatio))
-                .build());
-
-
-        assertThat(s1).hasCorrectCacheSize(randomCacheRatio);
-    }
-
-
 }
 

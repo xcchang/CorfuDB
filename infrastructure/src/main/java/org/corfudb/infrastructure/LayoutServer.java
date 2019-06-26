@@ -3,7 +3,10 @@ package org.corfudb.infrastructure;
 import io.netty.channel.ChannelHandlerContext;
 
 import java.lang.invoke.MethodHandles;
-import java.util.Map;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import javax.annotation.Nonnull;
 import lombok.Getter;
@@ -67,6 +70,23 @@ public class LayoutServer extends AbstractServer {
     private final CorfuMsgHandler handler =
             CorfuMsgHandler.generateHandler(MethodHandles.lookup(), this);
 
+    private final ExecutorService executor;
+
+    @Override
+    public boolean isServerReadyToHandleMsg(CorfuMsg msg) {
+        return getState() == ServerState.READY;
+    }
+
+    @Override
+    public ExecutorService getExecutor(CorfuMsgType corfuMsgType) {
+        return executor;
+    }
+
+    @Override
+    public List<ExecutorService> getExecutors() {
+        return Collections.singletonList(executor);
+    }
+
     /**
      * Returns new LayoutServer for context.
      *
@@ -74,6 +94,8 @@ public class LayoutServer extends AbstractServer {
      */
     public LayoutServer(@Nonnull ServerContext serverContext) {
         this.serverContext = serverContext;
+        executor = Executors.newFixedThreadPool(serverContext.getLayoutServerThreadCount(),
+                new ServerThreadFactory("layoutServer-", new ServerThreadFactory.ExceptionHandler()));
 
         if (serverContext.installSingleNodeLayoutIfAbsent()) {
             setLayoutInHistory(getCurrentLayout());

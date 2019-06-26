@@ -14,7 +14,7 @@ import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.node.server.CorfuServerParams;
 import org.corfudb.universe.universe.UniverseException;
 import org.corfudb.universe.universe.UniverseParams;
-import org.corfudb.universe.util.ClassUtils;
+import org.corfudb.common.util.ClassUtils;
 
 import java.time.Duration;
 import java.util.List;
@@ -61,7 +61,7 @@ public abstract class AbstractCorfuCluster<P extends CorfuClusterParams, U exten
                 .stream()
                 .map(serverParams -> {
                     CorfuServer server = buildCorfuServer(serverParams);
-                    nodes.put(serverParams.getName(), server);
+                    nodes.put(server.getEndpoint(), server);
                     return server;
                 })
                 .map(this::deployCorfuServerAsync)

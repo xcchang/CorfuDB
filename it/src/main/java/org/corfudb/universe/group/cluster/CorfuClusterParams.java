@@ -11,7 +11,7 @@ import org.apache.commons.lang3.RandomStringUtils;
 import org.corfudb.universe.group.Group.GroupParams;
 import org.corfudb.universe.node.Node.NodeType;
 import org.corfudb.universe.node.server.CorfuServerParams;
-import org.corfudb.universe.util.ClassUtils;
+import org.corfudb.common.util.ClassUtils;
 
 import java.time.Duration;
 import java.util.List;
@@ -43,7 +43,7 @@ class CorfuClusterParams implements GroupParams {
     @Default
     @Getter
     @NonNull
-    private final Duration retryTimeout = Duration.ofSeconds(3);
+    private final Duration retryDuration = Duration.ofSeconds(3);
 
     @Override
     public ImmutableSortedSet<CorfuServerParams> getNodesParams() {

@@ -10,7 +10,6 @@ import org.apache.commons.io.FileUtils;
 import org.corfudb.AbstractCorfuTest;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.collections.SMRMap;
-import org.corfudb.runtime.exceptions.ShutdownException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.RuntimeLayout;
 import org.corfudb.util.Sleep;
@@ -54,9 +53,12 @@ public class AbstractIT extends AbstractCorfuTest {
     private static final int SHUTDOWN_RETRIES = 10;
     private static final long SHUTDOWN_RETRY_WAIT = 500;
 
+    public CorfuRuntime runtime;
+
     public static final Properties PROPERTIES = new Properties();
 
     public static final String TEST_SEQUENCE_LOG_PATH = CORFU_LOG_PATH + File.separator + "testSequenceLog";
+
 
     public AbstractIT() {
         CorfuRuntime.overrideGetRouterFunction = null;
@@ -77,6 +79,7 @@ public class AbstractIT extends AbstractCorfuTest {
      */
     @Before
     public void setUp() throws Exception {
+        runtime = null;
         forceShutdownAllCorfuServers();
         FileUtils.cleanDirectory(new File(CORFU_LOG_PATH));
     }
@@ -89,6 +92,9 @@ public class AbstractIT extends AbstractCorfuTest {
     @After
     public void cleanUp() throws Exception {
         forceShutdownAllCorfuServers();
+        if (runtime != null) {
+            runtime.shutdown();
+        }
     }
 
     public static String getCorfuServerLogPath(String host, int port) {
@@ -157,17 +163,12 @@ public class AbstractIT extends AbstractCorfuTest {
         // the newer runtime may also connect to the older corfu server (before restart).
         // Hence the while loop.
         while (true) {
-            try {
-                if (corfuRuntime.getLayoutView().getLayout().getEpoch()
-                        == (runtimeLayout.getLayout().getEpoch() + 1)) {
-                    break;
-                }
-                Sleep.MILLISECONDS.sleepUninterruptibly(PARAMETERS.TIMEOUT_SHORT);
-                corfuRuntime.invalidateLayout();
-            } catch (ShutdownException se) {
-                log.error("Shutdown Exception thrown connecting to server:{} ignored, {}",
-                        endpoint, se);
+            if (corfuRuntime.getLayoutView().getLayout().getEpoch()
+                    == (runtimeLayout.getLayout().getEpoch() + 1)) {
+                break;
             }
+            Sleep.MILLISECONDS.sleepUninterruptibly(PARAMETERS.TIMEOUT_SHORT);
+            corfuRuntime.invalidateLayout();
         }
     }
 
@@ -267,9 +268,33 @@ public class AbstractIT extends AbstractCorfuTest {
         return createRuntime(DEFAULT_ENDPOINT);
     }
 
+    public static Process runServer(int port, boolean single) throws IOException {
+        return new CorfuServerRunner()
+                .setHost(DEFAULT_HOST)
+                .setPort(port)
+                .setSingle(single)
+                .runServer();
+    }
+
+    public static Process runDefaultServer() throws IOException {
+        return new CorfuServerRunner()
+                .setHost(DEFAULT_HOST)
+                .setPort(DEFAULT_PORT)
+                .setSingle(true)
+                .setLogPath(getCorfuServerLogPath(DEFAULT_HOST, DEFAULT_PORT))
+                .runServer();
+    }
+
     public static CorfuRuntime createRuntime(String endpoint) {
         CorfuRuntime rt = new CorfuRuntime(endpoint)
                 .setCacheDisabled(true)
+                .connect();
+        return rt;
+    }
+
+    public static CorfuRuntime createRuntimeWithCache() {
+        CorfuRuntime rt = new CorfuRuntime(DEFAULT_ENDPOINT)
+                .setCacheDisabled(false)
                 .connect();
         return rt;
     }
@@ -310,6 +335,7 @@ public class AbstractIT extends AbstractCorfuTest {
                             }
                     );
         }
+
     }
 
     /**

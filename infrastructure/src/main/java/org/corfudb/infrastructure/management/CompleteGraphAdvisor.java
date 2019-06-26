@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.management;
 
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.management.failuredetector.ClusterGraph;
 import org.corfudb.protocols.wireprotocol.ClusterState;
@@ -23,7 +24,7 @@ public class CompleteGraphAdvisor implements ClusterAdvisor {
 
     private final String localEndpoint;
 
-    public CompleteGraphAdvisor(String localEndpoint) {
+    public CompleteGraphAdvisor(@NonNull String localEndpoint) {
         this.localEndpoint = localEndpoint;
     }
 
@@ -75,7 +76,7 @@ public class CompleteGraphAdvisor implements ClusterAdvisor {
             return Optional.empty();
         }
 
-        Optional<NodeRank> maybeFailedNode = symmetric.findFailedNode();
+        Optional<NodeRank> maybeFailedNode = symmetric.findFailedNode(unresponsiveServers);
         if (!maybeFailedNode.isPresent()) {
             return Optional.empty();
         }
@@ -139,6 +140,7 @@ public class CompleteGraphAdvisor implements ClusterAdvisor {
 
     /**
      * Returns a new cluster graph from the cluster state
+     *
      * @param clusterState a cluster state
      * @return a transformed cluster graph
      */
