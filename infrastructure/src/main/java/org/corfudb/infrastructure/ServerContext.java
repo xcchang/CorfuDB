@@ -92,7 +92,7 @@ public class ServerContext implements AutoCloseable {
     /**
      * various duration constants.
      */
-    public static final Duration SHUTDOWN_TIMER = Duration.ofSeconds(5);
+    public static final Duration SHUTDOWN_TIMER = Duration.ofSeconds(50000);
 
 
     @Getter

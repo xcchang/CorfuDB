@@ -1,16 +1,21 @@
 package org.corfudb;
 
+import static org.corfudb.infrastructure.BatchWriterOperation.Type.WRITE;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.BatchWriter;
+import org.corfudb.infrastructure.BatchProcessor;
 import org.corfudb.infrastructure.LogUnitServer.LogUnitServerConfig;
 import org.corfudb.infrastructure.PerformantBatchWriter;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.infrastructure.ServerContextBuilder;
 import org.corfudb.infrastructure.log.StreamLogFiles;
+import org.corfudb.protocols.wireprotocol.CorfuMsgType;
+import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Rule;
 import org.junit.Test;
@@ -21,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 @Slf4j
 public class BatchWriterTest {
-    private static final int TOTAL_RECORDS = 1000 * 10;
+    private static final int TOTAL_RECORDS = 1_000 * 1_000;
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
@@ -40,20 +45,11 @@ public class BatchWriterTest {
     }
 
     @Test
-    public void oldPerf() throws InterruptedException {
+    public void oldPerf() throws Exception {
         serverContext = getContext();
         streamLog = new StreamLogFiles(serverContext, true);
 
-        BatchWriter<Long, LogData> batchWriter = new BatchWriter<>(streamLog, 0, true);
-
-        LogUnitServerConfig luCfg = LogUnitServerConfig.parse(serverContext.getServerConfig());
-
-        /**LoadingCache<Long, LogData> dataCache = Caffeine.newBuilder()
-         .<Long, LogData>weigher((k, v) -> v.getData() == null ? 1 : v.getData().length)
-         .maximumWeight(luCfg.getMaxCacheSize())
-         //.removalListener(this::handleEviction)
-         .writer(batchWriter)
-         .build(this::handleRetrieval);**/
+        BatchProcessor batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), true);
 
         final long start = System.currentTimeMillis();
 
@@ -61,16 +57,15 @@ public class BatchWriterTest {
             // Enable checksum, then append and read the same entry
             final long addr = i;
             LogData entry = buildLogData(addr);
-
-            batchWriter.write(addr, entry);
+            CorfuPayloadMsg<WriteRequest> writeReq = new CorfuPayloadMsg<>(CorfuMsgType.WRITE, new WriteRequest(entry));
+            batchWriter.addTask(WRITE, writeReq);
         }
 
-        long total = System.currentTimeMillis() - start;
-        System.out.println("time: " + total);
-        //System.out.println("Speed: " + 100000 / streamLog.avgTime.stream().mapToLong(l -> l).sum() * 1000);
+        batchWriter.stopProcessor();
 
-        final int timeout = 100000000;
-        //Thread.sleep(timeout);
+        long total = System.currentTimeMillis() - start;
+        System.out.println("queue size " + batchWriter.operationsQueue.size());
+        System.out.println("time: " + total);
     }
 
     @Test

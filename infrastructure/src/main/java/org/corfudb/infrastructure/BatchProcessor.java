@@ -35,17 +35,16 @@ import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterrupte
 @Slf4j
 public class BatchProcessor implements AutoCloseable {
 
-    final private int BATCH_SIZE = 50;
+    final private int BATCH_SIZE = 500;
 
     final private boolean sync;
 
     final private StreamLog streamLog;
 
-    final private BlockingQueue<BatchWriterOperation> operationsQueue;
+    public final BlockingQueue<BatchWriterOperation> operationsQueue;
 
     private ExecutorService processorService = Executors
             .newSingleThreadExecutor(new ThreadFactoryBuilder()
-                    .setDaemon(false)
                     .setNameFormat("LogUnit-BatchProcessor-%d")
                     .build());
 
@@ -228,7 +227,7 @@ public class BatchProcessor implements AutoCloseable {
     }
 
     @VisibleForTesting
-    void stopProcessor() throws Exception {
+    public void stopProcessor() throws Exception {
         operationsQueue.add(BatchWriterOperation.SHUTDOWN);
         processorService.shutdown();
         processorService.awaitTermination(ServerContext.SHUTDOWN_TIMER.toMillis(), TimeUnit.MILLISECONDS);

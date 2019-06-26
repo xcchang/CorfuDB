@@ -6,20 +6,14 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
-import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.LogData;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.PriorityQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -29,7 +23,7 @@ import java.util.function.Consumer;
 @Slf4j
 public class PerformantBatchWriter<K, V> implements AutoCloseable {
 
-    static final int BATCH_SIZE = 50;
+    static final int BATCH_SIZE = 500;
 
     final boolean sync;
 
@@ -82,6 +76,8 @@ public class PerformantBatchWriter<K, V> implements AutoCloseable {
 
         int counter = 0;
         long start = System.currentTimeMillis();
+
+        int current_batch = 0;
 
         while (true) {
             List<AsyncWrite> asyncWrites = new ArrayList<>();
