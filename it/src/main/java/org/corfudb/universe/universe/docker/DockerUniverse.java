@@ -2,6 +2,7 @@ package org.corfudb.universe.universe.docker;
 
 import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.messages.NetworkConfig;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.universe.group.Group.GroupParams;
@@ -32,7 +33,7 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
      */
     private static final FakeDns FAKE_DNS = FakeDns.getInstance().install();
     private final DockerClient docker;
-    private final DockerNetwork network = new DockerNetwork();
+    private final DockerNetwork network;
     private final AtomicBoolean initialized = new AtomicBoolean();
     private final LoggingParams loggingParams;
     private final AtomicBoolean destroyed = new AtomicBoolean();
@@ -40,6 +41,7 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
     @Builder
     public DockerUniverse(UniverseParams universeParams, DockerClient docker, LoggingParams loggingParams) {
         super(universeParams);
+        this.network = new DockerNetwork(universeParams.getNetworkName(), docker);
         this.docker = docker;
         this.loggingParams = loggingParams;
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown));
@@ -114,16 +116,20 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
         }
     }
 
-    private class DockerNetwork {
+    @AllArgsConstructor
+    public static class DockerNetwork {
         private final Logger log = LoggerFactory.getLogger(DockerNetwork.class);
+
+
+        String networkName;
+        DockerClient docker;
 
         /**
          * Sets up a docker network.
          *
          * @throws UniverseException will be thrown if cannot set up a docker network
          */
-        void setup() {
-            String networkName = universeParams.getNetworkName();
+        public void setup() {
             log.info("Setup network: {}", networkName);
             NetworkConfig networkConfig = NetworkConfig.builder()
                     .checkDuplicate(true)
@@ -143,8 +149,7 @@ public class DockerUniverse extends AbstractUniverse<UniverseParams> {
          *
          * @throws UniverseException will be thrown if cannot shut up a docker network
          */
-        void shutdown() {
-            String networkName = universeParams.getNetworkName();
+        public void shutdown() {
             log.info("Shutdown network: {}", networkName);
             try {
                 docker.removeNetwork(networkName);

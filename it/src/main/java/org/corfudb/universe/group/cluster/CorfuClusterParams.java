@@ -23,8 +23,7 @@ import java.util.stream.Collectors;
 @Builder
 @EqualsAndHashCode
 @ToString
-public
-class CorfuClusterParams implements GroupParams {
+public class CorfuClusterParams implements GroupParams {
     @Getter
     @Default
     @NonNull

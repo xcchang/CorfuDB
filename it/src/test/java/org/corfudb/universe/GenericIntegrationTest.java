@@ -32,11 +32,9 @@ public abstract class GenericIntegrationTest {
 
     @After
     public void tearDown() {
+
         if (universe != null) {
             universe.shutdown();
-        } else {
-            throw new IllegalStateException("The universe is null, can't shutdown the test properly. " +
-                    "Please check docker network leaks");
         }
     }
 
@@ -80,6 +78,13 @@ public abstract class GenericIntegrationTest {
         universe.deploy();
 
         return Scenario.with(universeFixture);
+    }
+
+    public Scenario<UniverseParams, UniverseFixture> getDockerScenarioFromFixture(UniverseFixture fixture) {
+        universe = UNIVERSE_FACTORY.buildDockerUniverse(fixture.data, docker, getDockerLoggingParams());
+        universe.deploy();
+
+        return Scenario.with(fixture);
     }
 
     public Scenario<UniverseParams, AbstractUniverseFixture<UniverseParams>> getScenario() {

@@ -143,7 +143,7 @@ public interface Fixtures {
             // prevent instantiation of this class
         }
 
-        static ImmutableList<CorfuServerParams> buildMultipleServers(int numNodes, String clusterName) {
+        public static ImmutableList<CorfuServerParams>buildMultipleServers(int numNodes, String clusterName) {
 
             List<CorfuServerParams> serversParams = IntStream
                     .rangeClosed(1, numNodes)

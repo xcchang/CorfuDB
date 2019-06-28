@@ -55,7 +55,7 @@ public class DockerCorfuServer extends AbstractCorfuServer<CorfuServerParams, Un
 
     @NonNull
     private final LoggingParams loggingParams;
-    @NonNull
+
     private final CorfuClusterParams clusterParams;
     private final AtomicReference<String> ipAddress = new AtomicReference<>();
     private final AtomicBoolean destroyed = new AtomicBoolean();

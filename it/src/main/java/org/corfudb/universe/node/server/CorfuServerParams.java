@@ -56,6 +56,10 @@ public class CorfuServerParams implements NodeParams<CorfuServerParams> {
         return clusterName + "-corfu-node" + getPort();
     }
 
+    public String getFullName() {
+        return getName() + ":" + getPort();
+    }
+
     public String getStreamLogDir() {
         return getName() + "/" + streamLogDir;
     }
