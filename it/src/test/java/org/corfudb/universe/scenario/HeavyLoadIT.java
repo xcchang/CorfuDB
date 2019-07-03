@@ -44,13 +44,12 @@ public class HeavyLoadIT extends GenericIntegrationTest {
                 );
                 table.put(String.valueOf(i), DATA);
 
-                if (i % 100 == 0) {
+                if (i > 0 && i % 100 == 0) {
                     CorfuServer server = corfuCluster.getServerByIndex(RND.nextInt(3));
-                    System.out.println("Stop and start server. Latest layout: " + JsonUtils.toJson(corfuClient.getLayout()));
+                    System.out.println("!!!Stop and start server: " + server.getEndpoint());
                     stopServer(corfuClient, server);
-                    sleepMin(1);
+                    System.out.println("!!!New layout: " + JsonUtils.toJson(corfuClient.getLayout()));
                     startServer(corfuClient, server);
-                    sleepMin(1);
                 }
             }
 
