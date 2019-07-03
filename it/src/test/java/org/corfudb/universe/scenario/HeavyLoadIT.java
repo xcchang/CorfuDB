@@ -10,9 +10,12 @@ import org.corfudb.universe.GenericIntegrationTest;
 import org.corfudb.universe.group.cluster.CorfuCluster;
 import org.corfudb.universe.node.client.CorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
+import org.corfudb.util.JsonUtils;
 import org.junit.Test;
 
+import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +23,7 @@ public class HeavyLoadIT extends GenericIntegrationTest {
 
     public static final int SIZE = 1024 * 1024;
     private static final String DATA = generate(SIZE);
+    private static final Random RND = new SecureRandom();
 
     @Test(timeout = 300_000_000)
     public void test() {
@@ -32,32 +36,38 @@ public class HeavyLoadIT extends GenericIntegrationTest {
             CorfuClient corfuClient = corfuCluster.getLocalCorfuClient();
 
             CorfuTable<String, String> table = corfuClient.createDefaultCorfuTable(DEFAULT_STREAM_NAME);
+
             for (int i = 0; i < iteration; i++) {
-                System.out.println("Written mb: " + (i +1));
+                System.out.println("Written mb: " + (i + 1) +
+                        ", epoch: " + corfuClient.getLayout().getEpoch() +
+                        ", " + corfuClient.getLayout().getUnresponsiveServers()
+                );
                 table.put(String.valueOf(i), DATA);
-            }
 
-            CorfuServer server0 = corfuCluster.getServerByIndex(0);
-            CorfuServer server1 = corfuCluster.getServerByIndex(1);
-            CorfuServer server2 = corfuCluster.getServerByIndex(2);
-
-            for (int i = 0; i < 3; i++) {
-                // Stop one node and wait for layout's unresponsive servers to change
-                System.out.println("Stop and start server");
-                stopServer(corfuClient, server0);
-                sleepMin(1);
-                startServer(corfuClient, server0);
+                if (i % 100 == 0) {
+                    CorfuServer server = corfuCluster.getServerByIndex(RND.nextInt(3));
+                    System.out.println("Stop and start server. Latest layout: " + JsonUtils.toJson(corfuClient.getLayout()));
+                    stopServer(corfuClient, server);
+                    sleepMin(1);
+                    startServer(corfuClient, server);
+                    sleepMin(1);
+                }
             }
 
             System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            sleepMin(100);
+
+            while(true) {
+                sleep(10);
+                final Layout layout = corfuClient.getLayout();
+                System.out.println("LAYOUT!!! " + layout.getEpoch() + ", unresponsive: " + layout.getUnresponsiveServers());
+            }
 
             // Verify data path working fine
             //for (int i = 0; i < DEFAULT_TABLE_ITER; i++) {
             //  assertThat(table.get(String.valueOf(i))).isEqualTo(String.valueOf(i));
             //}
 
-            corfuClient.shutdown();
+            //corfuClient.shutdown();
         });
     }
 
