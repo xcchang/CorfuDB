@@ -16,6 +16,7 @@ import org.corfudb.util.NodeLocator;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.corfudb.runtime.CorfuRuntime.fromParameters;
@@ -49,6 +50,41 @@ public class LocalCorfuClient implements CorfuClient {
                 .build();
 
         this.runtime = fromParameters(runtimeParams);
+    }
+
+    // stolen from nsx
+    public void resetNode(String node) {
+        int curRetry = 0;
+        int resetNodeRetryTimes = 5;
+        Duration resetNodeRetryInterval = Duration.ofSeconds(5);
+        Duration resetNodeTimeout = Duration.ofSeconds(30);
+        while (curRetry++ < resetNodeRetryTimes) {
+            log.info("Resetting corfu node {} in retry {}", node, curRetry);
+
+            try {
+                // Corfu side also has a timeout for reset, then the smallest of that
+                // timeout and resetNodeTimeout we passed here will be used.
+                boolean ack = runtime.getLayoutView().getRuntimeLayout()
+                        .getBaseClient(node).reset().get(resetNodeTimeout.getSeconds(), TimeUnit.SECONDS);
+                if (ack) {
+                    log.info("Successfully reset corfu node: {}", node);
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to reset corfu node {}, retrying...", node);
+            }
+
+            try {
+                Thread.sleep(resetNodeRetryInterval.toMillis());
+            } catch (InterruptedException e) {
+                log.warn("Interrupted while retrying to reset node {}.", node);
+            }
+        }
+
+        // Failed after retries.
+        throw new RuntimeException(String.format(
+                "Failed to reset corfu node %s after retrying %d times.",
+                node, resetNodeRetryTimes));
     }
 
     /**

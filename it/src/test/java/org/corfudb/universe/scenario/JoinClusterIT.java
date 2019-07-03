@@ -1,6 +1,7 @@
 package org.corfudb.universe.scenario;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSortedSet;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.runtime.BootstrapUtil;
 import org.corfudb.runtime.view.Layout;
@@ -8,6 +9,7 @@ import org.corfudb.universe.GenericIntegrationTest;
 import org.corfudb.universe.group.Group;
 import org.corfudb.universe.group.cluster.CorfuClusterParams;
 import org.corfudb.universe.node.Node;
+import org.corfudb.universe.node.client.LocalCorfuClient;
 import org.corfudb.universe.node.server.CorfuServer;
 import org.corfudb.universe.node.server.CorfuServerParams;
 import org.corfudb.universe.node.server.ServerUtil;
@@ -27,6 +29,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 public class JoinClusterIT extends GenericIntegrationTest {
@@ -34,8 +38,10 @@ public class JoinClusterIT extends GenericIntegrationTest {
      * Test cluster join test
      * <p>
      * 1) Bootstrap a cluster with three nodes.
-     * 2) Create a node in another cluster, don't bootstrap.
-     * 3) Join node to the cluster.
+     * 2) Create a node in another cluster.
+     * 3) Reset a node in the second cluster.
+     * 4) Reinitialize that node.
+     * 5) Add that node to cluster.
      */
 
     @Test(timeout = 300000)
@@ -98,15 +104,38 @@ public class JoinClusterIT extends GenericIntegrationTest {
         DockerNetwork network = new DockerNetwork(universeParams.getNetworkName(), docker);
 
         network.setup();
-        server.deploy();
-        server1.deploy();
-        server2.deploy();
-        server3.deploy();
-        Layout l = getLayout(Arrays.asList(params.getFullName(), params1.getFullName(), params2.getFullName()));
-        bootstrap(l);
-//        bootstrap();
 
-//        network.shutdown();
+//        server.deploy();
+//        server1.deploy();
+//        server2.deploy();
+        server3.deploy();
+
+//        Layout l = getLayout(Arrays.asList(params.getFullName(), params1.getFullName(), params2.getFullName()));
+//        bootstrap(l);
+
+        Layout l2 = getLayout(Collections.singletonList(params3.getFullName()));
+
+        bootstrap(l2);
+
+        List<String> servers = Stream.of(server3)
+                .map(CorfuServer::getEndpoint)
+                .collect(Collectors.toList());
+
+        ImmutableSortedSet<String> serverSet = ImmutableSortedSet.copyOf(servers);
+
+        LocalCorfuClient localClient = LocalCorfuClient.builder()
+                .serverEndpoints(serverSet)
+                .build()
+                .deploy();
+
+        Thread.sleep(8000);
+
+        System.out.println("Resetting");
+
+        localClient.resetNode(params3.getFullName());
+
+        Thread.sleep(60000);
+        network.shutdown();
 
     }
 
