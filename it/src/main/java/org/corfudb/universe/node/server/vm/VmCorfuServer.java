@@ -23,7 +23,7 @@ import java.util.List;
 @Slf4j
 public class VmCorfuServer extends AbstractCorfuServer<VmCorfuServerParams, VmUniverseParams> {
     private static final String CORFU_INFRASTRUCTURE_JAR = String.format(
-            "./target/corfu/infrastructure-%s-shaded.jar", getAppVersion()
+            "./target/infrastructure-%s-shaded.jar", getAppVersion()
     );
 
     @NonNull

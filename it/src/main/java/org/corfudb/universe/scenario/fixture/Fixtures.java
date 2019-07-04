@@ -45,7 +45,7 @@ public interface Fixtures {
         public static final int DEFAULT_TABLE_ITER = 100;
 
         // Default number of times to poll layout
-        public static final int DEFAULT_WAIT_POLL_ITER = 300;
+        public static final int DEFAULT_WAIT_POLL_ITER = 30000;
 
         // Default time to wait before next layout poll: 1 second
         public static final int DEFAULT_WAIT_TIME = 1;

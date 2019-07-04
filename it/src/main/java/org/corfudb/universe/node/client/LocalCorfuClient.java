@@ -46,6 +46,7 @@ public class LocalCorfuClient implements CorfuClient {
                 .builder()
                 .layoutServers(layoutServers)
                 .systemDownHandler(this::systemDownHandler)
+                .systemDownHandlerTriggerLimit(500_000)
                 .build();
 
         this.runtime = fromParameters(runtimeParams);
