@@ -289,7 +289,7 @@ public class CorfuRuntime {
          * {@link Duration} before connections timeout.
          */
         @Default
-        Duration connectionTimeout = Duration.ofMillis(500);
+        Duration connectionTimeout = Duration.ofSeconds(1);
 
         /**
          * {@link Duration} before reconnecting to a disconnected node.
