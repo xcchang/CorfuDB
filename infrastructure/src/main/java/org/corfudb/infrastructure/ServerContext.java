@@ -39,6 +39,7 @@ import org.corfudb.runtime.view.ConservativeFailureHandlerPolicy;
 import org.corfudb.runtime.view.IReconfigurationHandlerPolicy;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.util.MetricsUtils;
 import org.corfudb.util.NodeLocator;
 import org.corfudb.util.UuidUtils;
@@ -346,6 +347,7 @@ public class ServerContext implements AutoCloseable {
             clusterId, UuidUtils.asBase64(clusterId));
         String localAddress = getServerConfig().get("--address") + ":"
             + getServerConfig().get("<port>");
+
         return new Layout(
             Collections.singletonList(localAddress),
             Collections.singletonList(localAddress),
@@ -353,11 +355,7 @@ public class ServerContext implements AutoCloseable {
                 Layout.ReplicationMode.CHAIN_REPLICATION,
                 0L,
                 -1L,
-                Collections.singletonList(
-                    new Layout.LayoutStripe(
-                        Collections.singletonList(localAddress)
-                    )
-                )
+                Collections.singletonList(LayoutStripe.builder().logServer(localAddress).build())
             )),
             0L,
             clusterId

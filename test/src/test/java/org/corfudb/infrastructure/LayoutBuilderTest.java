@@ -232,9 +232,7 @@ public class LayoutBuilderTest extends AbstractCorfuTest {
                                                                 null))
                 .isInstanceOf(NullPointerException.class);
 
-        assertThatThrownBy(() -> layoutBuilder.addLogunitServerToSegment(null,
-                                                                         0,
-                                                                         0))
+        assertThatThrownBy(() -> layoutBuilder.addLogunitServerToSegment(null, 0, 0))
                 .isInstanceOf(NullPointerException.class);
 
         assertThatThrownBy(() -> layoutBuilder.addSequencerServer(null))
@@ -244,11 +242,6 @@ public class LayoutBuilderTest extends AbstractCorfuTest {
                 .isInstanceOf(NullPointerException.class);
 
         assertThatThrownBy(() -> layoutBuilder.assignResponsiveSequencerAsPrimary(null))
-                .isInstanceOf(NullPointerException.class);
-
-        assertThatThrownBy(() -> layoutBuilder.removeFromStripe(null,
-                                                                null,
-                                                                0))
                 .isInstanceOf(NullPointerException.class);
 
         assertThatThrownBy(() -> layoutBuilder.removeLayoutServer(null))

@@ -5,12 +5,19 @@ import static java.util.Objects.requireNonNull;
 import com.google.common.collect.ImmutableList;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.Singular;
+import lombok.ToString;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.exceptions.LayoutModificationException;
 import org.corfudb.runtime.exceptions.QuorumUnreachableException;
+import org.corfudb.runtime.gson.ImmutableListDeserializer;
 import org.corfudb.runtime.view.ClusterStatusReport.ClusterStatus;
 import org.corfudb.runtime.view.replication.ChainReplicationProtocol;
 import org.corfudb.runtime.view.replication.IReplicationProtocol;
@@ -52,6 +59,7 @@ public class Layout {
     @Getter
     static final Gson parser = new GsonBuilder()
             .registerTypeAdapter(Layout.class, new LayoutDeserializer())
+            .registerTypeAdapter(ImmutableList.class, new ImmutableListDeserializer())
             .create();
     /**
      * A list of layout servers in the layout.
@@ -612,13 +620,43 @@ public class Layout {
         }
     }
 
-    @Data
+    @Builder
     @Getter
+    @EqualsAndHashCode
+    @ToString
     public static class LayoutStripe {
-        final List<String> logServers;
 
-        public LayoutStripe(@NonNull List<String> logServers) {
-            this.logServers = logServers;
+        @NonNull
+        @Singular
+        private final ImmutableList<String> logServers;
+
+        public int size() {
+            return logServers.size();
+        }
+
+        public LayoutStripe check(int minReplicationFactor) {
+            if (logServers.isEmpty()) {
+                throw new LayoutModificationException(
+                        "Attempting to remove all logunit in stripe. No replicas available."
+                );
+            }
+
+            if (logServers.size() < minReplicationFactor) {
+                final String message = "Change will cause redundancy loss! MinReplicationFactor: " +
+                        minReplicationFactor;
+                throw new LayoutModificationException(message);
+            }
+
+            return this;
+        }
+
+        public LayoutStripe without(String endpoint) {
+            ImmutableList<String> servers = logServers
+                    .stream()
+                    .filter(server -> !endpoint.equals(server))
+                    .collect(ImmutableList.toImmutableList());
+
+            return LayoutStripe.builder().logServers(servers).build();
         }
     }
 }

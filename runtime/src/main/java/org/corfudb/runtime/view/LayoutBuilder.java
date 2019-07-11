@@ -1,5 +1,6 @@
 package org.corfudb.runtime.view;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 
 import java.util.ArrayList;
@@ -219,7 +220,7 @@ public class LayoutBuilder {
         logunitServerList.add(newLogunitEndpoint);
 
         // Create new stripe list with the new logunit server added.
-        LayoutStripe newStripe = new LayoutStripe(logunitServerList);
+        LayoutStripe newStripe = new LayoutStripe(ImmutableList.copyOf(logunitServerList));
         List<LayoutStripe> newStripeList = new ArrayList<>();
         newStripeList.addAll(segmentToSplit.getStripes());
         newStripeList.remove(stripeIndex);
@@ -243,13 +244,23 @@ public class LayoutBuilder {
      *
      * @return this builder
      */
-    public LayoutBuilder addLogunitServerToSegment(@NonNull String endpoint,
-                                                   int segmentIndex,
-                                                   int stripeIndex) {
-        LayoutStripe stripe = layout.getSegments().get(segmentIndex).getStripes().get(stripeIndex);
-        if (!stripe.getLogServers().contains(endpoint)) {
-            stripe.getLogServers().add(endpoint);
-        }
+    public LayoutBuilder addLogunitServerToSegment(
+            @NonNull String endpoint, int segmentIndex, int stripeIndex) {
+
+        List<LayoutStripe> stripes = layout
+                .getSegments()
+                .get(segmentIndex)
+                .getStripes();
+
+        LayoutStripe oldStripe = stripes.get(stripeIndex);
+
+        LayoutStripe newStripe = LayoutStripe.builder()
+                .logServers(oldStripe.getLogServers())
+                .logServer(endpoint)
+                .build();
+
+        stripes.set(stripeIndex, newStripe);
+
         return this;
     }
 
@@ -403,32 +414,6 @@ public class LayoutBuilder {
     }
 
     /**
-     * Remove an endpoint from a segment.
-     *
-     * @param endpoint             A non null String representing the endpoint to
-     *                             be removed
-     * @param layoutStripe         A non null stripe to remove the endpoint from
-     * @param minReplicationFactor The least number of nodes needed to
-     *                             maintain redundancy
-     */
-    public void removeFromStripe(@NonNull String endpoint,
-                                 @NonNull LayoutStripe layoutStripe,
-                                 int minReplicationFactor) {
-        if (layoutStripe.getLogServers().remove(endpoint)) {
-            if (layoutStripe.getLogServers().isEmpty()) {
-                throw new LayoutModificationException(
-                        "Attempting to remove all logunit in stripe. "
-                                + "No replicas available.");
-            }
-
-            if (layoutStripe.getLogServers().size() < minReplicationFactor) {
-                throw new LayoutModificationException(
-                        "Change will cause redundancy loss!");
-            }
-        }
-    }
-
-    /**
      * Removes the Log unit endpoint from the layout.
      *
      * @param endpoint a non null Log unit server to be removed
@@ -441,10 +426,19 @@ public class LayoutBuilder {
 
         List<LayoutSegment> layoutSegments = tempLayout.getSegments();
         for (LayoutSegment layoutSegment : layoutSegments) {
-            for (LayoutStripe layoutStripe : layoutSegment.getStripes()) {
-                int minReplicationFactor = layoutSegment.getReplicationMode()
-                        .getMinReplicationFactor(tempLayout, layoutStripe);
-                removeFromStripe(endpoint, layoutStripe, minReplicationFactor);
+            List<LayoutStripe> stripes = layoutSegment.getStripes();
+
+            for (int stripeIndex = 0; stripeIndex < stripes.size(); stripeIndex++) {
+                LayoutStripe currentStripe = stripes.get(stripeIndex);
+                int minReplicationFactor = layoutSegment
+                        .getReplicationMode()
+                        .getMinReplicationFactor(tempLayout, currentStripe);
+
+                LayoutStripe newStripe = currentStripe
+                        .without(endpoint)
+                        .check(minReplicationFactor);
+
+                stripes.set(stripeIndex, newStripe);
             }
         }
         layout = tempLayout;
@@ -465,14 +459,26 @@ public class LayoutBuilder {
 
         List<LayoutSegment> layoutSegments = tempLayout.getSegments();
         for (LayoutSegment layoutSegment : layoutSegments) {
-            for (LayoutStripe layoutStripe : layoutSegment.getStripes()) {
+            List<LayoutStripe> stripes = layoutSegment.getStripes();
+
+            for (int stripeIndex = 0; stripeIndex < stripes.size(); stripeIndex++) {
+                LayoutStripe currentStripe = stripes.get(stripeIndex);
+
+                LayoutStripe newStripe = currentStripe;
                 for (String endpoint : endpoints) {
-                    int minReplicationFactor = layoutSegment.getReplicationMode()
-                            .getMinReplicationFactor(tempLayout, layoutStripe);
-                    removeFromStripe(endpoint, layoutStripe, minReplicationFactor);
+                    int minReplicationFactor = layoutSegment
+                            .getReplicationMode()
+                            .getMinReplicationFactor(tempLayout, currentStripe);
+
+                    newStripe = newStripe
+                            .without(endpoint)
+                            .check(minReplicationFactor);
                 }
+
+                stripes.set(stripeIndex, newStripe);
             }
         }
+
         layout = tempLayout;
         return this;
     }

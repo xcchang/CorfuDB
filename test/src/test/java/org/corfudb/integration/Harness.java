@@ -11,6 +11,9 @@ import org.corfudb.integration.cluster.Harness.Node;
 import org.corfudb.runtime.BootstrapUtil;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
+import org.corfudb.runtime.view.Layout.ReplicationMode;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -122,7 +125,7 @@ public class Harness {
     private Layout getLayoutForNodes(int nodeCount) {
         List<String> layoutServers = new ArrayList<>();
         List<String> sequencer = new ArrayList<>();
-        List<Layout.LayoutSegment> segments = new ArrayList<>();
+        List<LayoutSegment> segments = new ArrayList<>();
         UUID clusterId = UUID.randomUUID();
         List<String> stripServers = new ArrayList<>();
 
@@ -135,8 +138,13 @@ public class Harness {
             stripServers.add(getAddressForNode(port));
         }
 
-        Layout.LayoutSegment segment = new Layout.LayoutSegment(Layout.ReplicationMode.CHAIN_REPLICATION, 0L, -1L,
-                Collections.singletonList(new Layout.LayoutStripe(stripServers)));
+        LayoutSegment segment = new LayoutSegment(
+                ReplicationMode.CHAIN_REPLICATION,
+                0L,
+                -1L,
+                Collections.singletonList(LayoutStripe.builder().logServers(stripServers).build())
+        );
+
         segments.add(segment);
         return new Layout(layoutServers, sequencer, segments, epoch, clusterId);
     }

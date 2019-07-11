@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -126,7 +127,7 @@ public class TestLayoutBuilder {
         }
 
         private Layout.LayoutSegment build() {
-            List<Layout.LayoutStripe> allStripes = stripes.stream()
+            List<LayoutStripe> allStripes = stripes.stream()
                     .map(TestStripeBuilder::build)
                     .collect(Collectors.toList());
             return new Layout.LayoutSegment(replicationMode, start, end, allStripes);
@@ -153,8 +154,8 @@ public class TestLayoutBuilder {
             return segmentBuilder;
         }
 
-        private Layout.LayoutStripe build() {
-            return new Layout.LayoutStripe(logUnits);
+        private LayoutStripe build() {
+            return LayoutStripe.builder().logServers(logUnits).build();
         }
     }
 }

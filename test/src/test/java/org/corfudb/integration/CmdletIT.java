@@ -1,10 +1,13 @@
 package org.corfudb.integration;
 
-import java.util.UUID;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.collections.SMRMap;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.runtime.view.stream.IStreamView;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -14,8 +17,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.util.Collections;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import java.util.UUID;
 
 /**
  * Tests for clojure cmdlets.
@@ -32,16 +34,25 @@ public class CmdletIT extends AbstractIT {
     private final String ENDPOINT = DEFAULT_HOST + ":" + PORT;
 
     private Layout getSingleLayout() {
+        LayoutStripe stripe = LayoutStripe.builder()
+                .logServer(ENDPOINT)
+                .build();
+
+        LayoutSegment segment = new LayoutSegment(
+                Layout.ReplicationMode.CHAIN_REPLICATION,
+                0L,
+                -1L,
+                Collections.singletonList(stripe)
+        );
+
         return new Layout(
                 Collections.singletonList(ENDPOINT),
                 Collections.singletonList(ENDPOINT),
-                Collections.singletonList(new Layout.LayoutSegment(Layout.ReplicationMode.CHAIN_REPLICATION,
-                        0L,
-                        -1L,
-                        Collections.singletonList(new Layout.LayoutStripe(Collections.singletonList(ENDPOINT))))),
-                Collections.EMPTY_LIST,
+                Collections.singletonList(segment),
+                Collections.emptyList(),
                 0L,
-                UUID.randomUUID());
+                UUID.randomUUID()
+        );
     }
 
     static public String runCmdletGetOutput(String command) throws Exception {

@@ -1,9 +1,13 @@
 package org.corfudb.integration;
 
+import static junit.framework.TestCase.fail;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
-
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
 import org.corfudb.protocols.wireprotocol.TokenResponse;
@@ -23,6 +27,8 @@ import org.corfudb.runtime.exceptions.AlreadyBootstrappedException;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.view.Layout;
+import org.corfudb.runtime.view.Layout.LayoutSegment;
+import org.corfudb.runtime.view.Layout.LayoutStripe;
 import org.corfudb.runtime.view.stream.IStreamView;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.NodeLocator;
@@ -46,11 +52,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-
-import static junit.framework.TestCase.fail;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class ClusterReconfigIT extends AbstractIT {
 
@@ -86,16 +87,22 @@ public class ClusterReconfigIT extends AbstractIT {
             servers.add(serverAddress);
         }
 
+        LayoutStripe stripe = LayoutStripe.builder()
+                .logServers(servers)
+                .build();
+
         return new Layout(
                 new ArrayList<>(servers),
                 new ArrayList<>(servers),
-                Collections.singletonList(new Layout.LayoutSegment(
+                Collections.singletonList(new LayoutSegment(
                         Layout.ReplicationMode.CHAIN_REPLICATION,
                         0L,
                         -1L,
-                        Collections.singletonList(new Layout.LayoutStripe(servers)))),
+                        Collections.singletonList(stripe))
+                ),
                 0L,
-                UUID.randomUUID());
+                UUID.randomUUID()
+        );
     }
 
     /**

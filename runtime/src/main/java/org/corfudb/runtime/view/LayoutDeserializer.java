@@ -1,10 +1,13 @@
 package org.corfudb.runtime.view;
 
+import com.google.common.collect.ImmutableList;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParseException;
+import org.corfudb.runtime.gson.ImmutableListDeserializer;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -16,11 +19,16 @@ import java.util.ArrayList;
  * the constructor. Proper validation of the object is done in the Layout class constructor.</p>
  */
 public class LayoutDeserializer implements JsonDeserializer {
+
+    private static final Gson PARSER = new GsonBuilder()
+            .registerTypeAdapter(ImmutableList.class, new ImmutableListDeserializer())
+            .create();
+
     @Override
     public Layout deserialize(JsonElement arg0, Type arg1, JsonDeserializationContext arg2)
             throws JsonParseException {
-        Gson g = new Gson();
-        Layout unsafeLayout = g.fromJson(arg0, Layout.class);
+
+        Layout unsafeLayout = PARSER.fromJson(arg0, Layout.class);
 
         /* Unresponsive servers is an optional field in the json, if it is not present
          * we need to create an empty list (by default gson will set it to null)
@@ -31,11 +39,14 @@ public class LayoutDeserializer implements JsonDeserializer {
 
         /* Similar to a copy constructor. This constructor holds all the validation for
         constructing a layout. */
-        Layout safeLayout = new Layout(unsafeLayout.layoutServers, unsafeLayout.sequencers,
-                unsafeLayout.segments, unsafeLayout.unresponsiveServers, unsafeLayout.epoch,
-                unsafeLayout.clusterId);
-
-        return safeLayout;
+        return new Layout(
+                unsafeLayout.layoutServers,
+                unsafeLayout.sequencers,
+                unsafeLayout.segments,
+                unsafeLayout.unresponsiveServers,
+                unsafeLayout.epoch,
+                unsafeLayout.clusterId
+        );
 
     }
 }
