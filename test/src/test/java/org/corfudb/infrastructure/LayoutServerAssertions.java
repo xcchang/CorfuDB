@@ -36,27 +36,27 @@ public class LayoutServerAssertions extends AbstractAssert<LayoutServerAssertion
 
     public LayoutServerAssertions isPhase1Rank(Rank phase1Rank) {
         isNotNull();
-        if (!actual.getPhase1Rank().equals(phase1Rank)) {
+        if (!actual.getPaxos().getDataStore().getPhase1Rank().get().equals(phase1Rank)) {
             failWithMessage("Expected server to be in phase1Rank <%s> but it was in phase1Rank <%s>", phase1Rank,
-                    actual.getPhase1Rank());
+                    actual.getPaxos().getDataStore().getPhase1Rank().get());
         }
         return this;
     }
 
     public LayoutServerAssertions isPhase2Rank(Rank phase2Rank) {
         isNotNull();
-        if (!actual.getPhase2Rank().equals(phase2Rank)) {
+        if (!actual.getPaxos().getDataStore().getPhase2Rank().equals(phase2Rank)) {
             failWithMessage("Expected server to be in phase2Rank <%s> but it was in phase2Rank <%s>", phase2Rank,
-                    actual.getPhase2Rank());
+                    actual.getPaxos().getDataStore().getPhase2Rank());
         }
         return this;
     }
 
     public LayoutServerAssertions isProposedLayout(Layout layout) {
         isNotNull();
-        if (!actual.getProposedLayout().asJSONString().equals(layout.asJSONString())) {
+        if (!actual.getPaxos().getDataStore().getProposedLayout().asJSONString().equals(layout.asJSONString())) {
             failWithMessage("Expected server to have proposedLayout  <%s> but it is <%s>", layout,
-                    actual.getProposedLayout());
+                    actual.getPaxos().getDataStore().getProposedLayout());
 
         }
         return this;

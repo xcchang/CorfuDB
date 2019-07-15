@@ -1,12 +1,12 @@
 package org.corfudb.infrastructure;
 
-import java.util.UUID;
-
 import lombok.AllArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.UUID;
 
 /**
  * Tuple to store the rank and clientId for each round in Paxos.
@@ -18,16 +18,24 @@ import lombok.extern.slf4j.Slf4j;
 @EqualsAndHashCode
 public class Rank {
     @Getter
-    Long rank;
+    private final Long rank;
     @Getter
-    UUID clientId;
+    private final UUID clientId;
+
+    public static Rank empty(UUID clientId) {
+        return new Rank(-1L, clientId);
+    }
+
+    public Rank getEmpty() {
+        return new Rank(-1L, clientId);
+    }
 
     /**
      * Compares only the ranks. Does not use clientIds in the comparison.
      *
      * @param other rank to compare against
      * @return True if this rank is lower than or equal to other rank,
-     *     False otherwise or if other is null
+     * False otherwise or if other is null
      */
     public boolean lessThanEqualTo(Rank other) {
         if (other == null) {

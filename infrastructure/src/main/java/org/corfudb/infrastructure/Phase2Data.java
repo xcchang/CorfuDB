@@ -1,7 +1,7 @@
 package org.corfudb.infrastructure;
 
 import lombok.AllArgsConstructor;
-import lombok.Data;
+import lombok.Getter;
 import lombok.ToString;
 import org.corfudb.runtime.view.Layout;
 
@@ -10,10 +10,10 @@ import org.corfudb.runtime.view.Layout;
  * The container class provides a convenience to persist and retrieve
  * these two pieces of data together.
  */
-@Data
+@Getter
 @ToString
 @AllArgsConstructor
-class Phase2Data {
-    Rank rank;
-    Layout layout;
+public class Phase2Data {
+    private final Rank rank;
+    private final Layout layout;
 }

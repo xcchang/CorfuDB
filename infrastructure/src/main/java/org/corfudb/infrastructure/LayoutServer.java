@@ -1,18 +1,12 @@
 package org.corfudb.infrastructure;
 
 import io.netty.channel.ChannelHandlerContext;
-
-import java.lang.invoke.MethodHandles;
-import java.util.Collections;
-import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import javax.annotation.Nonnull;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-
+import org.corfudb.infrastructure.paxos.Paxos;
+import org.corfudb.infrastructure.paxos.Paxos.OperationResult;
+import org.corfudb.infrastructure.paxos.PersistentPaxosDataStore;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
@@ -24,6 +18,14 @@ import org.corfudb.protocols.wireprotocol.LayoutPrepareResponse;
 import org.corfudb.protocols.wireprotocol.LayoutProposeRequest;
 import org.corfudb.protocols.wireprotocol.LayoutProposeResponse;
 import org.corfudb.runtime.view.Layout;
+
+import javax.annotation.Nonnull;
+import java.lang.invoke.MethodHandles;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * The layout server serves layouts, which are used by clients to find the
@@ -63,6 +65,9 @@ public class LayoutServer extends AbstractServer {
     @Getter
     private final ServerContext serverContext;
 
+    @Getter
+    private final Paxos paxos;
+
     /**
      * Handler for this server.
      */
@@ -96,6 +101,12 @@ public class LayoutServer extends AbstractServer {
         this.serverContext = serverContext;
         executor = Executors.newFixedThreadPool(serverContext.getLayoutServerThreadCount(),
                 new ServerThreadFactory("layoutServer-", new ServerThreadFactory.ExceptionHandler()));
+
+        PersistentPaxosDataStore paxosDs = PersistentPaxosDataStore.builder()
+                .dataStore(serverContext.getDataStore())
+                .serverContext(serverContext)
+                .build();
+        this.paxos = Paxos.builder().dataStore(paxosDs).build();
 
         if (serverContext.installSingleNodeLayoutIfAbsent()) {
             setLayoutInHistory(getCurrentLayout());
@@ -187,34 +198,25 @@ public class LayoutServer extends AbstractServer {
         if (!isBootstrapped(msg, ctx, r)) {
             return;
         }
+
         Rank prepareRank = new Rank(msg.getPayload().getRank(), msg.getClientID());
-        Rank phase1Rank = getPhase1Rank();
-        Layout proposedLayout = getProposedLayout();
 
-        long serverEpoch = getServerEpoch();
-        if (msg.getPayload().getEpoch() != serverEpoch) {
-            r.sendResponse(ctx, msg, new CorfuPayloadMsg<>(CorfuMsgType.WRONG_EPOCH, serverEpoch));
-            log.trace("handleMessageLayoutPrepare: Incoming message with wrong epoch, got {}, "
-                            + "expected {}, message was: {}",
-                    msg.getPayload().getEpoch(), serverEpoch, msg);
-            return;
-        }
+        OperationResult result = paxos.prepare(prepareRank);
 
-
-        // This is a prepare. If the rank is less than or equal to the phase 1 rank, reject.
-        if (phase1Rank != null && prepareRank.lessThanEqualTo(phase1Rank)) {
-            log.debug("handleMessageLayoutPrepare: Rejected phase 1 prepare of rank={}, "
-                    + "phase1Rank={}", prepareRank, phase1Rank);
-            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PREPARE_REJECT.payloadMsg(new
-                    LayoutPrepareResponse(phase1Rank.getRank(), proposedLayout)));
-        } else {
-            // Return the layout with the highest rank proposed before.
-            Rank highestProposedRank = proposedLayout == null ? new Rank(-1L, msg.getClientID())
-                    : getPhase2Rank();
-            setPhase1Rank(prepareRank);
-            log.debug("handleMessageLayoutPrepare: New phase 1 rank={}", getPhase1Rank());
-            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PREPARE_ACK.payloadMsg(new
-                    LayoutPrepareResponse(highestProposedRank.getRank(), proposedLayout)));
+        switch (result.getStatus()){
+            case OK:
+                // Return the layout with the highest rank proposed before.
+                log.debug("handleMessageLayoutPrepare: New phase 1 rank={}", result.getRank());
+                r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PREPARE_ACK.payloadMsg(new
+                        LayoutPrepareResponse(result.getRank().getRank(), result.getLayout())));
+                break;
+            case REJECTED:
+                // This is a prepare. If the rank is less than or equal to the phase 1 rank, reject.
+                log.debug("handleMessageLayoutPrepare: Rejected phase 1 prepare of rank={}, "
+                        + "phase1Rank={}", prepareRank, result.getRank());
+                r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PREPARE_REJECT.payloadMsg(new
+                        LayoutPrepareResponse(result.getRank().getRank(), result.getLayout())));
+                break;
         }
     }
 
@@ -235,53 +237,15 @@ public class LayoutServer extends AbstractServer {
         if (!isBootstrapped(msg, ctx, r)) {
             return;
         }
-        Rank proposeRank = new Rank(msg.getPayload().getRank(), msg.getClientID());
-        Rank phase1Rank = getPhase1Rank();
 
-        long serverEpoch = getServerEpoch();
-
-        // Check if the propose is for the correct epoch
-        if (msg.getPayload().getEpoch() != serverEpoch) {
-            r.sendResponse(ctx, msg, new CorfuPayloadMsg<>(CorfuMsgType.WRONG_EPOCH, serverEpoch));
-            log.trace("handleMessageLayoutPropose: Incoming message with wrong epoch, got {}, "
-                            + "expected {}, message was: {}",
-                    msg.getPayload().getEpoch(), serverEpoch, msg);
-            return;
-        }
-        // This is a propose. If no prepare, reject.
-        if (phase1Rank == null) {
-            log.debug("handleMessageLayoutPropose: Rejected phase 2 propose of rank={}, "
-                    + "phase1Rank=none", proposeRank);
-            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PROPOSE_REJECT.payloadMsg(new
-                    LayoutProposeResponse(-1)));
-            return;
-        }
-        // This is a propose. If the rank in the proposal is less than or equal to the highest yet
-        // observed prepare rank, reject.
-        if (!proposeRank.equals(phase1Rank)) {
-            log.debug("handleMessageLayoutPropose: Rejected phase 2 propose of rank={}, "
-                    + "phase1Rank={}", proposeRank, phase1Rank);
-            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PROPOSE_REJECT.payloadMsg(new
-                    LayoutProposeResponse(phase1Rank.getRank())));
-            return;
-        }
-        Rank phase2Rank = getPhase2Rank();
-        Layout proposeLayout = msg.getPayload().getLayout();
-        // In addition, if the rank in the propose message is equal to the current phase 2 rank
-        // (already accepted message), reject.
-        // This can happen in case of duplicate messages.
-        if (proposeRank.equals(phase2Rank)) {
-            log.debug("handleMessageLayoutPropose: Rejected phase 2 propose of rank={}, "
-                    + "phase2Rank={}", proposeRank, phase2Rank);
-            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PROPOSE_REJECT.payloadMsg(new
-                    LayoutProposeResponse(phase2Rank.getRank())));
-            return;
+        Optional<LayoutProposeResponse> result = paxos.propose(msg.getPayload(), msg.getClientID());
+        if(!result.isPresent()){
+            r.sendResponse(ctx, msg, new CorfuMsg(CorfuMsgType.ACK));
         }
 
-        log.debug("handleMessageLayoutPropose: New phase 2 rank={},  layout={}",
-                proposeRank, proposeLayout);
-        setPhase2Data(new Phase2Data(proposeRank, proposeLayout));
-        r.sendResponse(ctx, msg, new CorfuMsg(CorfuMsgType.ACK));
+        result.ifPresent(resp -> {
+            r.sendResponse(ctx, msg, CorfuMsgType.LAYOUT_PROPOSE_REJECT.payloadMsg(resp));
+        });
     }
 
 
@@ -340,11 +304,6 @@ public class LayoutServer extends AbstractServer {
         if (!isBootstrapped(msg, ctx, r)) {
             return;
         }
-        long serverEpoch = getServerEpoch();
-        if (msg.getPayload().getEpoch() < serverEpoch) {
-            r.sendResponse(ctx, msg, new CorfuPayloadMsg<>(CorfuMsgType.WRONG_EPOCH, serverEpoch));
-            return;
-        }
 
         setCurrentLayout(commitLayout);
         serverContext.setServerEpoch(msg.getPayload().getEpoch(), r);
@@ -373,53 +332,11 @@ public class LayoutServer extends AbstractServer {
         setLayoutInHistory(layout);
     }
 
-    public Rank getPhase1Rank() {
-        return serverContext.getPhase1Rank();
-    }
-
-    public void setPhase1Rank(Rank rank) {
-        serverContext.setPhase1Rank(rank);
-    }
-
-    public Phase2Data getPhase2Data() {
-        return serverContext.getPhase2Data();
-    }
-
-    public void setPhase2Data(Phase2Data phase2Data) {
-        serverContext.setPhase2Data(phase2Data);
-    }
-
     public void setLayoutInHistory(Layout layout) {
         serverContext.setLayoutInHistory(layout);
     }
 
     private long getServerEpoch() {
         return serverContext.getServerEpoch();
-    }
-
-    /**
-     * Returns the phase 2 rank.
-     *
-     * @return the phase 2 rank
-     */
-    public Rank getPhase2Rank() {
-        Phase2Data phase2Data = getPhase2Data();
-        if (phase2Data != null) {
-            return phase2Data.getRank();
-        }
-        return null;
-    }
-
-    /**
-     * Returns the proposed layout received in phase 2 data.
-     *
-     * @return the proposed layout
-     */
-    public Layout getProposedLayout() {
-        Phase2Data phase2Data = getPhase2Data();
-        if (phase2Data != null) {
-            return phase2Data.getLayout();
-        }
-        return null;
     }
 }

@@ -8,10 +8,10 @@ import org.corfudb.runtime.view.Layout;
  */
 public class OutrankedException extends Exception {
     @Getter
-    long newRank;
+    private final long newRank;
 
     @Getter
-    Layout layout;
+    private final Layout layout;
 
     /**
      * Constructor.
