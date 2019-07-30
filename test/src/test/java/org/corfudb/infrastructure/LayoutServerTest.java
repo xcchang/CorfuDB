@@ -3,12 +3,17 @@ package org.corfudb.infrastructure;
 
 import static org.corfudb.infrastructure.LayoutServerAssertions.assertThat;
 
+import java.io.File;
+import java.nio.channels.Channel;
 import java.util.UUID;
 
+import io.netty.channel.ChannelHandlerContext;
 import lombok.extern.slf4j.Slf4j;
 
 import org.assertj.core.api.Assertions;
+import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
+import org.corfudb.protocols.wireprotocol.CorfuPayload;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.LayoutBootstrapRequest;
 import org.corfudb.protocols.wireprotocol.LayoutCommittedRequest;
@@ -17,6 +22,9 @@ import org.corfudb.protocols.wireprotocol.LayoutPrepareRequest;
 import org.corfudb.protocols.wireprotocol.LayoutProposeRequest;
 import org.corfudb.runtime.view.Layout;
 import org.junit.Test;
+import org.mockito.Mock;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 
 //import static org.assertj.core.api.Assertions.assertThat;
 
@@ -248,7 +256,7 @@ public class LayoutServerTest extends AbstractServerTest {
         sendPrepare(newEpoch, 1);
         Assertions.assertThat(getLastMessage().getMsgType()).isEqualTo(CorfuMsgType.LAYOUT_PREPARE_ACK);
         assertThat(s1).isPhase1Rank(new Rank(1L, AbstractServerTest.testClientId));
-       //shutdown this instance of server
+        //shutdown this instance of server
         s1.shutdown();
         //bring up a new instance of server with the previously persisted data
         LayoutServer s2 = getDefaultServer(serviceDir);
@@ -348,7 +356,7 @@ public class LayoutServerTest extends AbstractServerTest {
         assertThat(s2).isPhase1Rank(new Rank(HIGH_RANK, AbstractServerTest.testClientId));
 
         //new LAYOUT_PROPOSE message with a lower phase2 rank should be rejected
-        sendPropose(newEpoch,  HIGH_RANK - 1, newLayout);
+        sendPropose(newEpoch, HIGH_RANK - 1, newLayout);
         Assertions.assertThat(getLastMessage().getMsgType()).isEqualTo(CorfuMsgType.LAYOUT_PROPOSE_REJECT);
 
 
@@ -462,6 +470,53 @@ public class LayoutServerTest extends AbstractServerTest {
             commitReturnsAck(s2, i, NEW_EPOCH + 1);
             s2.shutdown();
         }
+    }
+
+    @Test
+    public void testChangeEpochInPhase2ByBaseServer() {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        ServerContext sc = new ServerContextBuilder()
+                .setPort(0)
+                .setMemory(false)
+                .setLogPath(serviceDir)
+                .setServerRouter(getRouter())
+                .build();
+
+        // set up base server
+        BaseServer bs = new BaseServer(sc);
+
+        IServerRouter routerMock = Mockito.mock(IServerRouter.class);
+        ChannelHandlerContext chcMock = Mockito.mock(ChannelHandlerContext.class);
+
+        // set up layout server
+        LayoutServer ls = new LayoutServer(sc);
+        LayoutServer spyLs = Mockito.spy(ls);
+
+        // phase 1
+        LayoutPrepareRequest pr = new LayoutPrepareRequest(0L, 0L);
+        CorfuPayloadMsg<LayoutPrepareRequest> prepareRequestMsg = new CorfuPayloadMsg<>(CorfuMsgType.LAYOUT_PREPARE, pr);
+        spyLs.handleMessageLayoutPrepare(prepareRequestMsg, chcMock, routerMock);
+
+        // phase 2 -> propose should go through correctly
+        Layout oldLayout = spyLs.getCurrentLayout();
+        LayoutProposeRequest ppr = new LayoutProposeRequest(0L, 0L, oldLayout);
+        CorfuPayloadMsg<LayoutProposeRequest> proposeRequestMsg = new CorfuPayloadMsg<>(CorfuMsgType.LAYOUT_PROPOSE, ppr);
+        spyLs.handleMessageLayoutPropose(proposeRequestMsg, chcMock, routerMock);
+
+        // propose second time with the same layout but now bump
+        // epoch by a base server before phase 2 data is persisted
+        Mockito.doAnswer(invocation -> {
+            CorfuPayloadMsg<Long> setEpochMsg = new CorfuPayloadMsg<>(CorfuMsgType.SET_EPOCH, 1L);
+            bs.handleMessageSetEpoch(setEpochMsg, chcMock, routerMock);
+            return invocation.callRealMethod();
+        }).when(spyLs).getPhase2Rank();
+
+        spyLs.handleMessageLayoutPropose(proposeRequestMsg, chcMock, routerMock);
+
+        // PHASE_2_1DATA.ds should not exist in the data store
+        File file = new File(serviceDir + "/PHASE_2_1DATA.ds");
+        assert !file.exists();
+
     }
 
     private void commitReturnsAck(LayoutServer s1, Integer reboot, long baseEpoch) {
