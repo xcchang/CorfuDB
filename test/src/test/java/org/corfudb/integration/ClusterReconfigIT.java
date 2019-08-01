@@ -4,12 +4,15 @@ import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
 
+import com.google.common.reflect.TypeToken;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
+import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TokenResponse;
 import org.corfudb.runtime.BootstrapUtil;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
+import org.corfudb.runtime.MultiCheckpointWriter;
 import org.corfudb.runtime.RebootUtil;
 import org.corfudb.runtime.clients.BaseHandler;
 import org.corfudb.runtime.clients.IClientRouter;
@@ -24,6 +27,7 @@ import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.stream.IStreamView;
+import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.CFUtils;
 import org.corfudb.util.NodeLocator;
 import org.corfudb.util.Sleep;
@@ -66,6 +70,10 @@ public class ClusterReconfigIT extends AbstractIT {
         if (runtime != null) {
             runtime.shutdown();
         }
+    }
+
+    private String getServerEndpoint(int port) {
+        return corfuSingleNodeHost + ":" + port;
     }
 
     private Random getRandomNumberGenerator() {
@@ -1091,5 +1099,83 @@ public class ClusterReconfigIT extends AbstractIT {
         for (Process corfuServer : corfuServers) {
             shutdownCorfuServer(corfuServer);
         }
+    }
+
+    /**
+     * Verify that a stream can be correctly loaded after a state transfer and
+     * all the updates on this stream are subsumed by a checkpoint and trimmed.
+     */
+    @Test
+    public void testFailoverWithStreamSubsumedByCheckpoint() throws Exception {
+        final int PORT_0 = 9000;
+        final int PORT_1 = 9001;
+        final int PORT_2 = 9002;
+
+        final int numRetry = 3;
+        final Duration timeout = Duration.ofMinutes(5);
+        final Duration pollPeriod = Duration.ofSeconds(5);
+
+        final UUID streamId = CorfuRuntime.getStreamID("stream1");
+
+        Process server0 = runPersistentServer(corfuSingleNodeHost, PORT_0, true);
+        runtime = createDefaultRuntime();
+
+        CorfuTable<String, String> table = runtime.getObjectsView().build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setStreamID(streamId)
+                .open();
+
+        final int numEntries = 3;
+        for (int i = 0; i < numEntries; i++) {
+            table.put("k" + i, "v" + i);
+        }
+
+        // Checkpoint and trim the stream, no further updates on this stream (subsumed by checkpoint).
+        MultiCheckpointWriter mcw = new MultiCheckpointWriter();
+        mcw.addMap(table);
+        Token token = mcw.appendCheckpoints(runtime, "author");
+        runtime.getAddressSpaceView().prefixTrim(token);
+
+        // Add two other servers that triggers state transfer.
+        Process server1 = runPersistentServer(corfuSingleNodeHost, PORT_1, false);
+        runtime.getManagementView().addNode(getServerEndpoint(PORT_1), numRetry, timeout, pollPeriod);
+
+        Process server2 = runPersistentServer(corfuSingleNodeHost, PORT_2, false);
+        runtime.getManagementView().addNode(getServerEndpoint(PORT_2), numRetry, timeout, pollPeriod);
+
+        runtime.invalidateLayout();
+        Layout layout = runtime.getLayoutView().getLayout();
+        StreamAddressSpace streamSpace = runtime.getAddressSpaceView().getLogAddressSpace().getAddressMap().get(streamId);
+
+        // Kill the server with primary sequencer, which triggers sequencer failover.
+        assertThat(shutdownCorfuServer(server0)).isTrue();
+        waitForEpochChange(refreshedEpoch -> refreshedEpoch > layout.getEpoch(), runtime);
+
+        // Create a new runtime.
+        CorfuRuntime runtime2 = createRuntime(getServerEndpoint(PORT_1));
+
+        // Verify sequencer has the correct steam tail.
+        assertThat(runtime2.getLayoutView().getLayout().getPrimarySequencer()).isNotEqualTo(getServerEndpoint(PORT_0));
+        assertThat(runtime2.getSequencerView().query(streamId).getSequence()).isEqualTo(numEntries - 1);
+
+        // Verify the stream address space is the same.
+        StreamAddressSpace streamSpace2 = runtime2.getAddressSpaceView().getLogAddressSpace().getAddressMap().get(streamId);
+        assertThat(streamSpace.getTrimMark()).isEqualTo(streamSpace2.getTrimMark()).isEqualTo(numEntries - 1);
+        assertThat(streamSpace.getAddressMap().isEmpty()).isTrue();
+        assertThat(streamSpace2.getAddressMap().isEmpty()).isTrue();
+
+        CorfuTable<String, String> table2 = runtime2.getObjectsView().build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setStreamID(streamId)
+                .open();
+
+        // Verify the object has correct state.
+        assertThat(table2.size()).isEqualTo(numEntries);
+        for (int i = 0; i < numEntries; i++) {
+            assertThat(table2.get("k" + i)).isEqualTo("v" + i);
+        }
+
+        shutdownCorfuServer(server1);
+        shutdownCorfuServer(server2);
     }
 }
