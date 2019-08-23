@@ -58,7 +58,7 @@ public class CorfuCompileWrapperBuilder {
      * @throws InvocationTargetException
      * @throws InstantiationException
      */
-    static <T> Object findMatchingConstructor(
+    public static <T> Object findMatchingConstructor(
             Constructor[] constructors, Object[] args)
             throws IllegalAccessException, InvocationTargetException, InstantiationException {
         // Figure out the argument types.

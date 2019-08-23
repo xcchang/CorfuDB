@@ -48,7 +48,7 @@ public class CorfuStoreTest extends AbstractViewTest {
                 EventInfo.class,
                 ManagedResources.class,
                 // TableOptions includes option to choose - Memory/Disk based corfu table.
-                TableOptions.builder().build());
+                TableOptions.builder().diskPath("/tmp/folder/").build());
 
 
         final int count = 100;
@@ -102,7 +102,8 @@ public class CorfuStoreTest extends AbstractViewTest {
                 .setEventTime(fifty)
                 .build();
 
-        assertThat((Message) q.get(tableName, timestamp, lookupKey)).isNull();
+        CorfuRecord cr = q.get(tableName, timestamp, lookupKey);
+        assertThat(cr).isNull();
         assertThat(q.get(tableName, lookupKey).getPayload()).isEqualTo(expectedValue);
 
         // Get by secondary index.

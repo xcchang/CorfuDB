@@ -7,12 +7,14 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+import lombok.NonNull;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.object.transactions.TransactionType;
 
@@ -59,7 +61,8 @@ public class Table<K extends Message, V extends Message, M extends Message> {
                  @Nonnull final V valueSchema,
                  @Nullable final M metadataSchema,
                  @Nonnull final CorfuRuntime corfuRuntime,
-                 @Nonnull final ISerializer serializer) {
+                 @Nonnull final ISerializer serializer,
+                 @NonNull final Optional<StreamingMap> streamingMap) {
 
         this.corfuRuntime = corfuRuntime;
         this.namespace = namespace;
@@ -72,13 +75,24 @@ public class Table<K extends Message, V extends Message, M extends Message> {
         } else {
             this.metadataOptions = MetadataOptions.<M>builder().build();
         }
-        this.corfuTable = corfuRuntime.getObjectsView().build()
-                .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V, M>>>() {
-                })
-                .setStreamName(this.fullyQualifiedTableName)
-                .setSerializer(serializer)
-                .setArguments(new ProtobufIndexer(valueSchema))
-                .open();
+        if (streamingMap.isPresent()) {
+            this.corfuTable = corfuRuntime.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V, M>>>() {
+                    })
+                    .setStreamName(this.fullyQualifiedTableName)
+                    .setSerializer(serializer)
+                    .setArguments(new ProtobufIndexer(valueSchema), streamingMap.get())
+                    .open();
+        } else {
+            this.corfuTable = corfuRuntime.getObjectsView().build()
+                    .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V, M>>>() {
+                    })
+                    .setStreamName(this.fullyQualifiedTableName)
+                    .setSerializer(serializer)
+                    .setArguments(new ProtobufIndexer(valueSchema))
+                    .open();
+        }
+
     }
 
     /**

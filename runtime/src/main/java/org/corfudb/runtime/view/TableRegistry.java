@@ -5,6 +5,7 @@ import com.google.protobuf.DescriptorProtos.DescriptorProto;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Message;
 
+import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Collection;
 import java.util.Map;
@@ -18,12 +19,14 @@ import org.corfudb.runtime.CorfuStoreMetadata.TableDescriptors;
 import org.corfudb.runtime.CorfuStoreMetadata.TableName;
 import org.corfudb.runtime.collections.CorfuRecord;
 import org.corfudb.runtime.collections.CorfuTable;
+import org.corfudb.runtime.collections.RocksDbStreamingMap;
 import org.corfudb.runtime.collections.Table;
 import org.corfudb.runtime.collections.TableOptions;
 import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.ProtobufSerializer;
 import org.corfudb.util.serializer.Serializers;
+import org.rocksdb.Options;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -132,14 +135,33 @@ public class TableRegistry {
 
         String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
 
+        Table<K, V, M> table;
+        if (tableOptions.getDiskPath().isEmpty()) {
+            table = new Table<>(
+                    namespace,
+                    fullyQualifiedTableName,
+                    defaultValueMessage,
+                    defaultMetadataMessage,
+                    this.runtime,
+                    this.protobufSerializer,
+                    Optional.empty());
+        } else {
+            Options options = new Options();
+            options.setCreateIfMissing(true);
+            RocksDbStreamingMap map = new RocksDbStreamingMap<String, String>(
+                    new File(tableOptions.getDiskPath()), options,
+                    this.protobufSerializer, this.runtime);
+
+            table = new Table<>(
+                    namespace,
+                    fullyQualifiedTableName,
+                    defaultValueMessage,
+                    defaultMetadataMessage,
+                    this.runtime,
+                    this.protobufSerializer,
+                    Optional.of(map));
+        }
         // Open and return table instance.
-        Table<K, V, M> table = new Table<>(
-                namespace,
-                fullyQualifiedTableName,
-                defaultValueMessage,
-                defaultMetadataMessage,
-                this.runtime,
-                this.protobufSerializer);
         tableMap.put(fullyQualifiedTableName, (Table<Message, Message, Message>) table);
         registerTable(namespace,
                 tableName,
