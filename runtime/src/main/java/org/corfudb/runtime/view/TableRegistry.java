@@ -74,7 +74,7 @@ public class TableRegistry {
                 .setValueDescriptor(valueDescriptor)
                 .build();
 
-        this.runtime.getObjectsView().TXBuild().type(TransactionType.WRITE_AFTER_WRITE).build().begin();
+        this.runtime.getObjectsView().TXBuild().type(TransactionType.OPTIMISTIC).build().begin();
         this.registryTable.putIfAbsent(tableNameKey,
                 new CorfuRecord<>(tableDescriptors, RecordMetadata.newBuilder().build()));
         this.runtime.getObjectsView().TXEnd();

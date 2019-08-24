@@ -73,7 +73,7 @@ public class Table<K extends Message, V extends Message> {
     private void TxBegin() {
         corfuRuntime.getObjectsView()
                 .TXBuild()
-                .type(TransactionType.WRITE_AFTER_WRITE)
+                .type(TransactionType.OPTIMISTIC)
                 .build().begin();
     }
 
