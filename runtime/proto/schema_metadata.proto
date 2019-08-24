@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package org.corfudb.options;
+option java_package = "org.corfudb.options";
+
+import "google/protobuf/descriptor.proto";
+
+message SchemaOptions {
+    optional bool primary_key = 1;
+    optional bool secondary_key = 2;
+}
+
+extend google.protobuf.FieldOptions {
+    optional SchemaOptions schema = 1036;
+}
