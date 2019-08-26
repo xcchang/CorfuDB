@@ -5,7 +5,7 @@ import com.google.protobuf.Message;
 import java.util.Comparator;
 import java.util.function.Function;
 
-import org.corfudb.runtime.CorfuStore.Timestamp;
+import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 import lombok.Getter;
 
 /**

@@ -2,7 +2,7 @@ package org.corfudb.runtime.collections;
 
 import com.google.protobuf.Message;
 
-import org.corfudb.runtime.CorfuStore.RecordMetadata;
+import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;

@@ -12,7 +12,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStore.Record;
+import org.corfudb.runtime.CorfuStoreMetadata.Record;
 import org.corfudb.runtime.collections.CorfuRecord;
 import lombok.extern.slf4j.Slf4j;
 

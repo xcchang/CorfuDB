@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package org.corfudb.format;
+package org.corfudb.runtime;
 option java_package = "org.corfudb.runtime";
 
 import "google/protobuf/descriptor.proto";

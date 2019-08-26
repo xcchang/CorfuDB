@@ -10,8 +10,8 @@ import javax.annotation.Nullable;
 
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStore.TableName;
-import org.corfudb.runtime.CorfuStore.Timestamp;
+import org.corfudb.runtime.CorfuStoreMetadata.TableName;
+import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 
 /**
  * Created by zlokhandwala on 2019-08-02.

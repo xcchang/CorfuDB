@@ -13,9 +13,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStore.RecordMetadata;
-import org.corfudb.runtime.CorfuStore.TableDescriptors;
-import org.corfudb.runtime.CorfuStore.TableName;
+import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
+import org.corfudb.runtime.CorfuStoreMetadata.TableDescriptors;
+import org.corfudb.runtime.CorfuStoreMetadata.TableName;
 import org.corfudb.runtime.collections.CorfuRecord;
 import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.collections.Table;

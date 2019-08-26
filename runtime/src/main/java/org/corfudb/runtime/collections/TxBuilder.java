@@ -9,8 +9,8 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.corfudb.protocols.wireprotocol.Token;
-import org.corfudb.runtime.CorfuStore.RecordMetadata;
-import org.corfudb.runtime.CorfuStore.Timestamp;
+import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
+import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 import org.corfudb.runtime.object.transactions.Transaction;
 import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.runtime.view.ObjectsView;

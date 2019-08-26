@@ -13,8 +13,9 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStore.RecordMetadata;
+import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import org.corfudb.runtime.object.transactions.TransactionType;
+
 import org.corfudb.util.serializer.ISerializer;
 import lombok.Getter;
 

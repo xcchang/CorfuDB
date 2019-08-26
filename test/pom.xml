@@ -72,11 +72,11 @@
                             <includeStdTypes>true</includeStdTypes>
                             <addProtoSources>inputs</addProtoSources>
                             <includeDirectories>
-                                <includeDirectory>../format/proto</includeDirectory>
+                                <includeDirectory>../runtime/proto</includeDirectory>
                                 <includeDirectory>src/test/resources/proto</includeDirectory>
                             </includeDirectories>
                             <inputDirectories>
-                                <include>../format/proto</include>
+                                <include>../runtime/proto</include>
                                 <include>src/test/resources/proto</include>
                             </inputDirectories>
                             <outputDirectory>

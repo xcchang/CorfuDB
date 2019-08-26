@@ -4,7 +4,7 @@ import com.google.protobuf.Descriptors;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Message;
 
-import org.corfudb.options.SchemaMetadata;
+import org.corfudb.runtime.CorfuOptions;
 import org.corfudb.runtime.collections.CorfuTable.Index;
 
 import java.util.HashMap;
@@ -34,7 +34,7 @@ public class ProtobufIndexer implements CorfuTable.IndexRegistry<Message, CorfuR
 
     void registerIndices(final Descriptors.FieldDescriptor fieldDescriptor) {
 
-        if (fieldDescriptor.getOptions().getExtension(SchemaMetadata.schema).getSecondaryKey()) {
+        if (fieldDescriptor.getOptions().getExtension(CorfuOptions.schema).getSecondaryKey()) {
             final String indexName = fieldDescriptor.getName();
             if (fieldDescriptor.getType() == FieldDescriptor.Type.GROUP) {
                 throw new IllegalArgumentException("group is a deprecated, unsupported type");

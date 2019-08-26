@@ -11,10 +11,10 @@ import com.google.protobuf.Message;
 
 import java.util.*;
 
-import org.corfudb.options.SchemaMetadata;
+import org.corfudb.runtime.CorfuOptions;
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStore.RecordMetadata;
-import org.corfudb.runtime.CorfuStore.Timestamp;
+import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
+import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 import org.corfudb.runtime.view.AbstractViewTest;
 import org.corfudb.test.SampleAppliance.Appliance;
 import org.corfudb.test.SampleSchema.EventInfo;
@@ -132,17 +132,17 @@ public class CorfuStoreTest extends AbstractViewTest {
         Message message = rule;
 
         message.getAllFields().forEach((fieldDescriptor, field) -> {
-            if (fieldDescriptor.getOptions().getExtension(SchemaMetadata.schema).getPrimaryKey()) {
+            if (fieldDescriptor.getOptions().getExtension(CorfuOptions.schema).getPrimaryKey()) {
                 System.out.println("Detected primary key " + fieldDescriptor.getName() + " = " + field);
             }
-            if (fieldDescriptor.getOptions().getExtension(SchemaMetadata.schema).getSecondaryKey()) {
+            if (fieldDescriptor.getOptions().getExtension(CorfuOptions.schema).getSecondaryKey()) {
                 System.out.println("Detected secondary key " + fieldDescriptor.getName() + " = " + field);
             }
         });
 
         FileDescriptor applianceFileDescriptor = Appliance.getDescriptor().getFile();
         FileDescriptor firewallFileDescriptor = FirewallRule.getDescriptor().getFile();
-        FileDescriptor schemaMetadataFileDescriptor = SchemaMetadata.getDescriptor();
+        FileDescriptor schemaMetadataFileDescriptor = CorfuOptions.getDescriptor();
         FileDescriptor googleDescriptor = DescriptorProto.getDescriptor().getFile();
 
         byte[] data = message.toByteArray();
