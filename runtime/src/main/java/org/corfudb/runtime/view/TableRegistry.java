@@ -23,6 +23,7 @@ import org.corfudb.runtime.collections.TableOptions;
 import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.ProtobufSerializer;
+import org.corfudb.util.serializer.Serializers;
 
 /**
  * Created by zlokhandwala on 2019-08-10.
@@ -47,12 +48,16 @@ public class TableRegistry {
         this.classMap = new ConcurrentHashMap<>();
         this.tableMap = new ConcurrentHashMap<>();
         this.protobufSerializer = new ProtobufSerializer((byte) 25, classMap);
+        Serializers.registerSerializer(this.protobufSerializer);
         this.registryTable = this.runtime.getObjectsView().build()
                 .setTypeToken(new TypeToken<CorfuTable<TableName, CorfuRecord<TableDescriptors>>>() {
                 })
                 .setStreamName(getFullyQualifiedTableName(CORFU_SYSTEM_NAMESPACE, REGISTRY_TABLE_NAME))
                 .setSerializer(this.protobufSerializer)
                 .open();
+
+        // Register the table schemas to schema table.
+        addTypeToClassMap(TableName.getDefaultInstance(), TableDescriptors.getDefaultInstance());
 
         registerTable(CORFU_SYSTEM_NAMESPACE,
                 REGISTRY_TABLE_NAME,
@@ -74,10 +79,13 @@ public class TableRegistry {
                 .setValueDescriptor(valueDescriptor)
                 .build();
 
-        this.runtime.getObjectsView().TXBuild().type(TransactionType.OPTIMISTIC).build().begin();
-        this.registryTable.putIfAbsent(tableNameKey,
-                new CorfuRecord<>(tableDescriptors, RecordMetadata.newBuilder().build()));
-        this.runtime.getObjectsView().TXEnd();
+        try {
+            this.runtime.getObjectsView().TXBuild().type(TransactionType.OPTIMISTIC).build().begin();
+            this.registryTable.putIfAbsent(tableNameKey,
+                    new CorfuRecord<>(tableDescriptors, RecordMetadata.newBuilder().build()));
+        } finally {
+            this.runtime.getObjectsView().TXEnd();
+        }
     }
 
     private String getTypeUrl(Descriptor descriptor) {
@@ -86,6 +94,19 @@ public class TableRegistry {
 
     private String getFullyQualifiedTableName(String namespace, String tableName) {
         return namespace + "$" + tableName;
+    }
+
+    private <K extends Message, V extends Message> void addTypeToClassMap(K keyMsg, V valueMsg) {
+        String keyTypeUrl = getTypeUrl(keyMsg.getDescriptorForType());
+        String valueTypeUrl = getTypeUrl(valueMsg.getDescriptorForType());
+
+        // Register the schemas to schema table.
+        if (!classMap.containsKey(keyTypeUrl)) {
+            classMap.put(keyTypeUrl, keyMsg.getClass());
+        }
+        if (!classMap.containsKey(valueTypeUrl)) {
+            classMap.put(valueTypeUrl, valueMsg.getClass());
+        }
     }
 
     public <K extends Message, V extends Message> Table<K, V> openTable(String namespace,
@@ -98,18 +119,8 @@ public class TableRegistry {
         K defaultKeyMessage = (K) kClass.getMethod("getDefaultInstance").invoke(null);
         V defaultValueMessage = (V) vClass.getMethod("getDefaultInstance").invoke(null);
 
-        // Put FileDescriptor in registry for offline tool.
-
-        String keyTypeUrl = getTypeUrl(defaultKeyMessage.getDescriptorForType());
-        String valueTypeUrl = getTypeUrl(defaultValueMessage.getDescriptorForType());
-
         // Register the schemas to schema table.
-        if (!classMap.containsKey(keyTypeUrl)) {
-            classMap.put(keyTypeUrl, kClass);
-        }
-        if (!classMap.containsKey(valueTypeUrl)) {
-            classMap.put(valueTypeUrl, vClass);
-        }
+        addTypeToClassMap(defaultKeyMessage, defaultValueMessage);
 
         String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
 

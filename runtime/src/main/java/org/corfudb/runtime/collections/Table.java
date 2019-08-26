@@ -134,7 +134,7 @@ public class Table<K extends Message, V extends Message> {
      */
     @Nullable
     public CorfuRecord<V> update(@Nonnull final K key,
-                                 @Nullable final V value,
+                                 @Nonnull final V value,
                                  @Nullable final RecordMetadata metadata) {
         boolean beganNewTxn = false;
         try {

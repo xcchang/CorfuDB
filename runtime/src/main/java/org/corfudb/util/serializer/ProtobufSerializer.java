@@ -68,6 +68,7 @@ public class ProtobufSerializer implements ISerializer {
             MessageType type = MessageType.valueOf(bbis.readInt());
             int size = bbis.readInt();
             byte[] data = new byte[size];
+            bbis.readFully(data);
             Record record = Record.parseFrom(data);
             Any payload = record.getPayload();
 
@@ -99,10 +100,12 @@ public class ProtobufSerializer implements ISerializer {
         if (o instanceof CorfuRecord) {
             CorfuRecord corfuRecord = (CorfuRecord) o;
             Any message = Any.pack(((CorfuRecord) o).getPayload());
-            record = Record.newBuilder()
-                    .setPayload(message)
-                    .setMetadata(corfuRecord.getMetadata())
-                    .build();
+            Record.Builder recordBuilder = Record.newBuilder()
+                    .setPayload(message);
+            if (corfuRecord.getMetadata() != null) {
+                recordBuilder.setMetadata(corfuRecord.getMetadata());
+            }
+            record = recordBuilder.build();
             type = MessageType.VALUE;
         } else {
             Any message = Any.pack(((Message) o));

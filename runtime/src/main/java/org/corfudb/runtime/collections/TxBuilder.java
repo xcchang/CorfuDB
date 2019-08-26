@@ -94,7 +94,7 @@ public class TxBuilder {
     @Nonnull
     public <K extends Message, V extends Message> TxBuilder update(@Nonnull final String tableName,
                                                                    @Nonnull final K key,
-                                                                   @Nullable final V value) {
+                                                                   @Nonnull final V value) {
         Table<K, V> table = getTable(tableName);
         validateNamespace(table);
         operations.add(() -> {
