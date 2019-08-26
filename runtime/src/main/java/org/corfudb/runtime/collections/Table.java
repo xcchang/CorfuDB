@@ -16,6 +16,7 @@ import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import org.corfudb.runtime.object.transactions.TransactionType;
 
+import org.corfudb.runtime.object.transactions.TransactionalContext;
 import org.corfudb.util.serializer.ISerializer;
 import lombok.Getter;
 
@@ -71,11 +72,15 @@ public class Table<K extends Message, V extends Message> {
     /**
      * Begins a write after write transaction.
      */
-    private void TxBegin() {
-        corfuRuntime.getObjectsView()
-                .TXBuild()
-                .type(TransactionType.OPTIMISTIC)
-                .build().begin();
+    private boolean TxBegin() {
+        if (!TransactionalContext.isInTransaction()) {
+            corfuRuntime.getObjectsView()
+                    .TXBuild()
+                    .type(TransactionType.OPTIMISTIC)
+                    .build().begin();
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -97,11 +102,14 @@ public class Table<K extends Message, V extends Message> {
     public CorfuRecord<V> create(@Nonnull final K key,
                                  @Nullable final V value,
                                  @Nullable final RecordMetadata metadata) {
+        boolean beganNewTxn = false;
         try {
-            TxBegin();
+            beganNewTxn = TxBegin();
             return corfuTable.put(key, new CorfuRecord<>(value, metadata));
         } finally {
-            TxEnd();
+            if (beganNewTxn) {
+                TxEnd();
+            }
         }
     }
 
@@ -128,11 +136,14 @@ public class Table<K extends Message, V extends Message> {
     public CorfuRecord<V> update(@Nonnull final K key,
                                  @Nullable final V value,
                                  @Nullable final RecordMetadata metadata) {
+        boolean beganNewTxn = false;
         try {
-            TxBegin();
+            beganNewTxn = TxBegin();
             return corfuTable.put(key, new CorfuRecord<>(value, metadata));
         } finally {
-            TxEnd();
+            if (beganNewTxn) {
+                TxEnd();
+            }
         }
     }
 
@@ -144,11 +155,14 @@ public class Table<K extends Message, V extends Message> {
      */
     @Nullable
     public CorfuRecord<V> delete(@Nonnull final K key) {
+        boolean beganNewTxn = false;
         try {
-            TxBegin();
+            beganNewTxn = TxBegin();
             return corfuTable.remove(key);
         } finally {
-            TxEnd();
+            if (beganNewTxn) {
+                TxEnd();
+            }
         }
     }
 
