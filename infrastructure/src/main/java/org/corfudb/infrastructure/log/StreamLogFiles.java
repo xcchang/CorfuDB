@@ -715,6 +715,16 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         }
     }
 
+    public Map<Long, Integer> collectAddressToSizeMap(List<Long> addresses){
+        Map<Long, Integer> map = new HashMap<>();
+        for(long address: addresses){
+            SegmentHandle segment = getSegmentHandleForAddress(address);
+            AddressMetaData metaData = segment.getKnownAddresses().get(address);
+            map.put(address, metaData.length);
+        }
+        return map;
+    }
+
     @Nullable
     private FileChannel getChannel(String filePath, boolean readOnly) throws IOException {
         if (readOnly) {
@@ -1095,24 +1105,36 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @param port
      * @return
      */
-    public Result<Long, RuntimeException> receiveChunks(List<Long> addresses, int port) {
+    public Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                           int port, Map<Long, Integer>
+                                                                   addressToSizeMap) {
         if (addresses == null || addresses.isEmpty()) {
             return new Result<>(new IllegalStateException("Addresses to be received are empty."));
-        } else if (!verifyAddressRange(addresses)) {
-            return new Result<>(new IllegalStateException("Addresses to be received span more than two segments."));
+        }
+        else if(addressToSizeMap.isEmpty()){
+            return new Result<>(new IllegalStateException("Mappings from address " +
+                    "to size can not be empty"));
+        }
+        else if (!verifyAddressRange(addresses)) {
+            return new Result<>(new IllegalStateException("Addresses to be received " +
+                    "span more than two segments."));
         } else {
             SegmentHandle firstHandle = getSegmentHandleForAddress(addresses.get(0));
-            SegmentHandle secondHandle = getSegmentHandleForAddress(addresses.get(addresses.size() - 1));
+            SegmentHandle secondHandle =
+                    getSegmentHandleForAddress(addresses.get(addresses.size() - 1));
 
             try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
                 serverSocketChannel.bind(new InetSocketAddress(port));
-                log.info("Receiver bound to socket {}. Waiting to accept socket connections.", port);
+                log.info("Receiver bound to socket {}. Waiting to accept socket " +
+                        "connections.", port);
                 SocketChannel socketChannel = serverSocketChannel.accept();
-                return processReceivedAddresses(addresses, firstHandle, socketChannel)
+                return receiveAddressForHandle(addresses, firstHandle,
+                        socketChannel, addressToSizeMap)
                         .flatMap(bytesProcessed -> {
 
                     Result<Long, RuntimeException> secondSegmentResult
-                            = processReceivedAddresses(addresses, secondHandle, socketChannel);
+                            = receiveAddressForHandle(addresses, secondHandle,
+                            socketChannel, addressToSizeMap);
                     if(secondSegmentResult.isError()){
                         return secondSegmentResult;
                     }
@@ -1127,7 +1149,12 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         }
     }
 
-    private Result<Long, RuntimeException> processReceivedAddresses(List<Long> addresses, SegmentHandle handle, SocketChannel socketChannel) {
+
+    private Result<Long, RuntimeException> receiveAddressForHandle(List<Long> addresses,
+                                                                    SegmentHandle handle,
+                                                                    SocketChannel socketChannel,
+                                                                    Map<Long, Integer>
+                                                                            addressToSizeMap) {
         try (MultiReadWriteLock.AutoCloseableLock lock =
                      segmentLocks.acquireWriteLock(handle.getSegment())) {
             long bytesWrittenTotal = 0L;
@@ -1140,7 +1167,8 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             while (addressIter.hasNext()) {
 
                 long address = addressIter.next();
-                Result<Long, RuntimeException> addressProcessedResult = processReceivedAddress(address, handle, socketChannel);
+                Result<Long, RuntimeException> addressProcessedResult =
+                        receiveAddress(address, handle, socketChannel, addressToSizeMap);
                 if (addressProcessedResult.isError()) {
                     return addressProcessedResult;
                 } else {
@@ -1153,20 +1181,29 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
 
-    private Result<Long, RuntimeException> processReceivedAddress(long address, SegmentHandle handle, SocketChannel socketChannel) {
+    private Result<Long, RuntimeException> receiveAddress(long address,
+                                                          SegmentHandle handle,
+                                                          SocketChannel socketChannel,
+                                                          Map<Long, Integer> addressToSizeMap) {
         if (isTrimmed(address)) {
             return new Result<>(new IllegalStateException("Can't receive a trimmed address"));
         } else if (handle.getPendingTrims().contains(address)) {
-            return new Result<>(new IllegalStateException("Can't receive an address that is pending trimming"));
+            return new Result<>(new IllegalStateException("Can't receive an address " +
+                    "that is pending trimming"));
         } else {
-            return receiveChunk(address, socketChannel);
+            FileChannel fileChannel = handle.getWriteChannel();
+
+            ToLongFunction<Long> writeAddress = (Long adr) -> {
+                try {
+                    return fileChannel.transferFrom(socketChannel,
+                            fileChannel.position(), addressToSizeMap.get(adr));
+                } catch (IOException ioe) {
+                    throw new IllegalStateException(ioe);
+                }
+            };
+
+            return Result.of(() -> writeAddress.applyAsLong(address));
         }
-    }
-
-    public Result<Long, RuntimeException> receiveChunk(long address, SocketChannel socketChannel) {
-        SegmentHandle segmentHandle = getSegmentHandleForAddress(address);
-        return Result.ok(0L);
-
     }
 
     @Override
@@ -1324,7 +1361,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         } else {
             ToLongFunction<AddressMetaData> readMetadata = (AddressMetaData meta) -> {
                 try {
-                    return readChannel.transferFrom(client, meta.offset, meta.length);
+                    return readChannel.transferTo(meta.offset, meta.length, client);
                 } catch (IOException ioe) {
                     throw new IllegalStateException(ioe);
                 }
