@@ -24,7 +24,7 @@ public class TrimmedException extends LogUnitException {
      */
     @Getter
     @Setter
-    private List<Long> trimmedAddresses;
+    private List<Long> /**/trimmedAddresses;
 
     public TrimmedException() {
     }

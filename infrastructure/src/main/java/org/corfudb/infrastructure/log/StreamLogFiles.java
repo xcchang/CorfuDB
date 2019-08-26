@@ -12,6 +12,7 @@ import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.corfudb.common.result.Result;
 import org.corfudb.format.Types;
 import org.corfudb.format.Types.LogEntry;
 import org.corfudb.format.Types.LogHeader;
@@ -35,8 +36,12 @@ import java.io.File;
 import java.io.FileFilter;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystems;
@@ -52,6 +57,7 @@ import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -60,6 +66,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 
 import static org.corfudb.infrastructure.utils.Persistence.syncDirectory;
@@ -155,6 +164,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
     /**
      * Create stream log directory if not exists
+     *
      * @return total capacity of the file system that owns the log files.
      */
     private long initStreamLogDirectory() {
@@ -195,7 +205,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * This method will scan the log (i.e. read all log segment files)
      * on this LU and create a map of stream offsets and the global
      * addresses seen.
-     *
+     * <p>
      * consecutive segments from [startSegment, endSegment]
      */
     private void initializeLogMetadata() {
@@ -979,6 +989,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return entry.getGlobalAddress() / RECORDS_PER_LOG_FILE;
     }
 
+
     /**
      * Pre-process a range of entries to be written. This includes
      * removing trimmed entries and advancing the trim mark appropriately.
@@ -1039,6 +1050,22 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return endSegment - firstSegment <= 1;
     }
 
+    // TODO: return result and flatmap
+    private boolean verifyAddressRange(List<Long> range) {
+        long firstAddress = range.get(0);
+
+        for (int i = 1; i < range.size(); i++) {
+            if (range.get(i) != firstAddress + i) {
+                return false;
+            }
+        }
+        long lastSegment = range.get(range.size() - 1);
+        long firstSegment = firstAddress / RECORDS_PER_LOG_FILE;
+        long endSegment = lastSegment / RECORDS_PER_LOG_FILE;
+
+        return endSegment - firstSegment <= 1;
+    }
+
     /**
      * This method requests for known addresses in this Log Unit in the specified consecutive
      * range of addresses.
@@ -1057,6 +1084,89 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             }
         }
         return result;
+    }
+
+    /**
+     * Addresses agreed on between sender and the receiver during the state transfer.
+     * This addresses are after the trim mark on both sides.
+     * They don't overlap with currently existing addresses of the receiver.
+     *
+     * @param addresses
+     * @param port
+     * @return
+     */
+    public Result<Long, RuntimeException> receiveChunks(List<Long> addresses, int port) {
+        if (addresses == null || addresses.isEmpty()) {
+            return new Result<>(new IllegalStateException("Addresses to be received are empty."));
+        } else if (!verifyAddressRange(addresses)) {
+            return new Result<>(new IllegalStateException("Addresses to be received span more than two segments."));
+        } else {
+            SegmentHandle firstHandle = getSegmentHandleForAddress(addresses.get(0));
+            SegmentHandle secondHandle = getSegmentHandleForAddress(addresses.get(addresses.size() - 1));
+
+            try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
+                serverSocketChannel.bind(new InetSocketAddress(port));
+                log.info("Receiver bound to socket {}. Waiting to accept socket connections.", port);
+                SocketChannel socketChannel = serverSocketChannel.accept();
+                return processReceivedAddresses(addresses, firstHandle, socketChannel)
+                        .flatMap(bytesProcessed -> {
+
+                    Result<Long, RuntimeException> secondSegmentResult
+                            = processReceivedAddresses(addresses, secondHandle, socketChannel);
+                    if(secondSegmentResult.isError()){
+                        return secondSegmentResult;
+                    }
+                    else{
+                        return Result.ok(bytesProcessed + secondSegmentResult.get());
+                    }
+                });
+
+            } catch (IOException ioe) {
+                return new Result<>(new IllegalStateException(ioe));
+            }
+        }
+    }
+
+    private Result<Long, RuntimeException> processReceivedAddresses(List<Long> addresses, SegmentHandle handle, SocketChannel socketChannel) {
+        try (MultiReadWriteLock.AutoCloseableLock lock =
+                     segmentLocks.acquireWriteLock(handle.getSegment())) {
+            long bytesWrittenTotal = 0L;
+
+            Iterator<Long> addressIter = addresses
+                    .stream()
+                    .filter(address ->
+                            address / RECORDS_PER_LOG_FILE == handle.getSegment()).iterator();
+
+            while (addressIter.hasNext()) {
+
+                long address = addressIter.next();
+                Result<Long, RuntimeException> addressProcessedResult = processReceivedAddress(address, handle, socketChannel);
+                if (addressProcessedResult.isError()) {
+                    return addressProcessedResult;
+                } else {
+                    bytesWrittenTotal += addressProcessedResult.get();
+                    log.trace("Received {} bytes", addressProcessedResult.get());
+                }
+            }
+            return Result.ok(bytesWrittenTotal);
+        }
+    }
+
+
+    private Result<Long, RuntimeException> processReceivedAddress(long address, SegmentHandle handle, SocketChannel socketChannel) {
+        if (isTrimmed(address)) {
+            return new Result<>(new IllegalStateException("Can't receive a trimmed address"));
+        } else if (handle.getPendingTrims().contains(address)) {
+            return new Result<>(new IllegalStateException("Can't receive an address that is pending trimming"));
+        } else {
+            return receiveChunk(address, socketChannel);
+        }
+    }
+
+    public Result<Long, RuntimeException> receiveChunk(long address, SocketChannel socketChannel) {
+        SegmentHandle segmentHandle = getSegmentHandleForAddress(address);
+        return Result.ok(0L);
+
     }
 
     @Override
@@ -1160,6 +1270,67 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             throw new RuntimeException(e);
         } finally {
             segment.release();
+        }
+    }
+
+    public Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
+                                                         String hostAddress) {
+        if (hostAddress == null || hostAddress.isEmpty()) {
+            return new Result<>(new IllegalArgumentException("Host address can not be empty."));
+        } else if (addresses == null || addresses.isEmpty()) {
+            return new Result<>(new IllegalArgumentException("Addresses to " +
+                    "transfer can not be empty."));
+        } else {
+            InetSocketAddress socketAddress = new InetSocketAddress(hostAddress, port);
+            long readBytesTotal = 0L;
+
+            try (SocketChannel client = SocketChannel.open(socketAddress)) {
+                for (long address : addresses) {
+                    if (!isTrimmed(address)) {
+                        log.error("Address {} is trimmed.", address);
+                        return new Result<>(new IllegalStateException("Can't " +
+                                "transfer address that has been trimmed already."));
+                    } else {
+                        SegmentHandle segment = getSegmentHandleForAddress(address);
+                        if (segment.getPendingTrims().contains(address)) {
+                            log.trace("Address {} is pending to get trimmed.", address);
+                            return new Result<>(new IllegalStateException("Can't " +
+                                    "transfer address that is about to get trimmed."));
+                        } else {
+                            Result<Long, RuntimeException> readBytes =
+                                    transferChunk(address, segment, client);
+                            if (readBytes.isError()) {
+                                return readBytes;
+                            } else {
+                                log.trace("Transferred address: {}", address);
+                                readBytesTotal += readBytes.get();
+                            }
+                        }
+                    }
+                }
+            } catch (IOException ioe) {
+                return new Result<>(new IllegalStateException(ioe));
+            }
+            return Result.ok(readBytesTotal);
+        }
+    }
+
+    private Result<Long, RuntimeException> transferChunk(long address, SegmentHandle segment, SocketChannel client) {
+        FileChannel readChannel = segment.getReadChannel();
+        AddressMetaData metaData = segment.getKnownAddresses().get(address);
+        if (metaData == null) {
+            log.trace("Metadata is null for {}", address);
+            return new Result<>(0L);
+        } else {
+            ToLongFunction<AddressMetaData> readMetadata = (AddressMetaData meta) -> {
+                try {
+                    return readChannel.transferFrom(client, meta.offset, meta.length);
+                } catch (IOException ioe) {
+                    throw new IllegalStateException(ioe);
+                }
+            };
+
+            return Result.of(() -> readMetadata.applyAsLong(metaData));
         }
     }
 
