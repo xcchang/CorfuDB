@@ -71,6 +71,7 @@ public enum CorfuMsgType {
     LOG_ADDRESS_SPACE_REQUEST(48, TypeToken.of(CorfuMsg.class)),
     LOG_ADDRESS_SPACE_RESPONSE(49, new TypeToken<CorfuPayloadMsg<StreamsAddressResponse>>(){}),
     ADDRESS_METADATA_RANGE(100, new TypeToken<CorfuPayloadMsg<AddressMetaDataRangeMsg>>() {}),
+    TRANSFER_REQUEST(101, TypeToken.of(CorfuMsg.class)),
 
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),

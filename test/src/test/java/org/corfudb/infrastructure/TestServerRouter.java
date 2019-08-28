@@ -90,6 +90,13 @@ public class TestServerRouter implements IServerRouter {
         });
     }
 
+    public void removeServer(AbstractServer server){
+        servers.remove(server);
+        server.getHandler().getHandledTypes().forEach(x -> {
+            handlerMap.remove(x);
+        });
+    }
+
     /**
      * Validate the epoch of a CorfuMsg, and send a WRONG_EPOCH response if
      * the server is in the wrong epoch. Ignored if the message type is reset (which

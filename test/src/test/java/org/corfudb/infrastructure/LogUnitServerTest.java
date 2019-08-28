@@ -271,9 +271,6 @@ public class LogUnitServerTest extends AbstractServerTest {
         Thread.sleep(1000);
         Result<Long, RuntimeException> totalBytesTransferred = s1.transferChunks(addressRange, 9999, "localhost");
         Result<Long, RuntimeException> result = future.join();
-        System.out.println(String.format("Transferred: %s, Received: %s", totalBytesTransferred.get(), result.get()));
-
-
         assert totalBytesTransferred.get().equals(result.get());
 
         s2.initializeTransferredMetadata(addressRange, map2);
@@ -285,6 +282,89 @@ public class LogUnitServerTest extends AbstractServerTest {
             assert data.equals(data1);
         }
 
+    }
+
+    @Test
+    public void checkThatLogUnitCanAcceptAddressMetaDataMsg() throws Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(s1);
+
+        Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> map = new HashMap<>();
+        map.put(0L, new AddressMetaDataRangeMsg.AddressMetaDataMsg(0, 0, 0L));
+        AddressMetaDataRangeMsg payload = AddressMetaDataRangeMsg.builder().addressMetaDataMap(map).build();
+        sendMessage(CorfuMsgType.ADDRESS_METADATA_RANGE.payloadMsg(payload));
+
+        waitForLogUnit(s1);
+        Assertions.assertThat(getLastMessage().getMsgType()).isEqualTo(CorfuMsgType.ACK);
+
+        s1.getStreamLogFiles().getAddressMetaDataMap().equals(map);
+    }
+
+    @Test
+    public void checkThatLogUnitCanAcceptStream() throws Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        TemporaryFolder tempDir = new TemporaryFolder();
+        tempDir.create();
+
+        LogUnitServer s2 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(tempDir.getRoot().getAbsolutePath())
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(s1);
+
+
+        final long START_ADDRESS = 0L;
+        final String payload = "abc";
+        final int numIterations = PARAMETERS.NUM_ITERATIONS_MODERATE; // 100
+        final String streamName = "test";
+        for (int i = 0; i < numIterations; i++)
+            rawWrite(START_ADDRESS+i, payload, streamName);
+
+        waitForLogUnit(s1);
+        List<Long> addressRange = LongStream.range(0, numIterations).boxed().collect(Collectors.toList());
+
+
+        for (long address: addressRange)
+            assertThat(s1)
+                    .containsDataAtAddress(address);
+        this.router.removeServer(s1);
+
+        this.router.addServer(s2);
+
+        Map<Long, AddressMetaData> map = s1.collectMetaDataMap(addressRange);
+        Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> map2 = map.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e ->
+                new AddressMetaDataRangeMsg.AddressMetaDataMsg(e.getValue().checksum, e.getValue().length, e.getValue().offset)));
+
+        AddressMetaDataRangeMsg payloads = AddressMetaDataRangeMsg.builder().addressMetaDataMap(map2).build();
+        sendMessage(CorfuMsgType.ADDRESS_METADATA_RANGE.payloadMsg(payloads));
+        waitForLogUnit(s1);
+        Assertions.assertThat(getLastMessage().getMsgType()).isEqualTo(CorfuMsgType.ACK);
+        CompletableFuture<Void> f = CompletableFuture.runAsync(() -> sendMessage(CorfuMsgType.TRANSFER_REQUEST.msg()));
+        Thread.sleep(1000);
+
+                Result<Long, RuntimeException> transferResult
+                = s1.transferChunks(addressRange, 9999, "localhost");
+        f.join();
+
+        for(long address: addressRange){
+            LogData data = s2.getStreamLogFiles().read(address);
+            assert data.getData() != null;
+            LogData data1 = s1.getStreamLogFiles().read(address);
+            assert data.equals(data1);
+        }
 
 
     }

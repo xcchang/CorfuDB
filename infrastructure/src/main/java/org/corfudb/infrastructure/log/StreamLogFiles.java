@@ -12,6 +12,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -118,6 +119,13 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
     // Resource quota to track the log size
     private ResourceQuota logSizeQuota;
+
+    //================Remote log metadata=============
+
+    @Getter
+    @Setter
+    private Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+            addressMetaDataMap;
 
     /**
      * Returns a file-based stream log object.
@@ -1099,6 +1107,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             return new Result<>(new IllegalStateException("Address metadata range map is empty."));
         }
         else {
+            log.info("Initializing transferred metadata");
             for (long address : addresses) {
                 Optional<SegmentHandle> segment = Optional.empty();
                 try{
@@ -1136,6 +1145,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                     segment.ifPresent(SegmentHandle::release);
                 }
             }
+            log.info("Finished initializing metadata");
             return Result.of(() -> null);
         }
     }
@@ -1554,6 +1564,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         writeChannels.clear();
         logSizeQuota = new ResourceQuota("LogSizeQuota", logSizeLimit);
         log.info("reset: Completed, end segment {}", endSegment);
+    }
+
+    @Override
+    public void setRemoteLogMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMsgMap) {
+        setAddressMetaDataMap(addressMetaDataMsgMap);
     }
 
     @VisibleForTesting

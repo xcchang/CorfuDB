@@ -49,7 +49,9 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
+import static org.corfudb.infrastructure.BatchWriterOperation.Type.ADDRESS_METADATA_RANGE;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.PREFIX_TRIM;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.RANGE_WRITE;
@@ -158,6 +160,39 @@ public class LogUnitServer extends AbstractServer {
                 });
     }
 
+    @ServerHandler(type = CorfuMsgType.ADDRESS_METADATA_RANGE)
+    private void handleAddressMetaDataRange(CorfuPayloadMsg<AddressMetaDataRangeMsg> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleAddressMetaDataRange: received an address metadata range request {}", msg);
+        batchWriter.addTask(ADDRESS_METADATA_RANGE, msg)
+                .thenRun(() -> r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg()))
+                .exceptionally(ex -> {
+                            handleException(ex, ctx, msg, r);
+                            return null;
+                        }
+                );
+    }
+
+    @ServerHandler(type = CorfuMsgType.TRANSFER_REQUEST)
+    private void handleTransferRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleTransferRequest: received {}", msg);
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        List<Long> addresses = getStreamLogFiles().getAddressMetaDataMap()
+                .keySet()
+                .stream()
+                .sorted()
+                .collect(Collectors.toList());
+        Result<Long, RuntimeException> receivedResult = getStreamLogFiles().receiveAddresses(addresses,
+                9999,
+                getStreamLogFiles().getAddressMetaDataMap());
+        Result<Void, RuntimeException> initializedResult = receivedResult.flatMap(data -> getStreamLogFiles()
+                .initializeTransferredMetadata(addresses, getStreamLogFiles().getAddressMetaDataMap()));
+        if(!initializedResult.isError()){
+            log.info("Received ok");
+        }
+    }
+
+
+
     /**
      * Service an incoming request for log address space, i.e., the map of addresses for every stream in the log.
      * This is used on sequencer bootstrap to provide the address maps for initialization.
@@ -231,8 +266,8 @@ public class LogUnitServer extends AbstractServer {
                     dataCache.put(msg.getPayload().getGlobalAddress(), logData);
                     r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
                 }, executor).exceptionally(ex -> {
-                    handleException(ex, ctx, msg, r);
-                    return null;
+            handleException(ex, ctx, msg, r);
+            return null;
         });
     }
 
@@ -402,15 +437,14 @@ public class LogUnitServer extends AbstractServer {
                         log.info("LogUnit Server Reset.");
                         r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
                     }).exceptionally(ex -> {
-                        handleException(ex, ctx, msg, r);
-                        return null;
-                    });
+                handleException(ex, ctx, msg, r);
+                return null;
+            });
         } else {
             log.info("LogUnit Server Reset request received but reset already done.");
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         }
     }
-
 
 
     /**
@@ -429,9 +463,9 @@ public class LogUnitServer extends AbstractServer {
     }
 
     @VisibleForTesting
-    StreamLogFiles getStreamLogFiles()
-        {return (StreamLogFiles) streamLog;
-        }
+    StreamLogFiles getStreamLogFiles() {
+        return (StreamLogFiles) streamLog;
+    }
 
     @VisibleForTesting
     long getMaxCacheSize() {
@@ -466,26 +500,26 @@ public class LogUnitServer extends AbstractServer {
     @VisibleForTesting
     Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
                                                                  Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
-                                                                         addressMetaDataMsgMap){
+                                                                         addressMetaDataMsgMap) {
         return streamLog.initializeTransferredMetadata(addresses, addressMetaDataMsgMap);
     }
 
     @VisibleForTesting
     Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
-                                                                                      int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
-                                                                                              addressMetaDataMsgMap){
+                                                    int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                            addressMetaDataMsgMap) {
         return streamLog.receiveAddresses(addresses, port, addressMetaDataMsgMap);
     }
 
 
     @VisibleForTesting
-    public Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses){
+    public Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses) {
         return streamLog.collectMetaDataMap(addresses);
     }
 
     @VisibleForTesting
     public Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
-                                                         String hostAddress){
+                                                         String hostAddress) {
         return streamLog.transferChunks(addresses, port, hostAddress);
     }
 

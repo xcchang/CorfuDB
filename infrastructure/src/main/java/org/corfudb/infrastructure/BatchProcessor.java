@@ -5,6 +5,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -26,6 +27,7 @@ import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.QuotaExceededException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
@@ -152,6 +154,10 @@ public class BatchProcessor implements AutoCloseable {
                 } else {
                     try {
                         switch (currOp.getType()) {
+                            case ADDRESS_METADATA_RANGE:
+                                AddressMetaDataRangeMsg addressMetaDataRange = (AddressMetaDataRangeMsg) currOp.getMsg().getPayload();
+                                streamLog.setRemoteLogMetadata(addressMetaDataRange.getAddressMetaDataMap());
+                                break;
                             case PREFIX_TRIM:
                                 TrimRequest prefixTrim = (TrimRequest) currOp.getMsg().getPayload();
                                 streamLog.prefixTrim(prefixTrim.getAddress().getSequence());

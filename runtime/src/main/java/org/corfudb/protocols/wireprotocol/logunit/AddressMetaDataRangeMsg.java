@@ -3,6 +3,7 @@ package org.corfudb.protocols.wireprotocol.logunit;
 import io.netty.buffer.ByteBuf;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 
@@ -12,21 +13,19 @@ import java.util.Map;
 @Builder
 @AllArgsConstructor
 public class AddressMetaDataRangeMsg implements ICorfuPayload<AddressMetaDataRangeMsg> {
-    private final long epoch;
     private final Map<Long, AddressMetaDataMsg> addressMetaDataMap;
 
     public AddressMetaDataRangeMsg(ByteBuf buf){
-        epoch = ICorfuPayload.fromBuffer(buf, long.class);
         addressMetaDataMap = ICorfuPayload.mapFromBuffer(buf, long.class, AddressMetaDataMsg.class);
     }
 
     @Override
     public void doSerialize(ByteBuf buf) {
-        ICorfuPayload.serialize(buf, epoch);
         ICorfuPayload.serialize(buf, addressMetaDataMap);
     }
 
     @AllArgsConstructor
+    @EqualsAndHashCode
     public static class AddressMetaDataMsg implements ICorfuPayload<AddressMetaDataMsg>{
         public int checksum;
         public int length;

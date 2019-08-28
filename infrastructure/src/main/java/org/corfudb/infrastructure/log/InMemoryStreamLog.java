@@ -218,4 +218,9 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
         // Clearing all data from the cache.
         logCache.clear();
     }
+
+    @Override
+    public void setRemoteLogMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMsgMap) {
+        return;
+    }
 }

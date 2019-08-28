@@ -107,6 +107,8 @@ public interface StreamLog {
      */
     void reset();
 
+    void setRemoteLogMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                   addressMetaDataMsgMap);
 
     Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses);
 
