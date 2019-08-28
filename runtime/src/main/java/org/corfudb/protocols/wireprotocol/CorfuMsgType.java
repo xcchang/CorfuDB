@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorResponse;
 import org.corfudb.runtime.view.Layout;
@@ -69,6 +70,7 @@ public enum CorfuMsgType {
     RESET_LOGUNIT(47, new TypeToken<CorfuPayloadMsg<Long>>(){}, true),
     LOG_ADDRESS_SPACE_REQUEST(48, TypeToken.of(CorfuMsg.class)),
     LOG_ADDRESS_SPACE_RESPONSE(49, new TypeToken<CorfuPayloadMsg<StreamsAddressResponse>>(){}),
+    ADDRESS_METADATA_RANGE(100, new TypeToken<CorfuPayloadMsg<AddressMetaDataRangeMsg>>() {}),
 
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),

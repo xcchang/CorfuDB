@@ -5,6 +5,8 @@ import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.common.result.Result;
+import org.corfudb.infrastructure.log.AddressMetaData;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogCompaction;
@@ -26,6 +28,7 @@ import org.corfudb.protocols.wireprotocol.TailsRequest;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
@@ -426,6 +429,11 @@ public class LogUnitServer extends AbstractServer {
     }
 
     @VisibleForTesting
+    StreamLogFiles getStreamLogFiles()
+        {return (StreamLogFiles) streamLog;
+        }
+
+    @VisibleForTesting
     long getMaxCacheSize() {
         return config.getMaxCacheSize();
     }
@@ -452,6 +460,33 @@ public class LogUnitServer extends AbstractServer {
     @VisibleForTesting
     StreamAddressSpace getStreamAddressSpace(UUID streamID) {
         return streamLog.getStreamsAddressSpace().getAddressMap().get(streamID);
+    }
+
+
+    @VisibleForTesting
+    Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
+                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                         addressMetaDataMsgMap){
+        return streamLog.initializeTransferredMetadata(addresses, addressMetaDataMsgMap);
+    }
+
+    @VisibleForTesting
+    Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                                      int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                                              addressMetaDataMsgMap){
+        return streamLog.receiveAddresses(addresses, port, addressMetaDataMsgMap);
+    }
+
+
+    @VisibleForTesting
+    public Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses){
+        return streamLog.collectMetaDataMap(addresses);
+    }
+
+    @VisibleForTesting
+    public Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
+                                                         String hostAddress){
+        return streamLog.transferChunks(addresses, port, hostAddress);
     }
 
     @VisibleForTesting

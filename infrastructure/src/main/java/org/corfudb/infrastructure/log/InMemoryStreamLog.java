@@ -10,9 +10,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.corfudb.common.result.Result;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.runtime.exceptions.OverwriteCause;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.view.Address;
@@ -158,6 +160,27 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
     @Override
     public void sync(boolean force){
         //no-op
+    }
+
+    public Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses){
+        return null;
+    }
+
+    public Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
+                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                         addressMetaDataMsgMap){
+        return null;
+    }
+
+    public Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                           int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                   addressMetaDataMsgMap){
+        return null;
+    }
+
+    public Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
+                                                         String hostAddress){
+        return null;
     }
 
     @Override

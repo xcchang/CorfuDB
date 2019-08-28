@@ -6,6 +6,8 @@ import org.assertj.core.api.AbstractAssert;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.util.serializer.Serializers;
 
+import java.util.List;
+
 
 /**
  * Created by mwei on 1/7/16.
@@ -31,9 +33,10 @@ public class LogUnitServerAssertions extends AbstractAssert<LogUnitServerAsserti
         return this;
     }
 
+
+
     public LogUnitServerAssertions containsDataAtAddress(long address) {
         isNotNull();
-
         if (actual.getDataCache().get(address) == null) {
             failWithMessage("Expected address <%d> to contain data but was empty!", address);
         } else if (actual.getDataCache().get(address).isHole()) {

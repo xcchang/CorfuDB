@@ -3,9 +3,12 @@ package org.corfudb.infrastructure;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.assertj.core.api.Assertions;
+import org.corfudb.common.result.Result;
 import org.corfudb.format.Types;
+import org.corfudb.infrastructure.log.AddressMetaData;
 import org.corfudb.infrastructure.log.StreamLogFiles;
 import org.corfudb.protocols.wireprotocol.*;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.LogUnitException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
@@ -13,6 +16,7 @@ import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import java.io.File;
 import java.io.IOException;
@@ -21,8 +25,14 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 import static org.corfudb.infrastructure.LogUnitServerAssertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -203,6 +213,79 @@ public class LogUnitServerTest extends AbstractServerTest {
         m.setBackpointerMap(Collections.singletonMap(CorfuRuntime.getStreamID(streamName),
                 Address.NO_BACKPOINTER));
         sendMessage(CorfuMsgType.WRITE.payloadMsg(m));
+
+    }
+
+    @Test
+    public void checkThatTransferWorks() throws Exception{
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        LogUnitServer s1 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setMemory(false)
+                .build());
+
+        this.router.reset();
+        this.router.addServer(s1);
+
+        final long START_ADDRESS = 0L;
+        final String payload = "abc";
+        final int numIterations = PARAMETERS.NUM_ITERATIONS_MODERATE; // 100
+        final String streamName = "test";
+        for (int i = 0; i < numIterations; i++)
+            rawWrite(START_ADDRESS+i, payload, streamName);
+
+        waitForLogUnit(s1);
+        List<Long> addressRange = LongStream.range(0, numIterations).boxed().collect(Collectors.toList());
+
+        for (long address: addressRange)
+            assertThat(s1)
+                    .containsDataAtAddress(address);
+
+
+
+        Map<Long, AddressMetaData> map = s1.collectMetaDataMap(addressRange);
+
+        assert map != null;
+        assert !map.isEmpty();
+        for(Map.Entry<Long, AddressMetaData> entry: map.entrySet()){
+            assert entry.getValue() != null;
+        }
+        // check that data is there
+
+        TemporaryFolder tempDir = new TemporaryFolder();
+        tempDir.create();
+
+        LogUnitServer s2 = new LogUnitServer(new ServerContextBuilder()
+                .setLogPath(tempDir.getRoot().getAbsolutePath())
+                .setMemory(false)
+                .build());
+
+        this.router.addServer(s2);
+
+        Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> map2 = map.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e ->
+                new AddressMetaDataRangeMsg.AddressMetaDataMsg(e.getValue().checksum, e.getValue().length, e.getValue().offset)));
+
+
+        CompletableFuture<Result<Long, RuntimeException>> future = CompletableFuture.supplyAsync(() -> s2.receiveAddresses(addressRange, 9999, map2));
+
+        Thread.sleep(1000);
+        Result<Long, RuntimeException> totalBytesTransferred = s1.transferChunks(addressRange, 9999, "localhost");
+        Result<Long, RuntimeException> result = future.join();
+        System.out.println(String.format("Transferred: %s, Received: %s", totalBytesTransferred.get(), result.get()));
+
+
+        assert totalBytesTransferred.get().equals(result.get());
+
+        s2.initializeTransferredMetadata(addressRange, map2);
+
+        for(long address: addressRange){
+            LogData data = s2.getStreamLogFiles().read(address);
+            assert data.getData() != null;
+            LogData data1 = s1.getStreamLogFiles().read(address);
+            assert data.equals(data1);
+        }
+
+
 
     }
 

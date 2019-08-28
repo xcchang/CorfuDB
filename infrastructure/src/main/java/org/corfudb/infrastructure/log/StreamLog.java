@@ -2,12 +2,15 @@ package org.corfudb.infrastructure.log;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import org.corfudb.common.result.Result;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.runtime.exceptions.OverwriteCause;
 
 /**
@@ -103,6 +106,20 @@ public interface StreamLog {
      * Clears all data and resets all segment handlers.
      */
     void reset();
+
+
+    Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses);
+
+    Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
+                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                         addressMetaDataMsgMap);
+
+    Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                                      int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                                              addressToSize);
+
+    Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
+                                                         String hostAddress);
 
     /**
      * Get overwrite cause for a given address.
