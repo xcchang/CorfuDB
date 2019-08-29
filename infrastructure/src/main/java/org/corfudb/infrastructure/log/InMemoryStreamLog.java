@@ -223,4 +223,9 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
     public void setRemoteLogMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMsgMap) {
         return;
     }
+
+    @Override
+    public boolean getTransferring() {
+        return false;
+    }
 }

@@ -24,7 +24,9 @@ public class BatchWriterOperation<T> {
         RESET,
         TAILS_QUERY,
         LOG_ADDRESS_SPACE_QUERY,
-        ADDRESS_METADATA_RANGE
+        ADDRESS_METADATA_RANGE,
+        TRANSFER_INIT_REQUEST,
+        ADDRESS_METADATA_REQUEST
     }
 
     private final Type type;

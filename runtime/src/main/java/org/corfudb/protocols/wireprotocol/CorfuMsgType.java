@@ -5,10 +5,14 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRequest;
+import org.corfudb.protocols.wireprotocol.logunit.TransferQueryResponse;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorResponse;
 import org.corfudb.runtime.view.Layout;
 
+import javax.annotation.Nullable;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -70,8 +74,12 @@ public enum CorfuMsgType {
     RESET_LOGUNIT(47, new TypeToken<CorfuPayloadMsg<Long>>(){}, true),
     LOG_ADDRESS_SPACE_REQUEST(48, TypeToken.of(CorfuMsg.class)),
     LOG_ADDRESS_SPACE_RESPONSE(49, new TypeToken<CorfuPayloadMsg<StreamsAddressResponse>>(){}),
-    ADDRESS_METADATA_RANGE(100, new TypeToken<CorfuPayloadMsg<AddressMetaDataRangeMsg>>() {}),
-    TRANSFER_REQUEST(101, TypeToken.of(CorfuMsg.class)),
+    ADDRESS_METADATA_REQUEST(100, new TypeToken<CorfuPayloadMsg<AddressMetaDataRequest>>() {}),
+    ADDRESS_METADATA_RANGE(101, new TypeToken<CorfuPayloadMsg<AddressMetaDataRangeMsg>>() {}),
+    TRANSFER_RECEIVE_REQUEST(102, TypeToken.of(CorfuMsg.class)),
+    TRANSFER_INIT_REQUEST(103, new TypeToken<CorfuPayloadMsg<TransferRequest>>() {}),
+    TRANSFER_QUERY(104, TypeToken.of(CorfuMsg.class)),
+    TRANSFER_QUERY_RESPONSE(105, new TypeToken<CorfuPayloadMsg<TransferQueryResponse>>() {}),
 
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),

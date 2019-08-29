@@ -110,6 +110,8 @@ public interface StreamLog {
     void setRemoteLogMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                    addressMetaDataMsgMap);
 
+    boolean getTransferring();
+
     Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses);
 
     Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,

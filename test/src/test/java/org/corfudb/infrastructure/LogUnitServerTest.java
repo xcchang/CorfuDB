@@ -352,7 +352,7 @@ public class LogUnitServerTest extends AbstractServerTest {
         sendMessage(CorfuMsgType.ADDRESS_METADATA_RANGE.payloadMsg(payloads));
         waitForLogUnit(s1);
         Assertions.assertThat(getLastMessage().getMsgType()).isEqualTo(CorfuMsgType.ACK);
-        CompletableFuture<Void> f = CompletableFuture.runAsync(() -> sendMessage(CorfuMsgType.TRANSFER_REQUEST.msg()));
+        CompletableFuture<Void> f = CompletableFuture.runAsync(() -> sendMessage(CorfuMsgType.TRANSFER_RECEIVE_REQUEST.msg()));
         Thread.sleep(1000);
 
                 Result<Long, RuntimeException> transferResult

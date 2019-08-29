@@ -127,6 +127,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     private Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
             addressMetaDataMap;
 
+    @Getter
+    @Setter
+    private TransferState transferState;
+
     /**
      * Returns a file-based stream log object.
      *
@@ -168,6 +172,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         if (Math.max(logMetadata.getGlobalTail(), 0L) < getTrimMark()) {
             syncTailSegment(getTrimMark() - 1);
         }
+        transferState = TransferState.IDLE;
     }
 
     private long getStartingSegment() {
@@ -1398,6 +1403,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
             try (SocketChannel client = SocketChannel.open(socketAddress)) {
                 log.info("Start transferring");
+                this.transferState = TransferState.TRANSFERRING;
                 for (long address : addresses) {
                     if (isTrimmed(address)) {
                         log.info("Address {} is trimmed.", address);
@@ -1426,6 +1432,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 log.error("Opening socket error: {}", ioe.getMessage());
                 return new Result<>(new IllegalStateException(ioe));
             }
+            finally {
+                this.transferState = TransferState.IDLE;
+            }
+            log.info("Finished transfer: {} written", readBytesTotal);
             return Result.ok(readBytesTotal);
         }
     }
@@ -1571,6 +1581,11 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         setAddressMetaDataMap(addressMetaDataMsgMap);
     }
 
+    @Override
+    public boolean getTransferring() {
+        return transferState != TransferState.IDLE;
+    }
+
     @VisibleForTesting
     Set<FileChannel> getChannelsToSync() {
         return channelsToSync;
@@ -1676,5 +1691,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             this.addressesToOffsets = new HashMap<>();
             this.totalDataWritten = 0L;
         }
+    }
+
+    public enum TransferState {
+        TRANSFERRING,
+        IDLE
     }
 }

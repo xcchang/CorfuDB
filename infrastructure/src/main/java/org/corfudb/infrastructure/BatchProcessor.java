@@ -12,12 +12,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import javax.annotation.Nonnull;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.BatchWriterOperation.Type;
+import org.corfudb.infrastructure.log.AddressMetaData;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.LogData;
@@ -28,6 +31,8 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRequest;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.QuotaExceededException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
@@ -154,6 +159,23 @@ public class BatchProcessor implements AutoCloseable {
                 } else {
                     try {
                         switch (currOp.getType()) {
+                            case ADDRESS_METADATA_REQUEST:
+                                AddressMetaDataRequest addressMetaDataRequest = (AddressMetaDataRequest) currOp.getMsg().getPayload();
+
+                                Map<Long, AddressMetaData> map = streamLog.collectMetaDataMap(addressMetaDataRequest.getAddresses());
+                                Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> map2 =
+                                        map.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e ->
+                                        new AddressMetaDataRangeMsg.AddressMetaDataMsg(e.getValue().checksum, e.getValue().length, e.getValue().offset)));
+                                AddressMetaDataRangeMsg addressMetaDataRangeMsg = new AddressMetaDataRangeMsg(map2);
+                                currOp.setResultValue(addressMetaDataRangeMsg);
+                                break;
+                            case TRANSFER_INIT_REQUEST:
+                                TransferRequest transferRequest = (TransferRequest) currOp.getMsg().getPayload();
+                                Result<Long, RuntimeException> r = streamLog.transferChunks(transferRequest.getAddresses(), transferRequest.getPort(), transferRequest.getEndpoint());
+                                if (r.isError()){
+                                    log.error("Error transferring: {}", r.getError().getMessage());
+                                }
+                                break;
                             case ADDRESS_METADATA_RANGE:
                                 AddressMetaDataRangeMsg addressMetaDataRange = (AddressMetaDataRangeMsg) currOp.getMsg().getPayload();
                                 streamLog.setRemoteLogMetadata(addressMetaDataRange.getAddressMetaDataMap());

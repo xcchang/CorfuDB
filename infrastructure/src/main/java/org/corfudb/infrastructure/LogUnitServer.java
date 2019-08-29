@@ -29,6 +29,8 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRequest;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
@@ -52,12 +54,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.ADDRESS_METADATA_RANGE;
+import static org.corfudb.infrastructure.BatchWriterOperation.Type.ADDRESS_METADATA_REQUEST;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.PREFIX_TRIM;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.RANGE_WRITE;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.RESET;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.SEAL;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.TAILS_QUERY;
+import static org.corfudb.infrastructure.BatchWriterOperation.Type.TRANSFER_INIT_REQUEST;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.WRITE;
 
 
@@ -172,9 +176,22 @@ public class LogUnitServer extends AbstractServer {
                 );
     }
 
-    @ServerHandler(type = CorfuMsgType.TRANSFER_REQUEST)
-    private void handleTransferRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
-        log.debug("handleTransferRequest: received {}", msg);
+    @ServerHandler(type = CorfuMsgType.ADDRESS_METADATA_REQUEST)
+    private void handleAddressMetaDataRequest(CorfuPayloadMsg<AddressMetaDataRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleAddressMetaDataRequest: received an address metadata range request {}", msg);
+        batchWriter.addTask(ADDRESS_METADATA_REQUEST, msg)
+                .thenAccept(addressMsg ->
+                        r.sendResponse(ctx, msg, CorfuMsgType.ADDRESS_METADATA_RANGE.payloadMsg(addressMsg)))
+                .exceptionally(ex -> {
+                            handleException(ex, ctx, msg, r);
+                            return null;
+                        }
+                );
+    }
+
+    @ServerHandler(type = CorfuMsgType.TRANSFER_RECEIVE_REQUEST)
+    private void handleTransferReceiveRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleTransferReceiveRequest: received {}", msg);
         r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
         List<Long> addresses = getStreamLogFiles().getAddressMetaDataMap()
                 .keySet()
@@ -189,6 +206,19 @@ public class LogUnitServer extends AbstractServer {
         if(!initializedResult.isError()){
             log.info("Received ok");
         }
+    }
+
+    @ServerHandler(type = CorfuMsgType.TRANSFER_INIT_REQUEST)
+    private void handleTransferInitRequest(CorfuPayloadMsg <TransferRequest>msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleTransferInitRequest: received {}", msg);
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        batchWriter.addTask(TRANSFER_INIT_REQUEST, msg).join();
+    }
+
+    @ServerHandler(type = CorfuMsgType.TRANSFER_QUERY)
+    private void handleTransferQuery(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleTransferQuery: received {}", msg);
+        r.sendResponse(ctx, msg, CorfuMsgType.TRANSFER_QUERY_RESPONSE.payloadMsg(streamLog.getTransferring()));
     }
 
 

@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 
 import lombok.Getter;
 
+import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
@@ -30,6 +31,8 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.util.CorfuComponent;
 import org.corfudb.util.serializer.Serializers;
@@ -156,6 +159,28 @@ public class LogUnitClient extends AbstractClient {
             context.stop();
             return x;
         });
+    }
+
+
+
+    public CompletableFuture<Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>> requestAddressMetaData(List<Long> addresses){
+        return sendMessageWithFuture(CorfuMsgType.ADDRESS_METADATA_REQUEST.payloadMsg(addresses));
+    }
+
+    public CompletableFuture<Void> setRemoteMetaData(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> mappings) {
+        return sendMessageWithFuture(CorfuMsgType.ADDRESS_METADATA_RANGE.payloadMsg(mappings));
+    }
+
+    public CompletableFuture<Void> initReceive(){
+        return sendMessageWithFuture(CorfuMsgType.TRANSFER_RECEIVE_REQUEST.msg());
+    }
+
+    public CompletableFuture<Void> initTransfer(String endpoint, int port, List<Long> addresses) {
+        return sendMessageWithFuture(CorfuMsgType.TRANSFER_INIT_REQUEST.payloadMsg(new TransferRequest(endpoint, port, addresses)));
+    }
+
+    public CompletableFuture<Boolean> isStillTransferring(){
+        return sendMessageWithFuture(CorfuMsgType.TRANSFER_QUERY.msg());
     }
 
 

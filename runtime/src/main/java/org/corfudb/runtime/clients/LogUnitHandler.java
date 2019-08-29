@@ -14,6 +14,8 @@ import org.corfudb.protocols.wireprotocol.KnownAddressResponse;
 import org.corfudb.protocols.wireprotocol.ReadRequest;
 import org.corfudb.protocols.wireprotocol.ReadResponse;
 import org.corfudb.protocols.wireprotocol.TailsResponse;
+import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.TransferQueryResponse;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.OutOfSpaceException;
@@ -72,6 +74,16 @@ public class LogUnitHandler implements IClient, IHandler<LogUnitClient> {
     private static Object handleTrimmed(CorfuMsg msg, ChannelHandlerContext ctx, IClientRouter r)
             throws Exception {
         throw new TrimmedException();
+    }
+
+    @ClientHandler(type = CorfuMsgType.ADDRESS_METADATA_RANGE)
+    private static Object handleMetaDataRange(CorfuPayloadMsg<AddressMetaDataRangeMsg> msg, ChannelHandlerContext ctx, IClientRouter r){
+        return msg.getPayload();
+    }
+
+    @ClientHandler(type = CorfuMsgType.TRANSFER_QUERY_RESPONSE)
+    private  static Object handleTransferQueryResponse(CorfuPayloadMsg<TransferQueryResponse> msg, ChannelHandlerContext ctx, IClientRouter r) {
+        return msg.getPayload();
     }
 
     /**
