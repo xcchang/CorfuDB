@@ -1,6 +1,7 @@
 package org.corfudb.infrastructure.log;
 
 import java.io.IOException;
+import java.nio.channels.SocketChannel;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -114,13 +115,12 @@ public interface StreamLog {
 
     Map<Long, AddressMetaData> collectMetaDataMap(List<Long> addresses);
 
-    Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
-                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+    Result<Void, RuntimeException> initializeTransferredMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                          addressMetaDataMsgMap);
 
-    Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
-                                                                                      int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
-                                                                                              addressToSize);
+    Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                                             SocketChannel socketChannel, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                                                     addressMetaDataMsgMap);
 
     Result<Long, RuntimeException> transferChunks(List<Long> addresses, int port,
                                                          String hostAddress);

@@ -68,6 +68,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -75,6 +77,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.corfudb.infrastructure.utils.Persistence.syncDirectory;
 
@@ -1103,12 +1106,29 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         return result;
     }
 
-    public Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
-                                                                        Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+    public CompletableFuture<SocketChannel> bindAndGetSocket(int port){
+        return CompletableFuture.supplyAsync(() -> {
+            try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
+                serverSocketChannel.bind(new InetSocketAddress(port));
+                log.info("Receiver bound to socket {}.", port);
+                SocketChannel socketChannel = serverSocketChannel.accept();
+                log.info("Socket accepted: {}", socketChannel.getRemoteAddress());
+                return socketChannel;
+            }
+            catch (IOException io){
+                throw new CompletionException(io);
+            }
+        });
+    }
+
+    public Result<Void, RuntimeException> initializeTransferredMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                                 addressMetaDataMsgMap) {
-        if (addresses == null || addresses.isEmpty()) {
+
+        List<Long> addresses = new ArrayList<>(addressMetaDataMsgMap.keySet());
+
+        if (addresses.isEmpty()) {
             return new Result<>(new IllegalStateException("Addresses for metadata initialization are empty."));
-        } else if (addressMetaDataMsgMap == null || addressMetaDataMsgMap.isEmpty()) {
+        } else if (addressMetaDataMsgMap.isEmpty()) {
             return new Result<>(new IllegalStateException("Address metadata range map is empty."));
         }
         else {
@@ -1161,11 +1181,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * They don't overlap with currently existing addresses of the receiver.
      *
      * @param addresses
-     * @param port
      * @return
      */
-    public Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
-                                                                              int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+    public Result<ReceivedAddressesResult, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                              SocketChannel socketChannel, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                                       addressMetaDataMsgMap) {
         if (addresses == null || addresses.isEmpty()) {
             return new Result<>(new IllegalStateException("Addresses to be received are empty."));
@@ -1179,34 +1198,30 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             SegmentHandle firstHandle = getSegmentHandleForAddress(addresses.get(0));
             SegmentHandle secondHandle =
                     getSegmentHandleForAddress(addresses.get(addresses.size() - 1));
-            try (ServerSocketChannel serverSocketChannel = ServerSocketChannel.open()) {
-                serverSocketChannel.bind(new InetSocketAddress(port));
-                log.info("Receiver bound to socket {}. Waiting to accept socket " +
-                        "connections.", port);
-                SocketChannel socketChannel = serverSocketChannel.accept();
-
-                log.info("Socket accepted: {}", socketChannel.getRemoteAddress());
+            try {
                 return receiveAddressesForHandle(addresses, firstHandle,
                         socketChannel, addressMetaDataMsgMap)
-                        .flatMap(bytesProcessed -> {
-
+                        .flatMap(firstSegmentResult -> {
                             if(secondHandle.getSegment() != firstHandle.getSegment()){
-                                Result<Long, RuntimeException> secondSegmentResult
+                                Result<ReceivedAddressesResult, RuntimeException> secondSegmentResult
                                         = receiveAddressesForHandle(addresses, secondHandle,
                                         socketChannel, addressMetaDataMsgMap);
                                 if (secondSegmentResult.isError()) {
                                     return secondSegmentResult;
                                 } else {
-                                    return Result.ok(bytesProcessed + secondSegmentResult.get());
+                                    Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> combinedMap =
+                                            Stream.concat(firstSegmentResult.addressMetaDataMsgMap.entrySet().stream(),
+                                            secondSegmentResult.get().addressMetaDataMsgMap.entrySet().stream()).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+                                    long combinedProcessed =
+                                            firstSegmentResult.totalDataWritten + secondSegmentResult.get().getTotalDataWritten();
+                                    return Result.ok(new ReceivedAddressesResult(combinedMap, combinedProcessed));
                                 }
                             }
                             else{
-                                return Result.ok(bytesProcessed);
+                                return Result.ok(firstSegmentResult);
                             }
                         });
-
-            } catch (IOException ioe) {
-                return new Result<>(new IllegalStateException(ioe));
             } finally {
                 firstHandle.release();
                 secondHandle.release();
@@ -1215,40 +1230,37 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
 
-    private Result<Long, RuntimeException> receiveAddressesForHandle(List<Long> addresses,
+    private Result<ReceivedAddressesResult, RuntimeException> receiveAddressesForHandle(List<Long> addresses,
                                                                      SegmentHandle handle,
                                                                      SocketChannel socketChannel,
                                                                      Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                              addressMetaDataMsgMap)  {
         try (MultiReadWriteLock.AutoCloseableLock lock =
                      segmentLocks.acquireWriteLock(handle.getSegment())) {
-            log.info("Start receiving for handle: {}", handle.getSegment());
             long bytesWrittenTotal = 0L;
+            Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                    newMap = new HashMap<>();
             List<Long> addressesForSegment = addresses.stream()
                     .filter(address -> address / RECORDS_PER_LOG_FILE == handle.getSegment())
                     .collect(Collectors.toList());
             for(long address: addressesForSegment) {
-
                 Result<LogRecord, RuntimeException> addressProcessedResult =
                         receiveAddress(address, handle, socketChannel, addressMetaDataMsgMap);
                 if (addressProcessedResult.isError()) {
-                    return addressProcessedResult.map(record -> (long) record.getSize());
+                    return addressProcessedResult.map(record -> new ReceivedAddressesResult());
                 } else {
                     bytesWrittenTotal += addressProcessedResult.get().getSize();
                     int oldLength = addressMetaDataMsgMap.get(address).length;
                     int oldCheckSum = addressMetaDataMsgMap.get(address).checksum;
-                    long newOffset = addressMetaDataMsgMap.get(address)
-                            .offset = addressProcessedResult
+                    long newOffset = addressProcessedResult
                             .get()
                             .getOffset();
-                    // update metadata with a new offset
-                    addressMetaDataMsgMap.put(address, new AddressMetaDataRangeMsg.AddressMetaDataMsg(oldCheckSum, oldLength, newOffset));
-
-                    log.trace("Received {} bytes", addressProcessedResult.get().getSize());
+                    AddressMetaDataRangeMsg.AddressMetaDataMsg record = new AddressMetaDataRangeMsg.AddressMetaDataMsg(oldCheckSum, oldLength, newOffset);
+                    newMap.put(address, record);
                 }
             }
             channelsToSync.add(handle.getWriteChannel());
-            return Result.ok(bytesWrittenTotal);
+            return Result.ok(ReceivedAddressesResult.builder().totalDataWritten(bytesWrittenTotal).addressMetaDataMsgMap(newMap).build());
         }
     }
 
@@ -1401,6 +1413,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             InetSocketAddress socketAddress = new InetSocketAddress(hostAddress, port);
             long readBytesTotal = 0L;
 
+            log.info("Attempting to open connection to: {}:{}", hostAddress, port);
             try (SocketChannel client = SocketChannel.open(socketAddress)) {
                 log.info("Start transferring");
                 this.transferState = TransferState.TRANSFERRING;
@@ -1678,17 +1691,20 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
     @Getter
-    public class ReceivedAddressesResult {
-        private final Map<Long, Long> addressesToOffsets;
+    @Builder
+    public static class ReceivedAddressesResult {
+        private final Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                addressMetaDataMsgMap;
         private final long totalDataWritten;
 
-        ReceivedAddressesResult(Map<Long, Long> addressesToOffsets, long totalDataWritten) {
-            this.addressesToOffsets = addressesToOffsets;
+        ReceivedAddressesResult(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                        addressMetaDataMsgMap, long totalDataWritten) {
+            this.addressMetaDataMsgMap = addressMetaDataMsgMap;
             this.totalDataWritten = totalDataWritten;
         }
 
         ReceivedAddressesResult() {
-            this.addressesToOffsets = new HashMap<>();
+            this.addressMetaDataMsgMap = new HashMap<>();
             this.totalDataWritten = 0L;
         }
     }

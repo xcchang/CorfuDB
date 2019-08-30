@@ -127,7 +127,8 @@ public class Orchestrator {
                 dispatch(workflow, msg, ctx, r);
                 break;
             case RESTORE_REDUNDANCY_MERGE_SEGMENTS:
-                workflow = new RestoreRedundancyMergeSegmentsWorkflow((RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest());
+                workflow = new RestoreRedundancyMergeSegmentsWorkflow((RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest(),
+                        serverContext.getStateTransferMode());
                 dispatch(workflow, msg, ctx, r);
                 break;
             default:

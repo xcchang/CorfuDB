@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.ToString;
 import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 
 import java.util.Map;
@@ -16,7 +17,7 @@ public class AddressMetaDataRangeMsg implements ICorfuPayload<AddressMetaDataRan
     private final Map<Long, AddressMetaDataMsg> addressMetaDataMap;
 
     public AddressMetaDataRangeMsg(ByteBuf buf){
-        addressMetaDataMap = ICorfuPayload.mapFromBuffer(buf, long.class, AddressMetaDataMsg.class);
+        addressMetaDataMap = ICorfuPayload.mapFromBuffer(buf, Long.class, AddressMetaDataMsg.class);
     }
 
     @Override
@@ -26,15 +27,16 @@ public class AddressMetaDataRangeMsg implements ICorfuPayload<AddressMetaDataRan
 
     @AllArgsConstructor
     @EqualsAndHashCode
+    @ToString(callSuper = false)
     public static class AddressMetaDataMsg implements ICorfuPayload<AddressMetaDataMsg>{
         public int checksum;
         public int length;
         public long offset;
 
         public AddressMetaDataMsg(ByteBuf buf){
-            checksum = ICorfuPayload.fromBuffer(buf, int.class);
-            length = ICorfuPayload.fromBuffer(buf, int.class);
-            offset = ICorfuPayload.fromBuffer(buf, long.class);
+            checksum = ICorfuPayload.fromBuffer(buf, Integer.class);
+            length = ICorfuPayload.fromBuffer(buf, Integer.class);
+            offset = ICorfuPayload.fromBuffer(buf, Long.class);
         }
 
         @Override

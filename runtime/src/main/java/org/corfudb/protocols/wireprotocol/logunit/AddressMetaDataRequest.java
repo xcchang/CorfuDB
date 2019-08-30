@@ -16,7 +16,7 @@ public class AddressMetaDataRequest implements ICorfuPayload<AddressMetaDataRang
 
 
     public AddressMetaDataRequest(ByteBuf buf){
-        addresses =  ICorfuPayload.listFromBuffer(buf, long.class);
+        addresses =  ICorfuPayload.listFromBuffer(buf, Long.class);
     }
     @Override
     public void doSerialize(ByteBuf buf) {

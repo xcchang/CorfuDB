@@ -2,6 +2,7 @@ package org.corfudb.runtime.view.workflows;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -83,7 +84,6 @@ public abstract class WorkflowRequest {
 
         return managementClient;
     }
-
     /**
      * Infer the completion of the request by inspecting the layout
      *
@@ -151,6 +151,7 @@ public abstract class WorkflowRequest {
 
         throw new WorkflowResultUnknownException();
     }
+
 }
 
 

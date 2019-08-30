@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.log;
 
+import java.nio.channels.SocketChannel;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -166,15 +167,14 @@ public class InMemoryStreamLog implements StreamLog, StreamLogWithRankedAddressS
         return null;
     }
 
-    public Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
-                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+    public Result<Void, RuntimeException> initializeTransferredMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                          addressMetaDataMsgMap){
         return null;
     }
 
-    public Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
-                                                           int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
-                                                                   addressMetaDataMsgMap){
+    public Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                                             SocketChannel socketChannel, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                                                     addressMetaDataMsgMap){
         return null;
     }
 

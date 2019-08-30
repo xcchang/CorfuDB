@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.infrastructure.orchestrator.Action;
@@ -24,7 +25,6 @@ import org.corfudb.protocols.wireprotocol.orchestrator.RestoreRedundancyMergeSeg
  */
 @Slf4j
 public class RestoreRedundancyMergeSegmentsWorkflow implements IWorkflow {
-
 
     private final RestoreRedundancyMergeSegmentsRequest request;
 
@@ -43,6 +43,12 @@ public class RestoreRedundancyMergeSegmentsWorkflow implements IWorkflow {
         this.id = UUID.randomUUID();
         this.request = request;
         this.actions = ImmutableList.of(new RestoreRedundancyMergeSegments());
+    }
+
+    public RestoreRedundancyMergeSegmentsWorkflow(RestoreRedundancyMergeSegmentsRequest request, RestoreRedundancyMergeSegments.Mode mode) {
+        this.id = UUID.randomUUID();
+        this.request = request;
+        this.actions = ImmutableList.of(new RestoreRedundancyMergeSegments(mode));
     }
 
     @Override

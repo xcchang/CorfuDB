@@ -266,14 +266,18 @@ public class LogUnitServerTest extends AbstractServerTest {
                 new AddressMetaDataRangeMsg.AddressMetaDataMsg(e.getValue().checksum, e.getValue().length, e.getValue().offset)));
 
 
-        CompletableFuture<Result<Long, RuntimeException>> future = CompletableFuture.supplyAsync(() -> s2.receiveAddresses(addressRange, 9999, map2));
+
+        CompletableFuture<Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException>> future =
+                s2.getStreamLogFiles()
+                        .bindAndGetSocket(9999)
+                        .thenApply(channel -> s2.receiveAddresses(addressRange, channel, map2));
 
         Thread.sleep(1000);
         Result<Long, RuntimeException> totalBytesTransferred = s1.transferChunks(addressRange, 9999, "localhost");
-        Result<Long, RuntimeException> result = future.join();
-        assert totalBytesTransferred.get().equals(result.get());
+        Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException> result = future.join();
+        assert totalBytesTransferred.get().equals(result.get().getTotalDataWritten());
 
-        s2.initializeTransferredMetadata(addressRange, map2);
+        s2.initializeTransferredMetadata(map2);
 
         for(long address: addressRange){
             LogData data = s2.getStreamLogFiles().read(address);
@@ -365,6 +369,8 @@ public class LogUnitServerTest extends AbstractServerTest {
             LogData data1 = s1.getStreamLogFiles().read(address);
             assert data.equals(data1);
         }
+
+        tempDir.delete();
 
 
     }

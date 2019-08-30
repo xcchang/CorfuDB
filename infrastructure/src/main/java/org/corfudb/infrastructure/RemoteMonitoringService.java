@@ -16,6 +16,7 @@ import org.corfudb.infrastructure.management.FailureDetector;
 import org.corfudb.infrastructure.management.PollReport;
 import org.corfudb.infrastructure.management.ReconfigurationEventHandler;
 import org.corfudb.infrastructure.management.failuredetector.ClusterGraph;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.protocols.wireprotocol.ClusterState;
 import org.corfudb.protocols.wireprotocol.NodeState;
 import org.corfudb.protocols.wireprotocol.SequencerMetrics;
@@ -97,6 +98,9 @@ public class RemoteMonitoringService implements MonitoringService {
      */
     private CompletableFuture<DetectorTask> failureDetectorFuture = DETECTOR_TASK_NOT_COMPLETED;
 
+
+    private CompletableFuture<Boolean> mergeSegmentsTask = CompletableFuture.completedFuture(true);
+
     private final ClusterAdvisor advisor;
 
     /**
@@ -118,12 +122,6 @@ public class RemoteMonitoringService implements MonitoringService {
      * - merge segments
      */
     private final int detectionWorkersCount = 3;
-
-    /**
-     * Future which is reset every time a new task to mergeSegments is launched.
-     * This is to avoid multiple mergeSegments requests.
-     */
-    private volatile CompletableFuture<Boolean> mergeSegmentsTask = CompletableFuture.completedFuture(true);
 
     /**
      * Duration in which the restore redundancy and merge segments workflow status is queried.
@@ -421,6 +419,7 @@ public class RemoteMonitoringService implements MonitoringService {
      * @return Detector task.
      */
     private DetectorTask restoreRedundancyAndMergeSegments(Layout layout) {
+
         int segmentsCount = layout.getSegments().size();
 
         if (segmentsCount == 1) {

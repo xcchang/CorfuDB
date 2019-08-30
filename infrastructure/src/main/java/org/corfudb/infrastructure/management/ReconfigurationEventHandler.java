@@ -6,9 +6,12 @@ import java.util.Set;
 import javax.annotation.Nonnull;
 
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
+import org.corfudb.infrastructure.RemoteMonitoringService;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.IReconfigurationHandlerPolicy;
@@ -154,6 +157,7 @@ public class ReconfigurationEventHandler {
                     workflowRetries,
                     workflowTimeout,
                     retryQueryTimeout);
+
             return true;
         } catch (Exception e) {
             log.error("Error: handleMergeSegments: ", e);

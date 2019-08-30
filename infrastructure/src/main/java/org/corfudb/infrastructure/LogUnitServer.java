@@ -42,11 +42,13 @@ import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.util.Utils;
 
 import java.lang.invoke.MethodHandles;
+import java.nio.channels.SocketChannel;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -193,19 +195,26 @@ public class LogUnitServer extends AbstractServer {
     private void handleTransferReceiveRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
         log.debug("handleTransferReceiveRequest: received {}", msg);
         r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+
         List<Long> addresses = getStreamLogFiles().getAddressMetaDataMap()
                 .keySet()
                 .stream()
                 .sorted()
                 .collect(Collectors.toList());
-        Result<Long, RuntimeException> receivedResult = getStreamLogFiles().receiveAddresses(addresses,
-                9999,
-                getStreamLogFiles().getAddressMetaDataMap());
-        Result<Void, RuntimeException> initializedResult = receivedResult.flatMap(data -> getStreamLogFiles()
-                .initializeTransferredMetadata(addresses, getStreamLogFiles().getAddressMetaDataMap()));
-        if(!initializedResult.isError()){
-            log.info("Received ok");
-        }
+
+        getStreamLogFiles().bindAndGetSocket(9999)
+                .thenApply(socket -> getStreamLogFiles()
+                        .receiveAddresses(addresses, socket, getStreamLogFiles().getAddressMetaDataMap()))
+                .thenApply(result -> {
+                    if (result.isError()) {
+                        log.error("Error: ", result.getError());
+                        return result.map(x -> null);
+                    } else {
+
+                        return result.flatMap(res ->
+                                getStreamLogFiles().initializeTransferredMetadata(res.getAddressMetaDataMsgMap()));
+                    }
+                });
     }
 
     @ServerHandler(type = CorfuMsgType.TRANSFER_INIT_REQUEST)
@@ -528,17 +537,16 @@ public class LogUnitServer extends AbstractServer {
 
 
     @VisibleForTesting
-    Result<Void, RuntimeException> initializeTransferredMetadata(List<Long> addresses,
-                                                                 Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+    Result<Void, RuntimeException> initializeTransferredMetadata(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
                                                                          addressMetaDataMsgMap) {
-        return streamLog.initializeTransferredMetadata(addresses, addressMetaDataMsgMap);
+        return streamLog.initializeTransferredMetadata(addressMetaDataMsgMap);
     }
 
     @VisibleForTesting
-    Result<Long, RuntimeException> receiveAddresses(List<Long> addresses,
-                                                    int port, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
-                                                            addressMetaDataMsgMap) {
-        return streamLog.receiveAddresses(addresses, port, addressMetaDataMsgMap);
+    Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException> receiveAddresses(List<Long> addresses,
+                                                                                             SocketChannel socketChannel, Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>
+                                                                                                     addressMetaDataMsgMap) {
+        return streamLog.receiveAddresses(addresses, socketChannel, addressMetaDataMsgMap);
     }
 
 

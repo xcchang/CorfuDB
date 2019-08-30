@@ -15,11 +15,11 @@ public class TransferQueryResponse implements ICorfuPayload<TransferQueryRespons
     private final boolean active;
 
     public TransferQueryResponse(ByteBuf buf){
-        active = ICorfuPayload.fromBuffer(buf, boolean.class);
+        active = ICorfuPayload.fromBuffer(buf, Boolean.class);
     }
 
     @Override
     public void doSerialize(ByteBuf buf) {
-        ICorfuPayload.serialize(buf, boolean.class);
+        ICorfuPayload.serialize(buf, Boolean.class);
     }
 }

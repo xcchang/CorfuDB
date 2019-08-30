@@ -19,8 +19,8 @@ public class TransferRequest implements ICorfuPayload<TransferRequest> {
 
     public TransferRequest(ByteBuf buf){
         endpoint = ICorfuPayload.fromBuffer(buf, String.class);
-        port = ICorfuPayload.fromBuffer(buf, int.class);
-        addresses = ICorfuPayload.listFromBuffer(buf, long.class);
+        port = ICorfuPayload.fromBuffer(buf, Integer.class);
+        addresses = ICorfuPayload.listFromBuffer(buf, Long.class);
     }
 
     @Override

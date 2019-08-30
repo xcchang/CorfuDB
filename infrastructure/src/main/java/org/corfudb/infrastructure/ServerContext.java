@@ -34,6 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.comm.ChannelImplementation;
 import org.corfudb.infrastructure.datastore.DataStore;
 import org.corfudb.infrastructure.datastore.KvDataStore.KvRecord;
+import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.infrastructure.paxos.PaxosDataStore;
 import org.corfudb.protocols.wireprotocol.PriorityLevel;
 import org.corfudb.protocols.wireprotocol.failuredetector.FailureDetectorMetrics;
@@ -119,6 +120,10 @@ public class ServerContext implements AutoCloseable {
     public static final Duration SHUTDOWN_TIMER = Duration.ofSeconds(5);
 
 
+    @Setter
+    @Getter
+    private RestoreRedundancyMergeSegments.Mode stateTransferMode;
+
     @Getter
     private final Map<String, Object> serverConfig;
 
@@ -145,7 +150,7 @@ public class ServerContext implements AutoCloseable {
     @Getter (AccessLevel.PACKAGE)
     private final NodeLocator nodeLocator;
 
-    @Getter (AccessLevel.PACKAGE)
+    @Getter
     private final String localEndpoint;
 
     @Getter

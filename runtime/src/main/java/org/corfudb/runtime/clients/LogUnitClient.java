@@ -32,6 +32,7 @@ import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
+import org.corfudb.protocols.wireprotocol.logunit.TransferQueryResponse;
 import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.util.CorfuComponent;
@@ -163,7 +164,7 @@ public class LogUnitClient extends AbstractClient {
 
 
 
-    public CompletableFuture<Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg>> requestAddressMetaData(List<Long> addresses){
+    public CompletableFuture<AddressMetaDataRangeMsg> requestAddressMetaData(List<Long> addresses){
         return sendMessageWithFuture(CorfuMsgType.ADDRESS_METADATA_REQUEST.payloadMsg(addresses));
     }
 
@@ -179,7 +180,7 @@ public class LogUnitClient extends AbstractClient {
         return sendMessageWithFuture(CorfuMsgType.TRANSFER_INIT_REQUEST.payloadMsg(new TransferRequest(endpoint, port, addresses)));
     }
 
-    public CompletableFuture<Boolean> isStillTransferring(){
+    public CompletableFuture<TransferQueryResponse> isStillTransferring(){
         return sendMessageWithFuture(CorfuMsgType.TRANSFER_QUERY.msg());
     }
 

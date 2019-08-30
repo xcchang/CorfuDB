@@ -40,10 +40,12 @@ import org.corfudb.runtime.view.ClusterStatusReport.ClusterStatusReliability;
 import org.corfudb.runtime.view.ClusterStatusReport.ConnectivityStatus;
 import org.corfudb.runtime.view.ClusterStatusReport.NodeStatus;
 import org.corfudb.runtime.view.stream.IStreamView;
+import org.corfudb.util.Sleep;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import lombok.Getter;
+import org.junit.rules.TemporaryFolder;
 
 /**
  * Created by zlokhandwala on 2019-06-06.
@@ -75,6 +77,77 @@ public class StateTransferTest extends AbstractViewTest {
                 .stream()
                 .filter(longLogDataEntry -> !longLogDataEntry.getValue().isEmpty())
                 .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+    }
+
+    @Test
+    public void verifyZeroCopyPushModel() throws Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        ServerContext sc1 = new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0)
+                .setMemory(false).build();
+        sc1.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_STATE_TRANSFER);
+
+        TemporaryFolder tempDir = new TemporaryFolder();
+        tempDir.create();
+
+        ServerContext sc2 = new ServerContextBuilder()
+                .setLogPath(tempDir.getRoot().getAbsolutePath())
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_1)
+                .setMemory(false).build();
+        sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_STATE_TRANSFER);
+
+        addServer(SERVERS.PORT_0, sc1);
+        addServer(SERVERS.PORT_1, sc2);
+
+        final long writtenAddressesBatch1 = 3L;
+        final long writtenAddressesBatch2 = 6L;
+        Layout l1 = new TestLayoutBuilder()
+                .setEpoch(1L)
+                .addLayoutServer(SERVERS.PORT_0)
+                .addLayoutServer(SERVERS.PORT_1)
+                .addSequencer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_1)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(writtenAddressesBatch1)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .buildSegment()
+                .setStart(writtenAddressesBatch1)
+                .setEnd(-1L)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addLogUnit(SERVERS.PORT_1)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+        bootstrapAllServers(l1);
+
+        corfuRuntime = getNewRuntime(getDefaultNode()).connect();
+
+        IStreamView testStream = corfuRuntime.getStreamsView().get(CorfuRuntime.getStreamID("test"));
+        // Write to address spaces 0 to 2 (inclusive) to SERVER 0 only.
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+
+        // Write to address spaces 3 to 5 (inclusive) to SERVER 0 and SERVER 1.
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+
+
+        Sleep.sleepUninterruptibly(Duration.ofMillis(50000));
+
+        tempDir.delete();
     }
 
     /**
