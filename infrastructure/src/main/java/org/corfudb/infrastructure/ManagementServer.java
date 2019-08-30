@@ -3,6 +3,8 @@ package org.corfudb.infrastructure;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelHandlerContext;
+import lombok.Builder;
+import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.management.ClusterStateContext;
@@ -29,6 +31,8 @@ import java.lang.invoke.MethodHandles;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,6 +72,8 @@ public class ManagementServer extends AbstractServer {
     private final ManagementAgent managementAgent;
 
     private final Orchestrator orchestrator;
+
+    private final Config config;
 
     /**
      * System down handler to break out of live-locks if the runtime cannot reach the cluster for a
@@ -121,8 +127,9 @@ public class ManagementServer extends AbstractServer {
      */
     public ManagementServer(ServerContext serverContext) {
         this.serverContext = serverContext;
+        this.config = Config.parse(serverContext.getServerConfig());
 
-        this.executor = Executors.newFixedThreadPool(serverContext.getManagementServerThreadCount(),
+        this.executor = Executors.newFixedThreadPool(config.getManagementServerThreadCount(),
                 new ServerThreadFactory("management-", new ServerThreadFactory.ExceptionHandler()));
         this.heartbeatThread = Executors.newSingleThreadExecutor(
                 new ServerThreadFactory("heartbeat-", new ServerThreadFactory.ExceptionHandler()));
@@ -146,7 +153,7 @@ public class ManagementServer extends AbstractServer {
 
         Layout managementLayout = serverContext.copyManagementLayout();
         managementAgent = new ManagementAgent(
-                corfuRuntime, serverContext, clusterContext, failureDetector,managementLayout
+                corfuRuntime, serverContext, clusterContext, failureDetector, managementLayout
         );
 
         orchestrator = new Orchestrator(corfuRuntime, serverContext);
@@ -453,5 +460,35 @@ public class ManagementServer extends AbstractServer {
 
         // Shut down the Corfu Runtime.
         corfuRuntime.cleanup(CorfuRuntime::shutdown);
+    }
+
+    @Builder
+    @Getter
+    public static class Config {
+        public static final String NUM_THREADS_PARAM = "--management-server-threads";
+
+        private static final int NUM_THREADS_DEFAULT = 4;
+        private static final int MAX_PERIOD_DEFAULT = 5;
+        private static final int MIN_PERIOD_DEFAULT = 2;
+
+        @Default
+        private final int managementServerThreadCount = NUM_THREADS_DEFAULT;
+
+        @Default
+        private int failureThreshold = 3;
+
+        private final int failureDetectionMaxPeriodInSeconds = MAX_PERIOD_DEFAULT;
+
+        private final int failureDetectionMinPeriodInSeconds = MIN_PERIOD_DEFAULT;
+
+        public static Config parse(Map<String, Object> opts) {
+            int threads = Optional.ofNullable(opts.get(NUM_THREADS_PARAM))
+                    .map(numThreads -> Integer.parseInt(numThreads.toString()))
+                    .orElse(NUM_THREADS_DEFAULT);
+
+            return Config.builder()
+                    .managementServerThreadCount(threads)
+                    .build();
+        }
     }
 }

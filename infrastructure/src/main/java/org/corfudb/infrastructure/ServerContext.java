@@ -206,11 +206,6 @@ public class ServerContext implements AutoCloseable {
         return threadCount == null ? Runtime.getRuntime().availableProcessors() * 2 : threadCount;
     }
 
-    int getManagementServerThreadCount() {
-        Integer threadCount = getServerConfig(Integer.class, "--management-server-threads");
-        return threadCount == null ? 4 : threadCount;
-    }
-
     /**
      * Cleanup the DataStore files with names that are prefixes of the specified
      * fileName when so that the number of these files don't exceed the user-defined

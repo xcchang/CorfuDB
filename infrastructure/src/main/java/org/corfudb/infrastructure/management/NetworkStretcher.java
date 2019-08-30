@@ -4,9 +4,9 @@ import com.google.common.annotations.VisibleForTesting;
 import lombok.Builder;
 import lombok.Builder.Default;
 import lombok.Getter;
+import lombok.NonNull;
 
 import java.time.Duration;
-import java.util.Set;
 
 /**
  * NetworkStretcher increases or decreases the timeout intervals for polling based on
@@ -21,10 +21,12 @@ public class NetworkStretcher {
      */
     @Getter
     @Default
+    @NonNull
     private final Duration maxPeriod = Duration.ofSeconds(5);
 
     @Getter
     @Default
+    @NonNull
     private final Duration minPeriod = Duration.ofSeconds(2);
 
     /**
@@ -54,6 +56,8 @@ public class NetworkStretcher {
      */
     @VisibleForTesting
     Duration getIncreasedPeriod() {
+        initCurrentPeriod();
+
         Duration increasedPeriod = currentPeriod.plus(periodDelta);
         if (increasedPeriod.toMillis() > maxPeriod.toMillis()){
             return maxPeriod;
@@ -68,6 +72,8 @@ public class NetworkStretcher {
      * @return The new calculated timeout value.
      */
     private Duration getDecreasedPeriod() {
+        initCurrentPeriod();
+
         Duration decreasedPeriod = currentPeriod.minus(periodDelta);
 
         if (decreasedPeriod.toMillis() < minPeriod.toMillis()) {
@@ -82,6 +88,7 @@ public class NetworkStretcher {
      *
      */
     public void modifyIterationTimeouts() {
+        initCurrentPeriod();
         currentPeriod = getIncreasedPeriod();
     }
 
@@ -91,6 +98,7 @@ public class NetworkStretcher {
      * @return rest interval
      */
     public Duration getRestInterval(Duration elapsedTime){
+        initCurrentPeriod();
 
         Duration restInterval = currentPeriod.minus(elapsedTime);
         if (restInterval.toMillis() < initialPollInterval.toMillis()){
@@ -100,6 +108,13 @@ public class NetworkStretcher {
     }
 
     public void modifyDecreasedPeriod() {
+        initCurrentPeriod();
         currentPeriod = getDecreasedPeriod();
+    }
+
+    private void initCurrentPeriod() {
+        if (currentPeriod == null) {
+            currentPeriod = minPeriod;
+        }
     }
 }
