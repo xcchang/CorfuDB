@@ -80,7 +80,7 @@ public class StateTransferTest extends AbstractViewTest {
     }
 
     @Test
-    public void LogUnitUp() throws  Exception {
+    public void verifyZeroCopyPullModel() throws Exception {
         String serviceDir = PARAMETERS.TEST_TEMP_DIR;
         ServerContext sc1 = new ServerContextBuilder()
                 .setLogPath(serviceDir)
@@ -88,6 +88,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
                 .setPort(SERVERS.PORT_0)
                 .setMemory(false).build();
+        sc1.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PULL_ZERO_COPY);
 
         TemporaryFolder tempDir = new TemporaryFolder();
         tempDir.create();
@@ -98,11 +99,13 @@ public class StateTransferTest extends AbstractViewTest {
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
                 .setPort(SERVERS.PORT_1)
                 .setMemory(false).build();
-
+        sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PULL_ZERO_COPY);
 
         addServer(SERVERS.PORT_0, sc1);
         addServer(SERVERS.PORT_1, sc2);
 
+        final long writtenAddressesBatch1 = 3L;
+        final long writtenAddressesBatch2 = 6L;
         Layout l1 = new TestLayoutBuilder()
                 .setEpoch(1L)
                 .addLayoutServer(SERVERS.PORT_0)
@@ -111,6 +114,13 @@ public class StateTransferTest extends AbstractViewTest {
                 .addSequencer(SERVERS.PORT_1)
                 .buildSegment()
                 .setStart(0L)
+                .setEnd(writtenAddressesBatch1)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .buildSegment()
+                .setStart(writtenAddressesBatch1)
                 .setEnd(-1L)
                 .buildStripe()
                 .addLogUnit(SERVERS.PORT_0)
@@ -119,20 +129,25 @@ public class StateTransferTest extends AbstractViewTest {
                 .addToLayout()
                 .build();
 
-
         bootstrapAllServers(l1);
 
         corfuRuntime = getNewRuntime(getDefaultNode()).connect();
 
-        corfuRuntime.getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(SERVERS.ENDPOINT_0)
-                .sendPiggyBackMsg(SERVERS.ENDPOINT_1);
+        IStreamView testStream = corfuRuntime.getStreamsView().get(CorfuRuntime.getStreamID("test"));
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
 
-        Sleep.sleepUninterruptibly(Duration.ofMillis(10000));
-        // tempDir.delete();
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
+        testStream.append("testPayload".getBytes());
 
+
+        Sleep.sleepUninterruptibly(Duration.ofMillis(50000));
+
+        tempDir.delete();
     }
+
 
     @Test
     public void verifyZeroCopyPushModel() throws Exception {
@@ -143,7 +158,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
                 .setPort(SERVERS.PORT_0)
                 .setMemory(false).build();
-        sc1.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_STATE_TRANSFER);
+        sc1.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_ZERO_COPY);
 
         TemporaryFolder tempDir = new TemporaryFolder();
         tempDir.create();
@@ -154,7 +169,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
                 .setPort(SERVERS.PORT_1)
                 .setMemory(false).build();
-        sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_STATE_TRANSFER);
+        sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_ZERO_COPY);
 
         addServer(SERVERS.PORT_0, sc1);
          addServer(SERVERS.PORT_1, sc2);
@@ -202,7 +217,7 @@ public class StateTransferTest extends AbstractViewTest {
 
         Sleep.sleepUninterruptibly(Duration.ofMillis(50000));
 
-        // tempDir.delete();
+        tempDir.delete();
     }
 
     /**

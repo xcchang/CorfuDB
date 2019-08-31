@@ -3,6 +3,7 @@ package org.corfudb.infrastructure.orchestrator.actions;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.math.LongRange;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.LongStream;
 
 @Slf4j
 public class ZeroCopyTransfer {
@@ -61,7 +63,7 @@ public class ZeroCopyTransfer {
         log.info("ZeroCopyStateTransfer: Total address range to transfer: [{}-{}] to node {}",
                 segmentStart, segmentEnd, endpoint);
 
-        List<Long> allChunks = new ArrayList<>();
+        List<Long> allChunks = LongStream.range(segmentStart, segmentEnd + 1).boxed().collect(Collectors.toList());
         log.info("Aggregating chunks");
 
         Optional<String> maybeDonor = getDonorForAddresses(runtime, allChunks);
@@ -93,8 +95,6 @@ public class ZeroCopyTransfer {
                 return;
             }
         }
-
-
         if(stillTransferring){
             log.error("Polls exeded");
             throw new RuntimeException("Polls exeded");
@@ -175,7 +175,7 @@ public class ZeroCopyTransfer {
                 .getRuntimeLayout()
                 .getLogUnitClient(donor)
                 .initTransfer("localhost", 9999, allChunks));
-//
+
         log.info("Wait while done");
         boolean stillTransferring = false;
         for(int i = 0; i < 10; i ++){
