@@ -6,7 +6,9 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRequest;
+import org.corfudb.protocols.wireprotocol.logunit.PiggyBack;
 import org.corfudb.protocols.wireprotocol.logunit.TransferQueryResponse;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRange;
 import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorResponse;
@@ -80,6 +82,8 @@ public enum CorfuMsgType {
     TRANSFER_INIT_REQUEST(103, new TypeToken<CorfuPayloadMsg<TransferRequest>>() {}),
     TRANSFER_QUERY(104, TypeToken.of(CorfuMsg.class)),
     TRANSFER_QUERY_RESPONSE(105, new TypeToken<CorfuPayloadMsg<TransferQueryResponse>>() {}),
+    PIGGY_BACK(106, new TypeToken<CorfuPayloadMsg<PiggyBack>>() {}),
+    TRANSFER_RANGE(107, new TypeToken<CorfuPayloadMsg<TransferRange>>() {}),
 
     WRITE_OK(50, TypeToken.of(CorfuMsg.class)),
     ERROR_TRIMMED(51, TypeToken.of(CorfuMsg.class)),

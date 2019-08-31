@@ -80,6 +80,61 @@ public class StateTransferTest extends AbstractViewTest {
     }
 
     @Test
+    public void LogUnitUp() throws  Exception {
+        String serviceDir = PARAMETERS.TEST_TEMP_DIR;
+        ServerContext sc1 = new ServerContextBuilder()
+                .setLogPath(serviceDir)
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0)
+                .setMemory(false).build();
+
+        TemporaryFolder tempDir = new TemporaryFolder();
+        tempDir.create();
+
+        ServerContext sc2 = new ServerContextBuilder()
+                .setLogPath(tempDir.getRoot().getAbsolutePath())
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
+                .setPort(SERVERS.PORT_1)
+                .setMemory(false).build();
+
+
+        addServer(SERVERS.PORT_0, sc1);
+        addServer(SERVERS.PORT_1, sc2);
+
+        Layout l1 = new TestLayoutBuilder()
+                .setEpoch(1L)
+                .addLayoutServer(SERVERS.PORT_0)
+                .addLayoutServer(SERVERS.PORT_1)
+                .addSequencer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_1)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(-1L)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addLogUnit(SERVERS.PORT_1)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+
+        bootstrapAllServers(l1);
+
+        corfuRuntime = getNewRuntime(getDefaultNode()).connect();
+
+        corfuRuntime.getLayoutView()
+                .getRuntimeLayout()
+                .getLogUnitClient(SERVERS.ENDPOINT_0)
+                .sendPiggyBackMsg(SERVERS.ENDPOINT_1);
+
+        Sleep.sleepUninterruptibly(Duration.ofMillis(10000));
+        // tempDir.delete();
+
+    }
+
+    @Test
     public void verifyZeroCopyPushModel() throws Exception {
         String serviceDir = PARAMETERS.TEST_TEMP_DIR;
         ServerContext sc1 = new ServerContextBuilder()
@@ -96,13 +151,13 @@ public class StateTransferTest extends AbstractViewTest {
         ServerContext sc2 = new ServerContextBuilder()
                 .setLogPath(tempDir.getRoot().getAbsolutePath())
                 .setSingle(false)
-                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
                 .setPort(SERVERS.PORT_1)
                 .setMemory(false).build();
         sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_STATE_TRANSFER);
 
         addServer(SERVERS.PORT_0, sc1);
-        addServer(SERVERS.PORT_1, sc2);
+         addServer(SERVERS.PORT_1, sc2);
 
         final long writtenAddressesBatch1 = 3L;
         final long writtenAddressesBatch2 = 6L;
@@ -147,7 +202,7 @@ public class StateTransferTest extends AbstractViewTest {
 
         Sleep.sleepUninterruptibly(Duration.ofMillis(50000));
 
-        tempDir.delete();
+        // tempDir.delete();
     }
 
     /**

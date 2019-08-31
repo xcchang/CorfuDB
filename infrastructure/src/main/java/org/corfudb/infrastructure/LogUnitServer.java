@@ -30,7 +30,10 @@ import org.corfudb.protocols.wireprotocol.TrimRequest;
 import org.corfudb.protocols.wireprotocol.WriteRequest;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRangeMsg;
 import org.corfudb.protocols.wireprotocol.logunit.AddressMetaDataRequest;
+import org.corfudb.protocols.wireprotocol.logunit.PiggyBack;
+import org.corfudb.protocols.wireprotocol.logunit.TransferRange;
 import org.corfudb.protocols.wireprotocol.logunit.TransferRequest;
+import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.DataOutrankedException;
 import org.corfudb.runtime.exceptions.LogUnitException;
@@ -38,11 +41,15 @@ import org.corfudb.runtime.exceptions.OverwriteException;
 import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.exceptions.ValueAdoptedException;
 import org.corfudb.runtime.exceptions.WrongEpochException;
+import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
+import org.corfudb.util.CFUtils;
 import org.corfudb.util.Utils;
+import org.corfudb.util.concurrent.SingletonResource;
 
 import java.lang.invoke.MethodHandles;
 import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +91,12 @@ import static org.corfudb.infrastructure.BatchWriterOperation.Type.WRITE;
  */
 @Slf4j
 public class LogUnitServer extends AbstractServer {
+
+    /**
+     * Runtime to talk to logunit
+     */
+
+    private SingletonResource<CorfuRuntime> runtime = SingletonResource.withInitial(this::createRuntime);
 
     /**
      * The options map.
@@ -152,6 +165,20 @@ public class LogUnitServer extends AbstractServer {
         logCleaner = new StreamLogCompaction(streamLog, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER);
     }
 
+    private CorfuRuntime createRuntime(){
+        final CorfuRuntime.CorfuRuntimeParameters params =
+                serverContext.getManagementRuntimeParameters();
+        final CorfuRuntime runtime = CorfuRuntime.fromParameters(params);
+        final Layout managementLayout = serverContext.copyManagementLayout();
+        // Runtime can be set up either using the layout or the bootstrapEndpoint address.
+        if (managementLayout != null) {
+            managementLayout.getLayoutServers().forEach(runtime::addLayoutServer);
+        }
+        runtime.connect();
+        log.info("getCorfuRuntime: Corfu Runtime connected successfully");
+        return runtime;
+    }
+
     /**
      * Service an incoming request for maximum global address the log unit server has written.
      */
@@ -189,6 +216,60 @@ public class LogUnitServer extends AbstractServer {
                             return null;
                         }
                 );
+    }
+
+    @ServerHandler(type = CorfuMsgType.PING)
+    private void handlePing(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r){
+        log.info("Yeah I can respond to pings bruh");
+        r.sendResponse(ctx, msg, CorfuMsgType.PONG.msg());
+    }
+
+    @ServerHandler(type = CorfuMsgType.PIGGY_BACK)
+    private void handlePiggyBack(CorfuPayloadMsg <PiggyBack> msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.info("handlePiggyBack: received {}", msg);
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        log.info("payload: {}", msg.getPayload().getEndpoint());
+        runtime.get().invalidateLayout();
+        runtime.get().getLayoutView()
+                .getRuntimeLayout()
+                .getLogUnitClient(msg.getPayload().getEndpoint())
+                .sendMessage(CorfuMsgType.PING.msg());
+    }
+
+    @ServerHandler(type = CorfuMsgType.TRANSFER_RANGE)
+    private void handleTransferRange(CorfuPayloadMsg <TransferRange> msg, ChannelHandlerContext ctx, IServerRouter r){
+        log.info("handleTransferRange: received {}", msg);
+        List<Long> range = msg.getPayload().getAddresses();
+        getStreamLogFiles().setTransferState(StreamLogFiles.TransferState.TRANSFERRING);
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        List<Long> addressesForProcessing = new ArrayList<>(streamLog
+                .getKnownAddressesInRange(range.get(0), range.get(range.size() - 1)));
+
+        String donor = msg.getPayload().getEndpoint();
+        String current = msg.getPayload().getCurrentEndpoint();
+        runtime.get().invalidateLayout();
+
+        AddressMetaDataRangeMsg amdrm = CFUtils.getUninterruptibly(runtime.get()
+                .getLayoutView()
+                .getRuntimeLayout()
+                .getLogUnitClient(donor)
+                .requestAddressMetaData(addressesForProcessing));
+
+        log.info("Got map: {}", amdrm.getAddressMetaDataMap());
+//        getStreamLogFiles().setRemoteLogMetadata(amdrm.getAddressMetaDataMap());
+//
+//        CompletableFuture<Void> workFlow = getStreamLogFiles().bindAndGetSocket(9999)
+//                .thenApply(socket -> receiveAddresses(addressesForProcessing, socket, amdrm.getAddressMetaDataMap()))
+//                .thenRunAsync(() ->
+//                        runtime.get().getLayoutView().getRuntimeLayout()
+//                                .getLogUnitClient(donor)
+//                                .initTransfer("localhost", 9999, addressesForProcessing))
+//                .thenRun(() -> initializeTransferredMetadata(amdrm.getAddressMetaDataMap()));
+//
+//        workFlow.join();
+//        getStreamLogFiles().setTransferState(StreamLogFiles.TransferState.IDLE);
+        log.info("Transfer range done");
+
     }
 
     @ServerHandler(type = CorfuMsgType.TRANSFER_RECEIVE_REQUEST)

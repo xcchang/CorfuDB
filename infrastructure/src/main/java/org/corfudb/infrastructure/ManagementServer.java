@@ -145,6 +145,7 @@ public class ManagementServer extends AbstractServer {
                 .build();
 
         Layout managementLayout = serverContext.copyManagementLayout();
+
         managementAgent = new ManagementAgent(
                 corfuRuntime, serverContext, clusterContext, failureDetector,managementLayout
         );

@@ -47,6 +47,62 @@ public class ZeroCopyTransfer {
 
     }
 
+    public static void transferPull(Layout layout, String endpoint, CorfuRuntime runtime, Layout.LayoutSegment segment) {
+        long trimMark = StateTransfer.setTrimOnNewLogUnit(layout, runtime, endpoint);
+        if (trimMark > segment.getEnd()) {
+            log.info("ZeroCopyStateTransfer: Nothing to transfer, trimMark {}"
+                            + "greater than end of segment {}",
+                    trimMark, segment.getEnd());
+            return;
+        }
+
+        final long segmentStart = Math.max(trimMark, segment.getStart());
+        final long segmentEnd = segment.getEnd() - 1;
+        log.info("ZeroCopyStateTransfer: Total address range to transfer: [{}-{}] to node {}",
+                segmentStart, segmentEnd, endpoint);
+
+        List<Long> allChunks = new ArrayList<>();
+        log.info("Aggregating chunks");
+
+        Optional<String> maybeDonor = getDonorForAddresses(runtime, allChunks);
+
+        if(!maybeDonor.isPresent()){
+            log.error("No donor found, return");
+            return;
+        }
+        else{
+            log.info("Donor is selected: {}", maybeDonor.get());
+        }
+
+        String donor = maybeDonor.get();
+
+        CFUtils.getUninterruptibly(runtime.getLayoutView().getRuntimeLayout().getLogUnitClient(endpoint).transferRange(allChunks, endpoint, donor));
+
+        log.info("Wait while done");
+        boolean stillTransferring = false;
+        for(int i = 0; i < 10; i ++){
+            Sleep.sleepUninterruptibly(Duration.ofMillis(1000));
+            TransferQueryResponse stillTransferringResponse = CFUtils
+                    .getUninterruptibly(runtime.getLayoutView()
+                            .getRuntimeLayout()
+                            .getLogUnitClient(endpoint)
+                            .isStillTransferring());
+            stillTransferring = stillTransferringResponse.isActive();
+            if(!stillTransferring){
+                log.info("Done with transfer");
+                return;
+            }
+        }
+
+
+        if(stillTransferring){
+            log.error("Polls exeded");
+            throw new RuntimeException("Polls exeded");
+        }
+
+
+    }
+
     public static void transferPush(Layout layout,
                                 String endpoint,
                                 CorfuRuntime runtime,

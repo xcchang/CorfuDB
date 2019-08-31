@@ -87,7 +87,9 @@ public class RestoreRedundancyMergeSegments extends Action {
                     case PUSH_ZERO_COPY:
                         ZeroCopyTransfer.transferPush(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
                         break;
-
+                    case PULL_ZERO_COPY:
+                        ZeroCopyTransfer.transferPull(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
+                        break;
                     default:
                         StateTransfer.transfer(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
 
