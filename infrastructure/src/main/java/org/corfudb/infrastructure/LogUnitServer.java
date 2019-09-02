@@ -230,7 +230,9 @@ public class LogUnitServer extends AbstractServer {
         Set<Long> knownAddresses = streamLog
                 .getKnownAddressesInRange(range.get(0), range.get(range.size() - 1));
 
+        long time = System.currentTimeMillis();
 
+        log.info("Got known addresses");
         List<Long> addressesForProcessing = new ArrayList<>();
 
         for(long address: range){
@@ -239,21 +241,36 @@ public class LogUnitServer extends AbstractServer {
             }
         }
 
+        log.info("Get known addresses took: {}", System.currentTimeMillis() - time);
         String donor = msg.getPayload().getEndpoint();
-        runtime.get().invalidateLayout();
+        // runtime.get().invalidateLayout();
 
+        log.info("Requesting metadata from donor");
+        time = System.currentTimeMillis();
         AddressMetaDataRangeMsg amdrm = CFUtils.getUninterruptibly(runtime.get()
                 .getLayoutView()
                 .getRuntimeLayout()
                 .getLogUnitClient(donor)
                 .requestAddressMetaData(addressesForProcessing));
 
+        log.info("Requesting metadata from donor took {}", System.currentTimeMillis() - time);
+
+
+        log.info("Setting remote metadata to local");
+        time = System.currentTimeMillis();
+
         getStreamLogFiles().setRemoteLogMetadata(amdrm.getAddressMetaDataMap());
+
+        log.info("Set remote metadata took: {}", System.currentTimeMillis() - time);
+
+        time = System.currentTimeMillis();
+
 
         CompletableFuture<Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException>> workFlow = getStreamLogFiles().bindAndGetSocket(9999)
                 .thenApply(socket -> receiveAddresses(addressesForProcessing, socket, amdrm.getAddressMetaDataMap()));
 
         Sleep.sleepUninterruptibly(Duration.ofMillis(100));
+        log.info("Start transfer");
         runtime.get().getLayoutView().getRuntimeLayout().getLogUnitClient(donor).initTransfer("localhost", 9999, addressesForProcessing);
 
         workFlow.thenApply(result -> {
@@ -262,9 +279,12 @@ public class LogUnitServer extends AbstractServer {
                 return result;
             }
             else{
+                log.info("Initializing metadata");
                 return result.flatMap(res -> getStreamLogFiles().initializeTransferredMetadata(res.getAddressMetaDataMsgMap()));
             }
-        }).join();
+        });
+
+        log.info("Actual transfer took: {}", System.currentTimeMillis() - time);
 
         getStreamLogFiles().setTransferState(StreamLogFiles.TransferState.IDLE);
         log.info("Transfer range done");

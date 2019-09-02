@@ -98,14 +98,14 @@ public class CorfuTestParameters {
         }
         
         // Timeouts
-        TIMEOUT_VERY_SHORT = TRAVIS_BUILD ? Duration.of(1, SECONDS) :
+        TIMEOUT_VERY_SHORT = TRAVIS_BUILD ? Duration.of(100000, SECONDS) :
                                             Duration.of(100, MILLIS);
-        TIMEOUT_SHORT = TRAVIS_BUILD ? Duration.of(5, SECONDS) :
+        TIMEOUT_SHORT = TRAVIS_BUILD ? Duration.of(100000, SECONDS) :
                                         Duration.of(1, SECONDS);
-        TIMEOUT_NORMAL = TRAVIS_BUILD ? Duration.of(20, SECONDS) :
+        TIMEOUT_NORMAL = TRAVIS_BUILD ? Duration.of(100000, SECONDS) :
                                         Duration.of(10, SECONDS);
-        TIMEOUT_LONG = TRAVIS_BUILD ? Duration.of(2, MINUTES):
-                                        Duration.of(2, MINUTES);
+        TIMEOUT_LONG = TRAVIS_BUILD ? Duration.of(100000, MINUTES):
+                                        Duration.of(100000, MINUTES);
 
         // Iterations
         NUM_ITERATIONS_VERY_LOW = TRAVIS_BUILD ? 1 : 10;

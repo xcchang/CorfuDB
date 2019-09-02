@@ -78,16 +78,16 @@ public class ZeroCopyTransfer {
 
         String donor = maybeDonor.get();
 
-        CFUtils.getUninterruptibly(runtime.getLayoutView().getRuntimeLayout().getLogUnitClient(endpoint).transferRange(allChunks, endpoint, donor));
+        runtime.getLayoutView().getRuntimeLayout().getLogUnitClient(endpoint).transferRange(allChunks, endpoint, donor);
 
         log.info("Wait while done");
         boolean stillTransferring = false;
-        for(int i = 0; i < 10; i ++){
+        for(int i = 0; i < 100; i ++){
             Sleep.sleepUninterruptibly(Duration.ofMillis(1000));
             TransferQueryResponse stillTransferringResponse = CFUtils
                     .getUninterruptibly(runtime.getLayoutView()
                             .getRuntimeLayout()
-                            .getLogUnitClient(endpoint)
+                            .getLogUnitClient(donor)
                             .isStillTransferring());
             stillTransferring = stillTransferringResponse.isActive();
             if(!stillTransferring){
@@ -124,6 +124,9 @@ public class ZeroCopyTransfer {
 
         List<Long> allChunks = new ArrayList<>();
         log.info("Aggregating chunks");
+
+        long time = System.currentTimeMillis();
+
         for (long chunkStart = segmentStart; chunkStart <= segmentEnd
                 ; chunkStart += chunkSize) {
 
@@ -136,6 +139,8 @@ public class ZeroCopyTransfer {
             // Read and write in chunks of chunkSize.
             allChunks.addAll(chunk);
         }
+
+        log.info("Aggregating chunks took: {}", System.currentTimeMillis() - time);
 
         Optional<String> maybeDonor = getDonorForAddresses(runtime, allChunks);
 
@@ -150,12 +155,14 @@ public class ZeroCopyTransfer {
         String donor = maybeDonor.get();
 
         log.info("Getting mappings from local server");
-
+        time = System.currentTimeMillis();
         AddressMetaDataRangeMsg rangeMsg =
                 CFUtils.getUninterruptibly(runtime.getLayoutView()
                         .getRuntimeLayout()
                         .getLogUnitClient(donor)
                         .requestAddressMetaData(allChunks));
+        log.info("Getting metadata from server took: {}", System.currentTimeMillis() - time);
+
 
         log.info("Setting mappings to remote server");
 

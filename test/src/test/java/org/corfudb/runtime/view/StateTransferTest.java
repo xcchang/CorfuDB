@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -24,6 +25,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+import com.google.common.util.concurrent.RateLimiter;
+import org.apache.commons.lang.RandomStringUtils;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.infrastructure.ServerContextBuilder;
 import org.corfudb.infrastructure.TestLayoutBuilder;
@@ -77,6 +80,108 @@ public class StateTransferTest extends AbstractViewTest {
                 .stream()
                 .filter(longLogDataEntry -> !longLogDataEntry.getValue().isEmpty())
                 .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+    }
+
+
+    private byte [] generateTestPayload(){
+        return RandomStringUtils.randomAlphabetic(1024 * 1024).getBytes();
+    }
+
+    @Test
+    public void generatePersistentData(){
+        String directory = "/tmp/0";
+        ServerContext sc1 = new ServerContextBuilder()
+                .setLogPath(directory)
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0)
+                .setMemory(false).build();
+
+        addServer(SERVERS.PORT_0, sc1);
+
+        Layout layout = new TestLayoutBuilder()
+                .setEpoch(1L).addLayoutServer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_0)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(3000)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+        bootstrapAllServers(layout);
+
+        corfuRuntime = getNewRuntime(getDefaultNode()).connect();
+        IStreamView testStream = corfuRuntime.getStreamsView().get(CorfuRuntime.getStreamID("test"));
+        RateLimiter rateLimiter = RateLimiter.create(50);
+        for(int i = 0; i < 3000; i++){
+            rateLimiter.acquire(1);
+            testStream.append(generateTestPayload());
+        }
+        Sleep.sleepUninterruptibly(Duration.ofMillis(10000));
+
+    }
+
+
+    @Test
+    public void benchMarkStateTransfer(){
+        String directory = "/tmp/0";
+
+        ServerContext sc1 = new ServerContextBuilder()
+                .setLogPath(directory)
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                .setPort(SERVERS.PORT_0)
+                .setMemory(false).build();
+
+        sc1.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_ZERO_COPY);
+
+        String newDirectory = "/tmp/1";
+
+        ServerContext sc2 = new ServerContextBuilder()
+                .setLogPath(newDirectory)
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
+                .setPort(SERVERS.PORT_1)
+                .setMemory(false).build();
+
+        sc2.setStateTransferMode(RestoreRedundancyMergeSegments.Mode.PUSH_ZERO_COPY);
+
+
+
+        addServer(SERVERS.PORT_0, sc1);
+        addServer(SERVERS.PORT_1, sc2);
+
+
+        Layout layout = new TestLayoutBuilder()
+                .setEpoch(1L)
+                .addLayoutServer(SERVERS.PORT_0)
+                .addLayoutServer(SERVERS.PORT_1)
+                .addSequencer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_1)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(3000)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .buildSegment()
+                .setStart(3000)
+                .setEnd(-1L)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addLogUnit(SERVERS.PORT_1)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+        bootstrapAllServers(layout);
+
+        Sleep.sleepUninterruptibly(Duration.ofMillis(3000000));
+
     }
 
     @Test
