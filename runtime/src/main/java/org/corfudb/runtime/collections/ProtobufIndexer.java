@@ -14,21 +14,22 @@ import java.util.Optional;
 /**
  * Created by hisundar on 2019-08-12.
  */
-public class ProtobufIndexer implements CorfuTable.IndexRegistry<Message, CorfuRecord<Message>> {
+public class ProtobufIndexer implements CorfuTable.IndexRegistry<Message, CorfuRecord<Message, Message>> {
 
     private HashMap<String,
-            CorfuTable.Index<Message, CorfuRecord<Message>, ? extends Comparable<?>>> indices = new HashMap<>();
+            CorfuTable.Index<Message, CorfuRecord<Message, Message>, ? extends Comparable<?>>>
+            indices = new HashMap<>();
 
     ProtobufIndexer(Message payloadSchema) {
         payloadSchema.getDescriptorForType().getFields().forEach(this::registerIndices);
     }
 
-    private <T extends Comparable<T>> CorfuTable.Index<Message, CorfuRecord<Message>, ? extends Comparable<?>>
+    private <T extends Comparable<T>> CorfuTable.Index<Message, CorfuRecord<Message, Message>, ? extends Comparable<?>>
     getIndex(String indexName, FieldDescriptor fieldDescriptor) {
 
         return new Index<>(
                 () -> indexName,
-                (CorfuTable.IndexFunction<Message, CorfuRecord<Message>, T>)
+                (CorfuTable.IndexFunction<Message, CorfuRecord<Message, Message>, T>)
                         (key, val) -> (T) val.getPayload().getField(fieldDescriptor));
     }
 
@@ -44,11 +45,11 @@ public class ProtobufIndexer implements CorfuTable.IndexRegistry<Message, CorfuR
     }
 
     @Override
-    public Optional<CorfuTable.Index<Message, CorfuRecord<Message>, ? extends Comparable<?>>> get(
+    public Optional<CorfuTable.Index<Message, CorfuRecord<Message, Message>, ? extends Comparable<?>>> get(
             CorfuTable.IndexName name) {
 
         String indexName = (name != null) ? name.get() : null;
-        CorfuTable.Index<Message, CorfuRecord<Message>, ? extends Comparable<?>> index = indices.get(indexName);
+        CorfuTable.Index<Message, CorfuRecord<Message, Message>, ? extends Comparable<?>> index = indices.get(indexName);
         if (index != null) {
             return Optional.of(index);
         } else {
@@ -57,7 +58,7 @@ public class ProtobufIndexer implements CorfuTable.IndexRegistry<Message, CorfuR
     }
 
     @Override
-    public Iterator<CorfuTable.Index<Message, CorfuRecord<Message>, ? extends Comparable<?>>> iterator() {
+    public Iterator<Index<Message, CorfuRecord<Message, Message>, ? extends Comparable<?>>> iterator() {
         return indices.values().iterator();
 
     }

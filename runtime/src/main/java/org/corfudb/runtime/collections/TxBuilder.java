@@ -1,15 +1,20 @@
 package org.corfudb.runtime.collections;
 
+import com.google.protobuf.Descriptors;
 import com.google.protobuf.Message;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.corfudb.protocols.wireprotocol.Token;
-import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
+import org.corfudb.runtime.CorfuOptions;
 import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 import org.corfudb.runtime.object.transactions.Transaction;
 import org.corfudb.runtime.object.transactions.TransactionType;
@@ -26,6 +31,15 @@ public class TxBuilder {
     private final String namespace;
     private Timestamp timestamp;
     private final List<Runnable> operations;
+
+    Set<Descriptors.FieldDescriptor.Type> versionTypes = new HashSet<>(Arrays.asList(
+            Descriptors.FieldDescriptor.Type.INT32,
+            Descriptors.FieldDescriptor.Type.INT64,
+            Descriptors.FieldDescriptor.Type.UINT32,
+            Descriptors.FieldDescriptor.Type.UINT64,
+            Descriptors.FieldDescriptor.Type.SFIXED32,
+            Descriptors.FieldDescriptor.Type.SFIXED64
+    ));
 
     /**
      * Creates a new TxBuilder.
@@ -44,10 +58,6 @@ public class TxBuilder {
         this.operations = new ArrayList<>();
     }
 
-    private static final RecordMetadata DEFAULT_RECORD_METADATA = RecordMetadata.newBuilder()
-            .setVersion(0L)
-            .build();
-
     private void validateNamespace(Table table) {
         if (table.getNamespace().equals(this.namespace)) {
             return;
@@ -57,7 +67,46 @@ public class TxBuilder {
                         this.namespace, table.getNamespace()));
     }
 
-    private <K extends Message, V extends Message> Table<K, V> getTable(@Nonnull final String tableName) {
+    private <M extends Message> void validateVersion(@Nullable M previousMetadata,
+                                                     @Nullable M userMetadata) {
+        if (userMetadata == null) {
+            return;
+        }
+        for (Descriptors.FieldDescriptor fieldDescriptor : userMetadata.getDescriptorForType().getFields()) {
+            if (fieldDescriptor.getOptions().getExtension(CorfuOptions.schema).getVersion()) {
+                if (!versionTypes.contains(fieldDescriptor.getType())) {
+                    throw new IllegalArgumentException("Version field needs to be an Integer or Long type.");
+                }
+                long validatingVersion = (long) userMetadata.getField(fieldDescriptor);
+                long previousVersion = Optional.ofNullable(previousMetadata)
+                        .map(m -> (Long) m.getField(fieldDescriptor))
+                        .orElse(-1L);
+                if (validatingVersion != previousVersion) {
+                    throw new RuntimeException("Stale object Exception");
+                }
+            }
+        }
+    }
+
+    private <M extends Message> M getNewMetadata(@Nonnull M previousMetadata,
+                                                 @Nullable M userMetadata) {
+        M.Builder builder = previousMetadata.toBuilder();
+        for (Descriptors.FieldDescriptor fieldDescriptor : previousMetadata.getDescriptorForType().getFields()) {
+            if (fieldDescriptor.getOptions().getExtension(CorfuOptions.schema).getVersion()) {
+                builder.setField(
+                        fieldDescriptor,
+                        Optional.ofNullable(previousMetadata.getField(fieldDescriptor))
+                                .map(previousVersion -> ((Long) previousVersion) + 1)
+                                .orElse(0L));
+            } else if (userMetadata != null){
+                builder.setField(fieldDescriptor, userMetadata.getField(fieldDescriptor));
+            }
+        }
+        return (M) builder.build();
+    }
+
+    private <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> getTable(@Nonnull final String tableName) {
         return this.tableRegistry.getTable(this.namespace, tableName);
     }
 
@@ -72,12 +121,25 @@ public class TxBuilder {
      * @return TxBuilder instance.
      */
     @Nonnull
-    public <K extends Message, V extends Message> TxBuilder create(@Nonnull final String tableName,
-                                                                   @Nonnull final K key,
-                                                                   @Nullable final V value) {
-        Table<K, V> table = getTable(tableName);
+    public <K extends Message, V extends Message, M extends Message>
+    TxBuilder create(@Nonnull final String tableName,
+                     @Nonnull final K key,
+                     @Nonnull final V value,
+                     @Nullable final M metadata) {
+        Table<K, V, M> table = getTable(tableName);
         validateNamespace(table);
-        operations.add(() -> table.create(key, value, DEFAULT_RECORD_METADATA));
+        operations.add(() -> {
+            CorfuRecord<V, M> previous = table.get(key);
+            if (previous != null) {
+                throw new RuntimeException("Cannot create a record on existing key.");
+            }
+            M newMetadata = null;
+            if (table.getMetadataOptions().isMetadataEnabled()) {
+                M metadataDefaultInstance = (M) table.getMetadataOptions().getDefaultMetadataInstance();
+                newMetadata = getNewMetadata(metadataDefaultInstance, metadata);
+            }
+            table.create(key, value, newMetadata);
+        });
         return this;
     }
 
@@ -92,20 +154,28 @@ public class TxBuilder {
      * @return TxBuilder instance.
      */
     @Nonnull
-    public <K extends Message, V extends Message> TxBuilder update(@Nonnull final String tableName,
-                                                                   @Nonnull final K key,
-                                                                   @Nonnull final V value) {
-        Table<K, V> table = getTable(tableName);
+    public <K extends Message, V extends Message, M extends Message>
+    TxBuilder update(@Nonnull final String tableName,
+                     @Nonnull final K key,
+                     @Nonnull final V value,
+                     @Nullable final M metadata) {
+        Table<K, V, M> table = getTable(tableName);
         validateNamespace(table);
         operations.add(() -> {
-            CorfuRecord<V> record = table.get(key);
-            RecordMetadata metadata = DEFAULT_RECORD_METADATA;
-            if (record != null) {
-                metadata = record.getMetadata();
+            CorfuRecord<V, M> previous = table.get(key);
+            M previousMetadata = Optional.ofNullable(previous)
+                    .map(CorfuRecord::getMetadata)
+                    .orElseGet(() -> {
+                        if (table.getMetadataOptions().isMetadataEnabled()) {
+                            return (M) table.getMetadataOptions().getDefaultMetadataInstance();
+                        }
+                        return null;
+                    });
+            M newMetadata = null;
+            if (previousMetadata != null) {
+                validateVersion(previousMetadata, metadata);
+                newMetadata = getNewMetadata(previousMetadata, metadata);
             }
-            RecordMetadata newMetadata = RecordMetadata.newBuilder(metadata)
-                    .setVersion(metadata.getVersion() + 1)
-                    .build();
             table.update(key, value, newMetadata);
         });
         return this;
@@ -122,12 +192,14 @@ public class TxBuilder {
      * @return TxBuilder instance.
      */
     @Nonnull
-    public <K extends Message, V extends Message> TxBuilder touch(@Nonnull final String tableName,
-                                                                  @Nonnull final K key) {
-        Table<K, V> table = getTable(tableName);
+    public <K extends Message, V extends Message, M extends Message>
+    TxBuilder touch(@Nonnull final String tableName,
+                    @Nonnull final K key) {
+        Table<K, V, M> table = getTable(tableName);
         validateNamespace(table);
         operations.add(() -> {
-            CorfuRecord<V> record = table.get(key);
+            //TODO: Validate the get is executed.
+            CorfuRecord<V, M> record = table.get(key);
         });
         return this;
     }
@@ -142,9 +214,10 @@ public class TxBuilder {
      * @return TxBuilder instance.
      */
     @Nonnull
-    public <K extends Message, V extends Message> TxBuilder delete(@Nonnull final String tableName,
-                                                                   @Nonnull final K key) {
-        Table<K, V> table = getTable(tableName);
+    public <K extends Message, V extends Message, M extends Message>
+    TxBuilder delete(@Nonnull final String tableName,
+                     @Nonnull final K key) {
+        Table<K, V, M> table = getTable(tableName);
         validateNamespace(table);
         operations.add(() -> table.delete(key));
         return this;

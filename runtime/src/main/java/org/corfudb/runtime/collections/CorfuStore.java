@@ -61,14 +61,16 @@ public class CorfuStore {
      * @throws IllegalAccessException    Thrown if key/value class are not protobuf classes.
      */
     @Nonnull
-    public <K extends Message, V extends Message> Table<K, V> createTable(@Nonnull final String namespace,
-                                                                          @Nonnull final String tableName,
-                                                                          @Nonnull final Class<K> kClass,
-                                                                          @Nonnull final Class<V> vClass,
-                                                                          @Nonnull final TableOptions tableOptions)
+    public <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> createTable(@Nonnull final String namespace,
+                               @Nonnull final String tableName,
+                               @Nonnull final Class<K> kClass,
+                               @Nonnull final Class<V> vClass,
+                               @Nonnull final Class<M> mClass,
+                               @Nonnull final TableOptions tableOptions)
             throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
-        return runtime.getTableRegistry().openTable(namespace, tableName, kClass, vClass, tableOptions);
+        return runtime.getTableRegistry().openTable(namespace, tableName, kClass, vClass, mClass, tableOptions);
     }
 
     /**
@@ -82,8 +84,9 @@ public class CorfuStore {
      * @return Table instance.
      */
     @Nonnull
-    public <K extends Message, V extends Message> Table<K, V> getTable(@Nonnull final String namespace,
-                                                                       @Nonnull final String tableName) {
+    public <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> getTable(@Nonnull final String namespace,
+                            @Nonnull final String tableName) {
         return runtime.getTableRegistry().getTable(namespace, tableName);
     }
 

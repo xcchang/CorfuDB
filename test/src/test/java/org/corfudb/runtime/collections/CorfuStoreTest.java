@@ -4,7 +4,6 @@ import com.google.protobuf.Message;
 
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuStoreMetadata;
-import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import org.corfudb.runtime.CorfuStoreMetadata.Timestamp;
 import org.corfudb.runtime.view.AbstractViewTest;
 import org.corfudb.test.SampleSchema.EventInfo;
@@ -19,6 +18,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.corfudb.test.SampleSchema.ManagedResources;
 
 /**
  * Created by zlokhandwala on 2019-08-12.
@@ -41,11 +41,12 @@ public class CorfuStoreTest extends AbstractViewTest {
 
         // Create & Register the table.
         // This is required to initialize the table for the current corfu client.
-        Table<Uuid, EventInfo> table = corfuStore.createTable(
+        Table<Uuid, EventInfo, ManagedResources> table = corfuStore.createTable(
                 nsxManager,
                 tableName,
                 Uuid.class,
                 EventInfo.class,
+                ManagedResources.class,
                 // TableOptions includes option to choose - Memory/Disk based corfu table.
                 TableOptions.builder().build());
 
@@ -58,7 +59,7 @@ public class CorfuStoreTest extends AbstractViewTest {
         // These are wrapped as transactional operations.
         table.create(Uuid.newBuilder().setLsb(0L).setMsb(0L).build(),
                 EventInfo.newBuilder().setName("simpleCRUD").build(),
-                RecordMetadata.newBuilder().setVersion(0).build());
+                ManagedResources.newBuilder().setCreateUser("Zee").build());
 
 
         // Fetch timestamp to perform snapshot queries or transactions at a particular timestamp.
@@ -80,7 +81,7 @@ public class CorfuStoreTest extends AbstractViewTest {
                     .setEventTime(i)
                     .build());
 
-            tx.update(tableName, uuids.get(i), events.get(i));
+            tx.update(tableName, uuids.get(i), events.get(i), null);
         }
         tx.commit();
 
@@ -121,9 +122,8 @@ public class CorfuStoreTest extends AbstractViewTest {
                 .size())
                 .isEqualTo(count - sixty);
 
-        int count1 = corfuStore.query(nsxManager).count(tableName, timestamp);
-        System.out.println("Size of table = " + q.count(tableName));
-        System.err.println("Size of table = at timestamp :" + timestamp + " => " + count1);
+        assertThat(q.count(tableName, timestamp)).isEqualTo(1);
+        assertThat(q.count(tableName)).isEqualTo(count + 1);
 
         assertThat(corfuStore.listTables(nsxManager))
                 .containsExactly(CorfuStoreMetadata.TableName.newBuilder()
@@ -136,6 +136,132 @@ public class CorfuStoreTest extends AbstractViewTest {
                 .isEqualTo(new CorfuRecord<>(EventInfo.getDefaultInstance(), null));
     }
 
+    @Test
+    public void checkMetadataTransactions() throws Exception {
+
+        // Get a Corfu Runtime instance.
+        CorfuRuntime corfuRuntime = getDefaultRuntime();
+
+        // Creating Corfu Store using a connected corfu client.
+        CorfuStore corfuStore = new CorfuStore(corfuRuntime);
+
+        // Define a namespace for the table.
+        final String nsxManager = "nsx-manager";
+        // Define table name.
+        final String tableName = "EventInfo";
+
+        // Create & Register the table.
+        // This is required to initialize the table for the current corfu client.
+        Table<Uuid, EventInfo, ManagedResources> table = corfuStore.createTable(
+                nsxManager,
+                tableName,
+                Uuid.class,
+                EventInfo.class,
+                ManagedResources.class,
+                // TableOptions includes option to choose - Memory/Disk based corfu table.
+                TableOptions.builder().build());
+
+        UUID uuid1 = UUID.nameUUIDFromBytes("1".getBytes());
+        Uuid key1 = Uuid.newBuilder()
+                .setMsb(uuid1.getMostSignificantBits()).setLsb(uuid1.getLeastSignificantBits())
+                .build();
+        long expectedVersion = 1L;
+
+        corfuStore.tx(nsxManager)
+                .create(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("abc").build(),
+                        ManagedResources.newBuilder().setCreateUser("user_1").setVersion(0L).build())
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isEqualTo(ManagedResources.newBuilder().setCreateUser("user_1").setVersion(expectedVersion++).build());
+
+        corfuStore.tx(nsxManager)
+                .update(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("bcd").build(),
+                        ManagedResources.newBuilder().setCreateUser("user_2").setVersion(1L).build())
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isEqualTo(ManagedResources.newBuilder().setCreateUser("user_2").setVersion(expectedVersion++).build());
+
+        corfuStore.tx(nsxManager)
+                .update(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("cde").build(),
+                        null)
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isEqualTo(ManagedResources.newBuilder().setCreateUser("user_2").setVersion(expectedVersion).build());
+
+        corfuStore.tx(nsxManager).delete(tableName, key1).commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1)).isNull();
+        expectedVersion = 1L;
+
+        corfuStore.tx(nsxManager)
+                .update(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("def").build(),
+                        null)
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isEqualTo(ManagedResources.newBuilder().setVersion(expectedVersion).build());
+    }
+
+    @Test
+    public void checkNullMetadataTransactions() throws Exception {
+
+        // Get a Corfu Runtime instance.
+        CorfuRuntime corfuRuntime = getDefaultRuntime();
+
+        // Creating Corfu Store using a connected corfu client.
+        CorfuStore corfuStore = new CorfuStore(corfuRuntime);
+
+        // Define a namespace for the table.
+        final String nsxManager = "nsx-manager";
+        // Define table name.
+        final String tableName = "EventInfo";
+
+        // Create & Register the table.
+        // This is required to initialize the table for the current corfu client.
+        Table<Uuid, EventInfo, ManagedResources> table = corfuStore.createTable(
+                nsxManager,
+                tableName,
+                Uuid.class,
+                EventInfo.class,
+                null,
+                // TableOptions includes option to choose - Memory/Disk based corfu table.
+                TableOptions.builder().build());
+
+        UUID uuid1 = UUID.nameUUIDFromBytes("1".getBytes());
+        Uuid key1 = Uuid.newBuilder().setMsb(uuid1.getMostSignificantBits()).setLsb(uuid1.getLeastSignificantBits()).build();
+        corfuStore.tx(nsxManager)
+                .create(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("abc").build(),
+                        null)
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isNull();
+
+        corfuStore.tx(nsxManager)
+                .update(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("bcd").build(),
+                        ManagedResources.newBuilder().setCreateUser("testUser").setVersion(1L).build())
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isNull();
+
+        corfuStore.tx(nsxManager)
+                .update(tableName,
+                        key1,
+                        EventInfo.newBuilder().setName("cde").build(),
+                        null)
+                .commit();
+        assertThat(corfuStore.getTable(nsxManager, tableName).get(key1).getMetadata())
+                .isNull();
+    }
 
 //    @Test
 //    public void prototest() throws Exception {

@@ -27,15 +27,7 @@ message TableMetadata {
     bool cache = 3;
 }
 
-message RecordMetadata {
-    int64 version = 1;
-    string created_user = 2;
-    string last_modified_user = 3;
-    int64 create_time = 4;
-    int64 last_modified_time = 5;
-}
-
 message Record {
     google.protobuf.Any payload = 1;
-    RecordMetadata metadata = 2;
+    google.protobuf.Any metadata = 2;
 }

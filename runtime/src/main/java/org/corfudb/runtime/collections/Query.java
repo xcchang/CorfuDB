@@ -1,6 +1,7 @@
 package org.corfudb.runtime.collections;
 
 import static org.corfudb.runtime.collections.QueryOptions.DEFAULT_OPTIONS;
+
 import com.google.protobuf.Message;
 
 import java.util.ArrayList;
@@ -69,7 +70,8 @@ public class Query {
         objectsView.TXEnd();
     }
 
-    private <K extends Message, V extends Message> Table<K, V> getTable(@Nonnull final String tableName) {
+    private <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> getTable(@Nonnull final String tableName) {
         return tableRegistry.getTable(this.namespace, tableName);
     }
 
@@ -99,12 +101,13 @@ public class Query {
      * @return Value.
      */
     @Nullable
-    public <K extends Message, V extends Message> V get(@Nonnull final String tableName,
-                                                        @Nullable final Timestamp timestamp,
-                                                        @Nonnull final K key) {
+    public <K extends Message, V extends Message, M extends Message>
+    V get(@Nonnull final String tableName,
+          @Nullable final Timestamp timestamp,
+          @Nonnull final K key) {
         try {
             txBegin(timestamp);
-            return Optional.ofNullable(((Table<K, V>) getTable(tableName)).get(key))
+            return Optional.ofNullable(((Table<K, V, M>) getTable(tableName)).get(key))
                     .map(CorfuRecord::getPayload)
                     .orElse(null);
         } finally {
@@ -122,8 +125,9 @@ public class Query {
      * @return Corfu Record.
      */
     @Nullable
-    public <K extends Message, V extends Message> CorfuRecord<V> getRecord(@Nonnull final String tableName,
-                                                                           @Nonnull final K key) {
+    public <K extends Message, V extends Message, M extends Message>
+    CorfuRecord<V, M> getRecord(@Nonnull final String tableName,
+                                @Nonnull final K key) {
         return get(tableName, null, key);
     }
 
@@ -138,12 +142,13 @@ public class Query {
      * @return Corfu Record.
      */
     @Nullable
-    public <K extends Message, V extends Message> CorfuRecord<V> getRecord(@Nonnull final String tableName,
-                                                                           @Nullable final Timestamp timestamp,
-                                                                           @Nonnull final K key) {
+    public <K extends Message, V extends Message, M extends Message>
+    CorfuRecord<V, M> getRecord(@Nonnull final String tableName,
+                                @Nullable final Timestamp timestamp,
+                                @Nonnull final K key) {
         try {
             txBegin(timestamp);
-            return ((Table<K, V>) getTable(tableName)).get(key);
+            return ((Table<K, V, M>) getTable(tableName)).get(key);
         } finally {
             txEnd();
         }
@@ -177,12 +182,13 @@ public class Query {
     }
 
     @Nonnull
-    private <K extends Message, V extends Message> Collection<V> scanAndFilter(@Nonnull final String tableName,
-                                                                               @Nullable Timestamp timestamp,
-                                                                               @Nonnull final Predicate<V> p) {
+    private <K extends Message, V extends Message, M extends Message>
+    Collection<V> scanAndFilter(@Nonnull final String tableName,
+                                @Nullable Timestamp timestamp,
+                                @Nonnull final Predicate<V> p) {
         try {
             txBegin(timestamp);
-            return ((Table<K, V>) getTable(tableName)).scanAndFilter(p);
+            return ((Table<K, V, M>) getTable(tableName)).scanAndFilter(p);
         } finally {
             txEnd();
         }
@@ -200,11 +206,11 @@ public class Query {
      * @return Result of the query.
      */
     @Nonnull
-    public <K extends Message, V extends Message, I extends Comparable<I>>
+    public <K extends Message, V extends Message, M extends Message, I extends Comparable<I>>
     QueryResult<Entry<K, V>> getByIndex(@Nonnull final String tableName,
                                         @Nonnull final String indexName,
                                         @Nonnull final I indexKey) {
-        return new QueryResult<>(((Table<K, V>) getTable(tableName)).getByIndex(indexName, indexKey));
+        return new QueryResult<>(((Table<K, V, M>) getTable(tableName)).getByIndex(indexName, indexKey));
     }
 
     private <V> Collection<V> initializeResultCollection(QueryOptions<V> queryOptions) {

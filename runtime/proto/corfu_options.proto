@@ -6,8 +6,8 @@ option java_package = "org.corfudb.runtime";
 import "google/protobuf/descriptor.proto";
 
 message SchemaOptions {
-    optional bool primary_key = 1;
-    optional bool secondary_key = 2;
+    optional bool secondary_key = 1;
+    optional bool version = 2;
 }
 
 extend google.protobuf.FieldOptions {

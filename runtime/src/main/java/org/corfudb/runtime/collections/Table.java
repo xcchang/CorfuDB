@@ -13,7 +13,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import org.corfudb.runtime.object.transactions.TransactionType;
 
 import org.corfudb.runtime.object.transactions.TransactionalContext;
@@ -23,11 +22,11 @@ import lombok.Getter;
 /**
  * Created by zlokhandwala on 2019-08-05.
  */
-public class Table<K extends Message, V extends Message> {
+public class Table<K extends Message, V extends Message, M extends Message> {
 
     private final CorfuRuntime corfuRuntime;
 
-    private final CorfuTable<K, CorfuRecord<V>> corfuTable;
+    private final CorfuTable<K, CorfuRecord<V, M>> corfuTable;
 
     /**
      * Namespace this table belongs in.
@@ -41,6 +40,9 @@ public class Table<K extends Message, V extends Message> {
     @Getter
     private final String fullyQualifiedTableName;
 
+    @Getter
+    private final MetadataOptions metadataOptions;
+
     /**
      * Returns a Table instance backed by a CorfuTable.
      *
@@ -53,15 +55,24 @@ public class Table<K extends Message, V extends Message> {
     @Nonnull
     public Table(@Nonnull final String namespace,
                  @Nonnull final String fullyQualifiedTableName,
-                 @Nonnull final Message valueSchema,
+                 @Nonnull final V valueSchema,
+                 @Nullable final M metadataSchema,
                  @Nonnull final CorfuRuntime corfuRuntime,
                  @Nonnull final ISerializer serializer) {
 
         this.corfuRuntime = corfuRuntime;
         this.namespace = namespace;
         this.fullyQualifiedTableName = fullyQualifiedTableName;
+        if (metadataSchema != null) {
+            this.metadataOptions = MetadataOptions.builder()
+                    .metadataEnabled(true)
+                    .defaultMetadataInstance(metadataSchema)
+                    .build();
+        } else {
+            this.metadataOptions = MetadataOptions.<M>builder().build();
+        }
         this.corfuTable = corfuRuntime.getObjectsView().build()
-                .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V>>>() {
+                .setTypeToken(new TypeToken<CorfuTable<K, CorfuRecord<V, M>>>() {
                 })
                 .setStreamName(this.fullyQualifiedTableName)
                 .setSerializer(serializer)
@@ -99,9 +110,9 @@ public class Table<K extends Message, V extends Message> {
      * @return Previously stored record if any.
      */
     @Nullable
-    public CorfuRecord<V> create(@Nonnull final K key,
-                                 @Nullable final V value,
-                                 @Nullable final RecordMetadata metadata) {
+    public CorfuRecord<V, M> create(@Nonnull final K key,
+                                    @Nullable final V value,
+                                    @Nullable final M metadata) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();
@@ -120,7 +131,7 @@ public class Table<K extends Message, V extends Message> {
      * @return Corfu Record for key.
      */
     @Nullable
-    public CorfuRecord<V> get(@Nonnull final K key) {
+    public CorfuRecord<V, M> get(@Nonnull final K key) {
         return corfuTable.get(key);
     }
 
@@ -133,9 +144,9 @@ public class Table<K extends Message, V extends Message> {
      * @return Previously stored value for the provided key.
      */
     @Nullable
-    public CorfuRecord<V> update(@Nonnull final K key,
-                                 @Nonnull final V value,
-                                 @Nullable final RecordMetadata metadata) {
+    public CorfuRecord<V, M> update(@Nonnull final K key,
+                                    @Nonnull final V value,
+                                    @Nullable final M metadata) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();
@@ -154,7 +165,7 @@ public class Table<K extends Message, V extends Message> {
      * @return Previously stored Corfu Record.
      */
     @Nullable
-    public CorfuRecord<V> delete(@Nonnull final K key) {
+    public CorfuRecord<V, M> delete(@Nonnull final K key) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();

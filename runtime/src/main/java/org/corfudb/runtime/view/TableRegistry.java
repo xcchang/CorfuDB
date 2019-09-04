@@ -9,11 +9,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.corfudb.runtime.CorfuRuntime;
-import org.corfudb.runtime.CorfuStoreMetadata.RecordMetadata;
 import org.corfudb.runtime.CorfuStoreMetadata.TableDescriptors;
 import org.corfudb.runtime.CorfuStoreMetadata.TableName;
 import org.corfudb.runtime.collections.CorfuRecord;
@@ -24,6 +24,9 @@ import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.util.serializer.ISerializer;
 import org.corfudb.util.serializer.ProtobufSerializer;
 import org.corfudb.util.serializer.Serializers;
+
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 /**
  * Created by zlokhandwala on 2019-08-10.
@@ -37,11 +40,11 @@ public class TableRegistry {
 
     private final Map<String, Class<? extends Message>> classMap;
 
-    private final Map<String, Table<Message, Message>> tableMap;
+    private final Map<String, Table<Message, Message, Message>> tableMap;
 
     private final ISerializer protobufSerializer;
 
-    private final CorfuTable<TableName, CorfuRecord<TableDescriptors>> registryTable;
+    private final CorfuTable<TableName, CorfuRecord<TableDescriptors, Message>> registryTable;
 
     public TableRegistry(CorfuRuntime runtime) {
         this.runtime = runtime;
@@ -50,14 +53,15 @@ public class TableRegistry {
         this.protobufSerializer = new ProtobufSerializer((byte) 25, classMap);
         Serializers.registerSerializer(this.protobufSerializer);
         this.registryTable = this.runtime.getObjectsView().build()
-                .setTypeToken(new TypeToken<CorfuTable<TableName, CorfuRecord<TableDescriptors>>>() {
+                .setTypeToken(new TypeToken<CorfuTable<TableName, CorfuRecord<TableDescriptors, Message>>>() {
                 })
                 .setStreamName(getFullyQualifiedTableName(CORFU_SYSTEM_NAMESPACE, REGISTRY_TABLE_NAME))
                 .setSerializer(this.protobufSerializer)
                 .open();
 
         // Register the table schemas to schema table.
-        addTypeToClassMap(TableName.getDefaultInstance(), TableDescriptors.getDefaultInstance());
+        addTypeToClassMap(TableName.getDefaultInstance());
+        addTypeToClassMap(TableDescriptors.getDefaultInstance());
 
         registerTable(CORFU_SYSTEM_NAMESPACE,
                 REGISTRY_TABLE_NAME,
@@ -82,7 +86,7 @@ public class TableRegistry {
         try {
             this.runtime.getObjectsView().TXBuild().type(TransactionType.OPTIMISTIC).build().begin();
             this.registryTable.putIfAbsent(tableNameKey,
-                    new CorfuRecord<>(tableDescriptors, RecordMetadata.newBuilder().build()));
+                    new CorfuRecord<>(tableDescriptors, null));
         } finally {
             this.runtime.getObjectsView().TXEnd();
         }
@@ -96,39 +100,47 @@ public class TableRegistry {
         return namespace + "$" + tableName;
     }
 
-    private <K extends Message, V extends Message> void addTypeToClassMap(K keyMsg, V valueMsg) {
-        String keyTypeUrl = getTypeUrl(keyMsg.getDescriptorForType());
-        String valueTypeUrl = getTypeUrl(valueMsg.getDescriptorForType());
-
+    private <T extends Message> void addTypeToClassMap(T msg) {
+        String typeUrl = getTypeUrl(msg.getDescriptorForType());
         // Register the schemas to schema table.
-        if (!classMap.containsKey(keyTypeUrl)) {
-            classMap.put(keyTypeUrl, keyMsg.getClass());
-        }
-        if (!classMap.containsKey(valueTypeUrl)) {
-            classMap.put(valueTypeUrl, valueMsg.getClass());
+        if (!classMap.containsKey(typeUrl)) {
+            classMap.put(typeUrl, msg.getClass());
         }
     }
 
-    public <K extends Message, V extends Message> Table<K, V> openTable(String namespace,
-                                                                        String tableName,
-                                                                        Class<K> kClass,
-                                                                        Class<V> vClass,
-                                                                        TableOptions tableOptions)
+    public <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> openTable(@Nonnull final String namespace,
+                             @Nonnull final String tableName,
+                             @Nonnull final Class<K> kClass,
+                             @Nonnull final Class<V> vClass,
+                             @Nullable final Class<M> mClass,
+                             @Nonnull final TableOptions tableOptions)
             throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
-        K defaultKeyMessage = (K) kClass.getMethod("getDefaultInstance").invoke(null);
-        V defaultValueMessage = (V) vClass.getMethod("getDefaultInstance").invoke(null);
-
         // Register the schemas to schema table.
-        addTypeToClassMap(defaultKeyMessage, defaultValueMessage);
+        K defaultKeyMessage = (K) kClass.getMethod("getDefaultInstance").invoke(null);
+        addTypeToClassMap(defaultKeyMessage);
+
+        V defaultValueMessage = (V) vClass.getMethod("getDefaultInstance").invoke(null);
+        addTypeToClassMap(defaultValueMessage);
+
+        M defaultMetadataMessage = null;
+        if (mClass != null) {
+            defaultMetadataMessage = (M) mClass.getMethod("getDefaultInstance").invoke(null);
+            addTypeToClassMap(defaultMetadataMessage);
+        }
 
         String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
 
         // Open and return table instance.
-        Table<K, V> table = new Table<>(namespace, fullyQualifiedTableName,
+        Table<K, V, M> table = new Table<>(
+                namespace,
+                fullyQualifiedTableName,
                 defaultValueMessage,
-                this.runtime, this.protobufSerializer);
-        tableMap.put(fullyQualifiedTableName, (Table<Message, Message>) table);
+                defaultMetadataMessage,
+                this.runtime,
+                this.protobufSerializer);
+        tableMap.put(fullyQualifiedTableName, (Table<Message, Message, Message>) table);
         registerTable(namespace,
                 tableName,
                 defaultKeyMessage.getDescriptorForType().toProto(),
@@ -136,13 +148,14 @@ public class TableRegistry {
         return table;
     }
 
-    public <K extends Message, V extends Message> Table<K, V> getTable(String namespace, String tableName) {
+    public <K extends Message, V extends Message, M extends Message>
+    Table<K, V, M> getTable(String namespace, String tableName) {
         String fullyQualifiedTableName = getFullyQualifiedTableName(namespace, tableName);
         if (!tableMap.containsKey(fullyQualifiedTableName)) {
             throw new NoSuchElementException(
                     String.format("No such table found: namespace: %s, tableName: %s", namespace, tableName));
         }
-        return (Table<K, V>) tableMap.get(fullyQualifiedTableName);
+        return (Table<K, V, M>) tableMap.get(fullyQualifiedTableName);
     }
 
     public void deleteTable(String namespace, String tableName) {

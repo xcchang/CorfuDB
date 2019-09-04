@@ -19,6 +19,11 @@ message LogicalSwitch {
     repeated int64 aray = 3 [(org.corfudb.runtime.schema).secondary_key = true];
 }
 
+message ManagedResources {
+    optional string create_user = 1;
+    optional int64 version = 2 [(org.corfudb.runtime.schema).version = true];
+}
+
 message EventInfo {
     optional uint32 id = 1;
     optional string name = 2;
