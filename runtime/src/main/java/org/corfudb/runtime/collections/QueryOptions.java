@@ -12,55 +12,58 @@ import lombok.Getter;
  * Created by zlokhandwala on 2019-08-10.
  */
 @Getter
-public class QueryOptions<R> {
+public class QueryOptions<V extends Message, M extends Message, R> {
 
     public static final QueryOptions DEFAULT_OPTIONS = QueryOptionsBuilder.newBuilder().build();
 
     private final Timestamp timestamp;
     private final boolean distinct;
     private final Comparator<R> comparator;
-    private final Function<Message, R> projection;
+    private final Function<CorfuRecord<V, M>, R> projection;
 
-    private QueryOptions(Timestamp timestamp, boolean distinct, Comparator<R> comparator,
-                         Function<Message, R> projection) {
+    private QueryOptions(Timestamp timestamp,
+                         boolean distinct,
+                         Comparator<R> comparator,
+                         Function<CorfuRecord<V, M>, R> projection) {
         this.timestamp = timestamp;
         this.distinct = distinct;
         this.comparator = comparator;
         this.projection = projection;
     }
 
-    public static class QueryOptionsBuilder<R> {
+    public static class QueryOptionsBuilder<V extends Message, M extends Message, R> {
 
         private Timestamp timestamp = null;
         private boolean distinct = false;
         private Comparator<R> comparator = null;
-        private Function<Message, R> projection = null;
+        private Function<CorfuRecord<V, M>, R> projection = null;
 
-        public static <S> QueryOptionsBuilder<S> newBuilder() {
+        public static <VALUE extends Message, META extends Message, S>
+        QueryOptionsBuilder<VALUE, META, S> newBuilder() {
             return new QueryOptionsBuilder<>();
         }
 
-        public QueryOptionsBuilder<R> setTimestamp(Timestamp timestamp) {
+        public QueryOptionsBuilder<V, M, R> setTimestamp(Timestamp timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
-        public QueryOptionsBuilder<R> setDistinct(boolean distinct) {
+        public QueryOptionsBuilder<V, M, R> setDistinct(boolean distinct) {
             this.distinct = distinct;
             return this;
         }
 
-        public QueryOptionsBuilder<R> setComparator(Comparator<R> comparator) {
+        public QueryOptionsBuilder<V, M, R> setComparator(Comparator<R> comparator) {
             this.comparator = comparator;
             return this;
         }
 
-        public QueryOptionsBuilder<R> setProjection(Function<Message, R> projection) {
+        public QueryOptionsBuilder<V, M, R> setProjection(Function<CorfuRecord<V, M>, R> projection) {
             this.projection = projection;
             return this;
         }
 
-        public QueryOptions<R> build() {
+        public QueryOptions<V, M, R> build() {
             return new QueryOptions<>(
                     timestamp,
                     distinct,

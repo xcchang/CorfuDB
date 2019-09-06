@@ -103,7 +103,7 @@ public class CorfuStoreTest extends AbstractViewTest {
                 .build();
 
         assertThat((Message) q.get(tableName, timestamp, lookupKey)).isNull();
-        assertThat((Message) q.get(tableName, lookupKey)).isEqualTo(expectedValue);
+        assertThat(q.get(tableName, lookupKey).getPayload()).isEqualTo(expectedValue);
 
         // Get by secondary index.
         final long fiftyLong = 50L;
@@ -117,7 +117,7 @@ public class CorfuStoreTest extends AbstractViewTest {
 
         // Execute Query. (Scan and filter)
         final int sixty = 60;
-        assertThat(q.exectuteQuery(tableName, event -> ((EventInfo) event).getEventTime() >= sixty)
+        assertThat(q.exectuteQuery(tableName, record -> ((EventInfo) record.getPayload()).getEventTime() >= sixty)
                 .getResult()
                 .size())
                 .isEqualTo(count - sixty);

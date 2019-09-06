@@ -4,6 +4,7 @@ import com.google.common.reflect.TypeToken;
 import com.google.protobuf.Message;
 
 import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map.Entry;
 import java.util.function.Predicate;
@@ -110,9 +111,9 @@ public class Table<K extends Message, V extends Message, M extends Message> {
      * @return Previously stored record if any.
      */
     @Nullable
-    public CorfuRecord<V, M> create(@Nonnull final K key,
-                                    @Nullable final V value,
-                                    @Nullable final M metadata) {
+    CorfuRecord<V, M> create(@Nonnull final K key,
+                             @Nullable final V value,
+                             @Nullable final M metadata) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();
@@ -144,9 +145,9 @@ public class Table<K extends Message, V extends Message, M extends Message> {
      * @return Previously stored value for the provided key.
      */
     @Nullable
-    public CorfuRecord<V, M> update(@Nonnull final K key,
-                                    @Nonnull final V value,
-                                    @Nullable final M metadata) {
+    CorfuRecord<V, M> update(@Nonnull final K key,
+                             @Nonnull final V value,
+                             @Nullable final M metadata) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();
@@ -165,7 +166,7 @@ public class Table<K extends Message, V extends Message, M extends Message> {
      * @return Previously stored Corfu Record.
      */
     @Nullable
-    public CorfuRecord<V, M> delete(@Nonnull final K key) {
+    CorfuRecord<V, M> delete(@Nonnull final K key) {
         boolean beganNewTxn = false;
         try {
             beganNewTxn = TxBegin();
@@ -193,10 +194,8 @@ public class Table<K extends Message, V extends Message, M extends Message> {
      * @return Collection of filtered values.
      */
     @Nonnull
-    Collection<V> scanAndFilter(@Nonnull final Predicate<V> p) {
-        return corfuTable.scanAndFilter(vCorfuRecord -> p.test(vCorfuRecord.getPayload())).stream()
-                .map(CorfuRecord::getPayload)
-                .collect(Collectors.toList());
+    Collection<CorfuRecord<V, M>> scanAndFilter(@Nonnull final Predicate<CorfuRecord<V, M>> p) {
+        return new ArrayList<>(corfuTable.scanAndFilter(p));
     }
 
     /**
