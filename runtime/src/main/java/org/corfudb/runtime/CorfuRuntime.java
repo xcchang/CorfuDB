@@ -112,7 +112,7 @@ public class CorfuRuntime {
          * (i.e. when connect returns)
          */
         @Default
-        boolean useFastLoader = false;
+        boolean useFastLoader = true;
 
         /**
          * Set the bulk read size.

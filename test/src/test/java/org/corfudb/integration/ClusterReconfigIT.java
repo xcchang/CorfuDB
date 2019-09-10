@@ -1217,4 +1217,63 @@ public class ClusterReconfigIT extends AbstractIT {
         shutdownCorfuServer(server1);
         shutdownCorfuServer(server2);
     }
+
+    public void ttt() throws Exception {
+        // Set up cluster of 3 nodes.
+        final int PORT_0 = 9000;
+        final int PORT_1 = 9001;
+        final int PORT_2 = 9002;
+        Process corfuServer_1 = runPersistentServer(corfuSingleNodeHost, PORT_0, false);
+        Process corfuServer_2 = runPersistentServer(corfuSingleNodeHost, PORT_1, false);
+        Process corfuServer_3 = runPersistentServer(corfuSingleNodeHost, PORT_2, false);
+        final Layout layout = getLayout(3);
+        final int retries = 3;
+        Sleep.SECONDS.sleepUninterruptibly(1);
+        BootstrapUtil.bootstrap(layout, retries, PARAMETERS.TIMEOUT_SHORT);
+        runtime = createDefaultRuntime();
+        UUID streamId = CorfuRuntime.getStreamID("streamA");
+        CorfuTable<String, String> table = runtime.getObjectsView().build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setStreamID(streamId)
+                .open();
+        final int numEntries = 100;
+        for (int i = 0; i < numEntries; i++) {
+            table.put("k" + i, "v" + i);
+        }
+        MultiCheckpointWriter mcw = new MultiCheckpointWriter();
+        mcw.addMap(table);
+        Token token = mcw.appendCheckpoints(runtime, "author");
+        runtime.getAddressSpaceView().prefixTrim(token);
+        final int numEntries2 = 150;
+        for (int i = 100; i < numEntries2; i++) {
+            table.put("k" + i, "v" + i);
+        }
+        mcw = new MultiCheckpointWriter();
+        mcw.addMap(table);
+        token = mcw.appendCheckpoints(runtime, "author");
+        runtime.getAddressSpaceView().prefixTrim(token);
+        // table.put(“k” + 100, “v” + 100);
+        // table.put(“k” + 101, “v” + 101);
+        assertThat(runtime.getLayoutView().getLayout().getPrimarySequencer()).isEqualTo("localhost:9000");
+        shutdownCorfuServer(corfuServer_1);
+        Thread.sleep(3000);
+        shutdownCorfuServer(corfuServer_2);
+        corfuServer_2 = runPersistentServer(corfuSingleNodeHost, PORT_1, false);
+        shutdownCorfuServer(corfuServer_3);
+        corfuServer_3 = runPersistentServer(corfuSingleNodeHost, PORT_2, false);
+        waitForLayoutChange(l -> l.getUnresponsiveServers().contains("localhost:9000"), runtime);
+        System.out.println(runtime.getLayoutView().getLayout());
+        Thread.sleep(25000);
+        runtime.invalidateLayout();
+        System.out.println(runtime.getLayoutView().getLayout());
+        CorfuRuntime rt2 = createRuntime("localhost:9001");
+        CorfuTable<String, String> table2 = rt2.getObjectsView().build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setStreamID(streamId)
+                .open();
+        assertThat(table2.size()).isEqualTo(150);
+        for (int i = 0; i < numEntries; i++) {
+            assertThat(table2.get("k" + i)).isEqualTo("v" + i);
+        }
+    }
 }
