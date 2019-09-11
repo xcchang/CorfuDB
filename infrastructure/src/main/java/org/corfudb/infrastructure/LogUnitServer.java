@@ -224,18 +224,19 @@ public class LogUnitServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.TRANSFER_RANGE)
     private void handleTransferRange(CorfuPayloadMsg <TransferRange> msg, ChannelHandlerContext ctx, IServerRouter r){
         log.info("handleTransferRange: received {}", msg);
-        List<Long> range = msg.getPayload().getAddresses();
+        Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMap = msg.getPayload().getAddressMetaDataMap();
         getStreamLogFiles().setTransferState(StreamLogFiles.TransferState.TRANSFERRING);
         r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+
+        List<Long> addresses = new ArrayList<>(addressMetaDataMap.keySet());
         Set<Long> knownAddresses = streamLog
-                .getKnownAddressesInRange(range.get(0), range.get(range.size() - 1));
+                .getKnownAddressesInRange(addresses.get(0), addresses.get(addresses.size() - 1));
 
         long time = System.currentTimeMillis();
 
-        log.info("Got known addresses");
         List<Long> addressesForProcessing = new ArrayList<>();
 
-        for(long address: range){
+        for(long address: addresses){
             if(!knownAddresses.contains(address)){
                 addressesForProcessing.add(address);
             }
@@ -243,31 +244,9 @@ public class LogUnitServer extends AbstractServer {
 
         log.info("Get known addresses took: {}", System.currentTimeMillis() - time);
         String donor = msg.getPayload().getEndpoint();
-        // runtime.get().invalidateLayout();
-
-        log.info("Requesting metadata from donor");
-        time = System.currentTimeMillis();
-        AddressMetaDataRangeMsg amdrm = CFUtils.getUninterruptibly(runtime.get()
-                .getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(donor)
-                .requestAddressMetaData(addressesForProcessing));
-
-        log.info("Requesting metadata from donor took {}", System.currentTimeMillis() - time);
-
-
-        log.info("Setting remote metadata to local");
-        time = System.currentTimeMillis();
-
-        getStreamLogFiles().setRemoteLogMetadata(amdrm.getAddressMetaDataMap());
-
-        log.info("Set remote metadata took: {}", System.currentTimeMillis() - time);
-
-        time = System.currentTimeMillis();
-
 
         CompletableFuture<Result<StreamLogFiles.ReceivedAddressesResult, RuntimeException>> workFlow = getStreamLogFiles().bindAndGetSocket(9999)
-                .thenApply(socket -> receiveAddresses(addressesForProcessing, socket, amdrm.getAddressMetaDataMap()));
+                .thenApply(socket -> receiveAddresses(addressesForProcessing, socket, addressMetaDataMap));
 
         Sleep.sleepUninterruptibly(Duration.ofMillis(100));
         log.info("Start transfer");

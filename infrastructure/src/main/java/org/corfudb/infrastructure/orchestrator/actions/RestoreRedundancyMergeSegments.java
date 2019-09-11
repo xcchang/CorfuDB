@@ -2,9 +2,19 @@ package org.corfudb.infrastructure.orchestrator.actions;
 
 import com.google.common.collect.Sets;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import javax.annotation.Nonnull;
+import javax.swing.text.Segment;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -25,11 +35,13 @@ public class RestoreRedundancyMergeSegments extends Action {
 
     public enum Mode{
         PUSH_STATE_TRANSFER,
-        PUSH_ZERO_COPY,
         PULL_ZERO_COPY
     }
 
     private final Mode mode;
+
+    private final String endpoint;
+
     /**
      * Returns set of nodes which are present in the next index but not in the specified segment. These
      * nodes have reduced redundancy and state needs to be transferred only to these before these segments can be
@@ -48,12 +60,66 @@ public class RestoreRedundancyMergeSegments extends Action {
                 layout.getSegments().get(layoutSegmentIndex).getAllLogServers());
     }
 
-    public RestoreRedundancyMergeSegments(Mode mode){
-        this.mode = mode;
+    // For this segment should return a list of stripe indices where endpoint is not present
+    private List<Integer> getNonRedundantStripeIndices(Layout.LayoutSegment segment, String endpoint, Set<Integer> stripesForEndpoint){
+        List<Integer> list = new ArrayList<>();
+
+
+        for (int value : stripesForEndpoint) {
+            if (!segment.getStripes().get(value).getLogServers().contains(endpoint)) {
+                list.add(value);
+            }
+        }
+        Collections.sort(list);
+        return list;
     }
 
-    public RestoreRedundancyMergeSegments(){
+    private boolean nodeRestoredForAllStripes(Layout layout, Set<Integer> stripesForEndpoint, String endpoint) {
+
+        // go over all segments of the layout
+        // if segment is not present in map -> return false
+        // if segment present in the map, find indices of all stripes where endpoint is present
+        // the sets should be equal
+        for (Layout.LayoutSegment segment : layout.getSegments()) {
+
+            Set<Integer> stripesPresentForCurrentSegment = new HashSet<>();
+
+            for (int i = 0; i < segment.getStripes().size(); i++) {
+                if (segment.getStripes().get(i).getLogServers().contains(endpoint)) {
+                    stripesPresentForCurrentSegment.add(i);
+                }
+            }
+
+            if (!stripesPresentForCurrentSegment.equals(stripesForEndpoint)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Indices of stripes that should be restored redundantly for this endpoint.
+    private Set<Integer> getStripeIndices(Layout layout, String endpoint){
+        int segmentSize = layout.getSegments().size();
+        Layout.LayoutSegment lastSegment = layout.getSegments().get(segmentSize - 1);
+        Set<Integer> set = new HashSet<>();
+        for(int i = 0; i < lastSegment.getStripes().size(); i++){
+            if(lastSegment.getStripes().get(i).getLogServers().contains(endpoint)){
+                set.add(i);
+            }
+        }
+        return set;
+    }
+
+
+    public RestoreRedundancyMergeSegments(String endpoint)
+    {
         this.mode = Mode.PUSH_STATE_TRANSFER;
+        this.endpoint = endpoint;
+    }
+
+    public RestoreRedundancyMergeSegments(Mode mode, String endpoint){
+        this.mode = mode;
+        this.endpoint = endpoint;
     }
 
     @Nonnull
@@ -73,30 +139,23 @@ public class RestoreRedundancyMergeSegments extends Action {
         // merged to this segment. This is done for all the segments.
         final int layoutSegmentToMergeTo = 0;
 
-        // Catchup all servers across all segments.
-        while (layout.getSegments().size() > 1) {
+        Set<Integer> redundantStripeIndices = getStripeIndices(layout, endpoint);
 
-            Set<String> lowRedundancyServers = getNodesWithReducedRedundancy(layout, layoutSegmentToMergeTo);
+        // Catchup all servers across all segments.
+        while (!nodeRestoredForAllStripes(layout, redundantStripeIndices, endpoint)) {
 
             // Currently the state is transferred for the complete segment.
             // TODO: Add stripe specific transfer granularity for optimization.
             // Transfer the replicated segment to the difference set calculated above.
             long transferStart = System.currentTimeMillis();
-            for (String lowRedundancyServer : lowRedundancyServers) {
-                switch(mode){
-                    case PUSH_ZERO_COPY:
-                        ZeroCopyTransfer.transferPush(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
-                        break;
-                    case PULL_ZERO_COPY:
-                        ZeroCopyTransfer.transferPull(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
-                        break;
-                    default:
-                        StateTransfer.transfer(layout, lowRedundancyServer, runtime, layout.getFirstSegment());
-
-                }
+            switch(mode){
+                case PULL_ZERO_COPY:
+                    ZeroCopyTransfer.transferPull(layout, endpoint, runtime, layout.getFirstSegment());
+                    break;
+                default:
+                    StateTransfer.transfer(layout, endpoint, runtime, layout.getFirstSegment());
 
             }
-
             long transferEnd = System.currentTimeMillis() - transferStart;
             log.info("State transfer took: {}", transferEnd);
 

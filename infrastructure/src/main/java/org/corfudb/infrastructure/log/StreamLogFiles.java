@@ -1282,12 +1282,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             Function<Long, LogRecord> writeAddress = (Long adr) -> {
                 try {
                     FileChannel fileChannel = handle.getWriteChannel();
-                    long prev = fileChannel.position();
                     int written = (int) fileChannel.transferFrom(socketChannel,
-                            prev, addressMetaDataMsgMap.get(adr).length + METADATA_SIZE);
-                    fileChannel.position(prev + addressMetaDataMsgMap.get(adr).length + METADATA_SIZE);
+                            addressMetaDataMsgMap.get(adr).offset - METADATA_SIZE, addressMetaDataMsgMap.get(adr).length + METADATA_SIZE);
                     log.trace("Pos: {}, size: {}", fileChannel.position(), written);
-                    return new LogRecord(prev + METADATA_SIZE, written);
+                    return new LogRecord(addressMetaDataMsgMap.get(adr).offset, written);
                 } catch (IOException ioe) {
                     log.error("Encountered error wile transferring from a socket.");
                     throw new IllegalStateException(ioe);
@@ -1416,7 +1414,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             log.info("Attempting to open connection to: {}:{}", hostAddress, port);
             try (SocketChannel client = SocketChannel.open(socketAddress)) {
                 log.info("Start transferring");
-                this.transferState = TransferState.TRANSFERRING;
                 for (long address : addresses) {
                     if (isTrimmed(address)) {
                         log.info("Address {} is trimmed.", address);
@@ -1445,9 +1442,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 log.error("Opening socket error: {}", ioe.getMessage());
                 return new Result<>(new IllegalStateException(ioe));
             }
-            finally {
-                this.transferState = TransferState.IDLE;
-            }
             log.info("Finished transfer: {} written", readBytesTotal);
             return Result.ok(readBytesTotal);
         }
@@ -1462,10 +1456,6 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         } else {
             ToLongFunction<AddressMetaData> readMetadata = (AddressMetaData meta) -> {
                 try {
-
-                    ByteBuffer entryBuf = ByteBuffer.allocate(metaData.length);
-                    readChannel.read(entryBuf, metaData.offset);
-                    LogData data = getLogData(LogEntry.parseFrom(entryBuf.array()));
                     return readChannel.transferTo(meta.offset - METADATA_SIZE, meta.length + METADATA_SIZE, client);
                 } catch (IOException ioe) {
                     throw new IllegalStateException(ioe);

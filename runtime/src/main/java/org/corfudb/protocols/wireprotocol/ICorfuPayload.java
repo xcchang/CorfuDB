@@ -208,6 +208,7 @@ public interface ICorfuPayload<T> {
         return builder.build();
     }
 
+
     /**
      * A really simple flat set implementation. The first entry is the size of the set as an int,
      * and the next entries are each value.

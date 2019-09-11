@@ -16,6 +16,7 @@ import org.corfudb.util.Sleep;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -31,21 +32,22 @@ public class ZeroCopyTransfer {
 
     }
 
-    private static Optional<String> getDonorForAddresses(CorfuRuntime runtime, List<Long> addresses){
+    private static HashMap<String, List<Long>> getDonorsForAddresses(CorfuRuntime runtime, List<Long> addresses){
 
+        // Log unit server to the addresses it's responsible for.
+        HashMap<String, List<Long>> donorToAddresses = new HashMap<>();
 
-        List<Set<String>> collect = addresses.stream().map(address -> {
+        for(long address: addresses){
             List<String> logServers = runtime.getLayoutView().getRuntimeLayout()
                     .getLayout()
                     .getStripe(address)
                     .getLogServers();
-            return ImmutableSet.copyOf(logServers);
-        }).collect(Collectors.toList());
+            String logServer = logServers.get(logServers.size() - 1);
+            List<Long> addressList = donorToAddresses.computeIfAbsent(logServer, s -> new ArrayList<>());
+            addressList.add(address);
+        }
 
-        return collect
-                .stream()
-                .reduce(Sets::intersection)
-                .map(set -> set.iterator().next());
+        return donorToAddresses;
 
     }
 
@@ -66,28 +68,42 @@ public class ZeroCopyTransfer {
         List<Long> allChunks = LongStream.range(segmentStart, segmentEnd + 1).boxed().collect(Collectors.toList());
         log.info("Aggregating chunks");
 
-        Optional<String> maybeDonor = getDonorForAddresses(runtime, allChunks);
+        Map<String, List<Long>> map = getDonorsForAddresses(runtime, allChunks);
 
-        if(!maybeDonor.isPresent()){
-            log.error("No donor found, return");
-            return;
+        for(Map.Entry<String, List<Long>> entry: map.entrySet()){
+            String donor = entry.getKey();
+            log.info("Processing transfer from {} to {}", donor, endpoint);
+            List<Long> addressesToTransfer = entry.getValue();
+
+            // retry logic?
+            Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMap = CFUtils.getUninterruptibly(runtime
+                    .getLayoutView()
+                    .getRuntimeLayout()
+                    .getLogUnitClient(donor)
+                    .requestAddressMetaData(addressesToTransfer)).getAddressMetaDataMap();
+
+            log.info("Got metadata from donor {}", donor);
+
+            // initiate transfer
+            runtime.getLayoutView()
+                    .getRuntimeLayout()
+                    .getLogUnitClient(endpoint)
+                    .transferRange(addressMetaDataMap, endpoint, donor);
+
+            log.info("Polling for transfer status");
+            checkTransferStatus(runtime, endpoint);
         }
-        else{
-            log.info("Donor is selected: {}", maybeDonor.get());
-        }
 
-        String donor = maybeDonor.get();
+    }
 
-        runtime.getLayoutView().getRuntimeLayout().getLogUnitClient(endpoint).transferRange(allChunks, endpoint, donor);
-
-        log.info("Wait while done");
+    private static void checkTransferStatus(CorfuRuntime runtime, String currentEndpoint){
         boolean stillTransferring = false;
         for(int i = 0; i < 100; i ++){
             Sleep.sleepUninterruptibly(Duration.ofMillis(1000));
             TransferQueryResponse stillTransferringResponse = CFUtils
                     .getUninterruptibly(runtime.getLayoutView()
                             .getRuntimeLayout()
-                            .getLogUnitClient(donor)
+                            .getLogUnitClient(currentEndpoint)
                             .isStillTransferring());
             stillTransferring = stillTransferringResponse.isActive();
             if(!stillTransferring){
@@ -96,114 +112,8 @@ public class ZeroCopyTransfer {
             }
         }
         if(stillTransferring){
-            log.error("Polls exeded");
-            throw new RuntimeException("Polls exeded");
+            log.error("Polls exceeded");
+            throw new RuntimeException("Polls exceeded");
         }
-
-
-    }
-
-    public static void transferPush(Layout layout,
-                                String endpoint,
-                                CorfuRuntime runtime,
-                                Layout.LayoutSegment segment) {
-
-        int chunkSize = runtime.getParameters().getBulkReadSize();
-        long trimMark = StateTransfer.setTrimOnNewLogUnit(layout, runtime, endpoint);
-        if (trimMark > segment.getEnd()) {
-            log.info("ZeroCopyStateTransfer: Nothing to transfer, trimMark {}"
-                            + "greater than end of segment {}",
-                    trimMark, segment.getEnd());
-            return;
-        }
-
-        final long segmentStart = Math.max(trimMark, segment.getStart());
-        final long segmentEnd = segment.getEnd() - 1;
-        log.info("ZeroCopyStateTransfer: Total address range to transfer: [{}-{}] to node {}",
-                segmentStart, segmentEnd, endpoint);
-
-        List<Long> allChunks = new ArrayList<>();
-        log.info("Aggregating chunks");
-
-        long time = System.currentTimeMillis();
-
-        for (long chunkStart = segmentStart; chunkStart <= segmentEnd
-                ; chunkStart += chunkSize) {
-
-            long chunkEnd = Math.min(segmentEnd, chunkStart + chunkSize - 1);
-
-            // Fetch all missing entries in this range [chunkStart - chunkEnd].
-            List<Long> chunk = StateTransfer.getMissingEntriesChunk(layout, runtime, endpoint,
-                    chunkStart, chunkEnd);
-
-            // Read and write in chunks of chunkSize.
-            allChunks.addAll(chunk);
-        }
-
-        log.info("Aggregating chunks took: {}", System.currentTimeMillis() - time);
-
-        Optional<String> maybeDonor = getDonorForAddresses(runtime, allChunks);
-
-        if(!maybeDonor.isPresent()){
-            log.error("No donor found, return");
-            return;
-        }
-        else{
-            log.info("Donor is selected: {}", maybeDonor.get());
-        }
-
-        String donor = maybeDonor.get();
-
-        log.info("Getting mappings from local server");
-        time = System.currentTimeMillis();
-        AddressMetaDataRangeMsg rangeMsg =
-                CFUtils.getUninterruptibly(runtime.getLayoutView()
-                        .getRuntimeLayout()
-                        .getLogUnitClient(donor)
-                        .requestAddressMetaData(allChunks));
-        log.info("Getting metadata from server took: {}", System.currentTimeMillis() - time);
-
-
-        log.info("Setting mappings to remote server");
-
-        CFUtils.getUninterruptibly(runtime.getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(endpoint)
-                .setRemoteMetaData(rangeMsg.getAddressMetaDataMap()));
-
-        log.info("Initiating receive");
-        CFUtils.getUninterruptibly(runtime.getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(endpoint)
-                .initReceive());
-
-        log.info("Initiating transfer");
-        CFUtils.getUninterruptibly(runtime.getLayoutView()
-                .getRuntimeLayout()
-                .getLogUnitClient(donor)
-                .initTransfer("localhost", 9999, allChunks));
-
-        log.info("Wait while done");
-        boolean stillTransferring = false;
-        for(int i = 0; i < 10; i ++){
-            Sleep.sleepUninterruptibly(Duration.ofMillis(1000));
-            TransferQueryResponse stillTransferringResponse = CFUtils
-                    .getUninterruptibly(runtime.getLayoutView()
-                            .getRuntimeLayout()
-                            .getLogUnitClient(donor)
-                            .isStillTransferring());
-            stillTransferring = stillTransferringResponse.isActive();
-            if(!stillTransferring){
-                log.info("Done with transfer");
-                return;
-            }
-        }
-
-
-        if(stillTransferring){
-            log.error("Polls exeded");
-            throw new RuntimeException("Polls exeded");
-        }
-
     }
 }

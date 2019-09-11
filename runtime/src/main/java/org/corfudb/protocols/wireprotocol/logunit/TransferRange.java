@@ -7,23 +7,24 @@ import lombok.Getter;
 import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 
 import java.util.List;
+import java.util.Map;
 
 @AllArgsConstructor
 @Getter
 @Builder
 public class TransferRange implements ICorfuPayload<TransferRange> {
-    private final List<Long> addresses;
+    private final Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMetaDataMap;
     private final String currentEndpoint;
     private final String endpoint;
 
     public TransferRange(ByteBuf buf){
-        addresses = ICorfuPayload.listFromBuffer(buf, Long.class);
+        addressMetaDataMap = ICorfuPayload.mapFromBuffer(buf, Long.class, AddressMetaDataRangeMsg.AddressMetaDataMsg.class);
         currentEndpoint = ICorfuPayload.fromBuffer(buf, String.class);
         endpoint = ICorfuPayload.fromBuffer(buf, String.class);
     }
     @Override
     public void doSerialize(ByteBuf buf) {
-        ICorfuPayload.serialize(buf, addresses);
+        ICorfuPayload.serialize(buf, addressMetaDataMap);
         ICorfuPayload.serialize(buf, currentEndpoint);
         ICorfuPayload.serialize(buf, endpoint);
     }

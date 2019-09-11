@@ -167,8 +167,8 @@ public class LogUnitClient extends AbstractClient {
         return sendMessageWithFuture(CorfuMsgType.PIGGY_BACK.payloadMsg(endpoint));
     }
 
-    public CompletableFuture<Void> transferRange(List<Long> addresses, String currentEndpoint, String targetEndpoint){
-        return sendMessageWithFuture(CorfuMsgType.TRANSFER_RANGE.payloadMsg(new TransferRange(addresses, currentEndpoint, targetEndpoint)));
+    public CompletableFuture<Void> transferRange(Map<Long, AddressMetaDataRangeMsg.AddressMetaDataMsg> addressMappings, String currentEndpoint, String targetEndpoint){
+        return sendMessageWithFuture(CorfuMsgType.TRANSFER_RANGE.payloadMsg(new TransferRange(addressMappings, currentEndpoint, targetEndpoint)));
     }
 
 

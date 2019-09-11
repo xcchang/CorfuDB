@@ -48,7 +48,7 @@ public class RestoreRedundancyMergeSegmentsWorkflow implements IWorkflow {
     public RestoreRedundancyMergeSegmentsWorkflow(RestoreRedundancyMergeSegmentsRequest request, RestoreRedundancyMergeSegments.Mode mode) {
         this.id = UUID.randomUUID();
         this.request = request;
-        this.actions = ImmutableList.of(new RestoreRedundancyMergeSegments(mode));
+        this.actions = ImmutableList.of(new RestoreRedundancyMergeSegments(mode, request.getEndpoint()));
     }
 
     @Override

@@ -59,9 +59,22 @@ public abstract class WorkflowRequest {
      * orchestrator
      */
     protected ManagementClient getOrchestrator(@NonNull Layout layout) {
-        List<String> availableLayoutServers = layout.getLayoutServers().stream()
-                .filter(s -> !s.equals(nodeForWorkflow))
-                .collect(Collectors.toList());
+        List<String> availableLayoutServers = null;
+
+        if(this instanceof AddNode ||
+                this instanceof HealNode ||
+        this instanceof RestoreRedundancyMergeSegments){
+            log.info("The orchestrator will try to run on the node for workflow.");
+
+            availableLayoutServers = layout.getLayoutServers().stream()
+                    .filter(s -> s.equals(nodeForWorkflow))
+                    .collect(Collectors.toList());
+        }
+        else{
+            availableLayoutServers = layout.getLayoutServers().stream()
+                    .filter(s -> !s.equals(nodeForWorkflow))
+                    .collect(Collectors.toList());
+        }
 
         if (availableLayoutServers.isEmpty()) {
             throw new WorkflowException("getOrchestrator: no available orchestrators " + layout);
