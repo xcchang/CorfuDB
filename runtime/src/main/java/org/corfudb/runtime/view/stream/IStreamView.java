@@ -239,15 +239,10 @@ public interface IStreamView extends
     long getCompactionMark();
 
     default ILogData streamReadWithCheck(Supplier<ILogData> dataFetcher, long snapshot) {
-        ILogData data;
-        try {
-            data = dataFetcher.get();
-        } catch(TrimmedException ex) {
-            if (getCompactionMark() > snapshot) {
-                throw ex;
-            } else {
-                return LogData.COMPACTED;
-            }
+        ILogData data = dataFetcher.get();
+
+        if (getCompactionMark() > snapshot) {
+            throw new TrimmedException();
         }
 
         return data;

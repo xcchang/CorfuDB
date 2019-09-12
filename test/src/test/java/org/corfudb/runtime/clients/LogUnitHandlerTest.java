@@ -432,7 +432,7 @@ public class LogUnitHandlerTest extends AbstractClientTest {
         byte[] testString = "hello world".getBytes();
 
         client.write(0, null, testString, Collections.emptyMap()).get();
-        client.write(StreamLogParams.RECORDS_PER_SEGMENT + 1, null,
+        client.write(serverContext.getStreamLogParams().recordsPerSegment + 1, null,
                 testString, Collections.emptyMap()).get();
 
         // Corrupt the written log entry

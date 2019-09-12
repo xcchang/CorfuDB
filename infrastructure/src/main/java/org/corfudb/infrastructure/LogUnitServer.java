@@ -424,6 +424,13 @@ public class LogUnitServer extends AbstractServer {
         }
     }
 
+    @VisibleForTesting
+    @ServerHandler(type = CorfuMsgType.RUN_COMPACTION)
+    private void handleCompactionRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.debug("handleCompactionRequest: received a compaction request {}", msg);
+        runCompaction();
+        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+    }
 
     /**
      * Shutdown the server.

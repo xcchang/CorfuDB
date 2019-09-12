@@ -48,6 +48,7 @@ public class ServerContextBuilder {
     String retention = "1000";
 
     boolean noCompaction = true;
+    String recordsPerSegment = "20000";
     String compactionPolicyType = "SNAPSHOT_LENGTH_FIRST";
     // Following two parameters can be arbitrary as compaction is only
     // manually triggered in testing framework.
@@ -83,6 +84,7 @@ public class ServerContextBuilder {
                 .put("--address", address)
                 .put("--cache-heap-ratio", cacheSizeHeapRatio)
                 .put("--no-compaction", noCompaction)
+                .put("--records-per-segment", recordsPerSegment)
                 .put("--compaction-policy", compactionPolicyType)
                 .put("--compaction-initial-delay", compactionInitialDelay)
                 .put("--compaction-period", compactionPeriod)

@@ -695,6 +695,7 @@ public class ServerContext implements AutoCloseable {
     public StreamLogParams getStreamLogParams() {
         return StreamLogParams.builder()
                 .logPath(getServerConfig(String.class, "--log-path"))
+                .recordsPerSegment(Integer.parseInt(getServerConfig(String.class, "--records-per-segment")))
                 .verifyChecksum(!getServerConfig(Boolean.class, "--no-verify"))
                 .logSizeQuotaPercentage(Double.parseDouble(getServerConfig(String.class, "--log-size-quota-percentage")))
                 .compactionPolicyType(getServerConfig(String.class, "--compaction-policy"))

@@ -59,7 +59,7 @@ public class SegmentManager {
     private final Map<Long, CompactionMetadata> segmentCompactionMetadata = new ConcurrentHashMap<>();
 
     long getSegmentOrdinal(long globalAddress) {
-        return globalAddress / StreamLogParams.RECORDS_PER_SEGMENT;
+        return globalAddress / logParams.recordsPerSegment;
     }
 
     private <T extends AbstractLogSegment> String getSegmentFilePath(

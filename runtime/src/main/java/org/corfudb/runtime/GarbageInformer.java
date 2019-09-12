@@ -19,15 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 @Slf4j
 public class GarbageInformer {
@@ -81,7 +73,7 @@ public class GarbageInformer {
 
         // periodically to drain garbageReceivingQueue and send garbage decisions to LogUnit servers.
         // Randomized initial delay prevents all runtime send garbage decision simultaneously.
-        gcScheduler.scheduleWithFixedDelay(this::gc,
+        gcScheduler.scheduleWithFixedDelay(this::submitGCTask,
                 GC_PERIOD.getSeconds() + rand.nextInt((int) GC_PERIOD.getSeconds()),
                 GC_PERIOD.getSeconds(),
                 TimeUnit.SECONDS);
@@ -115,7 +107,7 @@ public class GarbageInformer {
                 for (SMRGarbageEntry garbageEntry : garbageEntries) {
                     boolean success = garbageReceivingQueue.offer(garbageEntry);
                     if (!success) {
-                        drainExecutor.submit(this::gc);
+                        submitGCTask();
                         garbageReceivingQueue.put(garbageEntry);
                     }
                 }
@@ -148,10 +140,17 @@ public class GarbageInformer {
         return new ArrayList<>(garbage.values());
     }
 
+    public void submitGCTask() {
+        if (!hasPendingTask(drainExecutor)) {
+            drainExecutor.execute(this::gcUnsafe);
+        }
+    }
+
     /**
      * Drains garbage decisions from receiving queue and sends them to LogUnit servers.
      */
-    public synchronized void gc() {
+    @VisibleForTesting
+    public void gcUnsafe() {
         // drains sending queue first when it reaches the capacity limit.
         if (garbageSendingDeque.size() >= SENDING_QUEUE_CAPACITY) {
             log.debug("GarbageInformer: Drains sending queue");
@@ -165,7 +164,7 @@ public class GarbageInformer {
         }
 
         // TODO(xin): fill lastMarker in future commits.
-        Map<UUID, Long> lastMarkers = new HashMap<>();
+        // Map<UUID, Long> lastMarkers = new HashMap<>();
 
         Map<Long, SMRGarbageEntry> addressToGarbage = new HashMap<>();
 
@@ -187,7 +186,7 @@ public class GarbageInformer {
             }
         }
 
-        GarbageBatch garbageBatch = new GarbageBatch(addressToGarbage.values(), lastMarkers);
+        GarbageBatch garbageBatch = new GarbageBatch(addressToGarbage.values());
         garbageSendingDeque.offer(garbageBatch);
         sendGarbage();
     }
@@ -237,6 +236,10 @@ public class GarbageInformer {
         }, true);
     }
 
+    private boolean hasPendingTask(ExecutorService excutor) {
+        return ((ThreadPoolExecutor) excutor).getQueue().size() > 0;
+    }
+
     /**
      * Contains a batch of garbageEntries as well as the last marker address.
      * The batch of garbageEntries and the marker address are sent to LogUnit
@@ -246,7 +249,6 @@ public class GarbageInformer {
     @Data
     public static class GarbageBatch {
         final Collection<SMRGarbageEntry> garbageEntries;
-        final Map<UUID, Long> lastMarkers;
     }
 }
 

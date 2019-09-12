@@ -64,7 +64,7 @@ public class StreamLogCompactorTest extends AbstractCorfuTest {
         StreamLogFiles log = new StreamLogFiles(params, sc.getStreamLogDataStore());
 
         // Write to at least two segments, second segment is protected (not compacted).
-        final int numIter = StreamLogParams.RECORDS_PER_SEGMENT + 1;
+        final int numIter = params.recordsPerSegment + 1;
         final UUID streamAId = CorfuRuntime.getStreamID("s1");
         final UUID streamBId = CorfuRuntime.getStreamID("s2");
 
@@ -117,7 +117,7 @@ public class StreamLogCompactorTest extends AbstractCorfuTest {
 
         // Verify reading a compacted address can return a compacted LogData.
         for (long i = 0; i < numIter; i++) {
-            if (i != skipAddress && i < StreamLogParams.RECORDS_PER_SEGMENT) {
+            if (i != skipAddress && i < params.recordsPerSegment) {
                 assertThat(log.read(i).getType()).isEqualTo(DataType.COMPACTED);
             } else {
                 assertThat(log.read(i).getType()).isEqualTo(DataType.DATA);

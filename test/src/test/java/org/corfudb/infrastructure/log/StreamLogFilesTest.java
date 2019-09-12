@@ -81,7 +81,7 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
 
         // A range write that spans two segments
         final int numSegments = 2;
-        final int numIter = StreamLogParams.RECORDS_PER_SEGMENT * numSegments;
+        final int numIter = params.recordsPerSegment * numSegments;
         List<LogData> writeEntries = new ArrayList<>();
         for (int x = 0; x < numIter; x++) {
             writeEntries.add(getEntry(x));
@@ -103,7 +103,7 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
         List<LogData> nonSequentialRange = new ArrayList<>();
         final int numSegments = 3;
         final int skipGap = 10;
-        final int numEntries = numSegments * StreamLogParams.RECORDS_PER_SEGMENT;
+        final int numEntries = numSegments * sc.getStreamLogParams().recordsPerSegment;
         // Generate two invalid ranges, a large range and a non-sequential range
         for (long address = 0; address < numEntries; address++) {
             largeRange.add(getEntry(address));
@@ -232,7 +232,7 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
         Serializers.CORFU.serialize(streamEntry, b);
         // Write to two segments
         long address0 = 0;
-        long address1 = StreamLogParams.RECORDS_PER_SEGMENT + 1L;
+        long address1 = sc.getStreamLogParams().recordsPerSegment + 1L;
         log.append(address0, new LogData(DataType.DATA, b));
         log.append(address1, new LogData(DataType.DATA, b));
 
@@ -303,9 +303,9 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
         ByteBuf b = Unpooled.buffer();
         byte[] streamEntry = "Payload".getBytes();
         Serializers.CORFU.serialize(streamEntry, b);
-        long seg1 = StreamLogParams.RECORDS_PER_SEGMENT * 0 + 1;
-        long seg2 = StreamLogParams.RECORDS_PER_SEGMENT * 1 + 1;
-        long seg3 = StreamLogParams.RECORDS_PER_SEGMENT * 2 + 1;
+        long seg1 = sc.getStreamLogParams().recordsPerSegment * 0 + 1;
+        long seg2 = sc.getStreamLogParams().recordsPerSegment * 1 + 1;
+        long seg3 = sc.getStreamLogParams().recordsPerSegment * 2 + 1;
 
         log.append(seg1, new LogData(DataType.DATA, b));
         log.append(seg2, new LogData(DataType.DATA, b));
@@ -345,7 +345,7 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
 
         // Write to multiple segments
         final int segments = 3;
-        long lastAddress = segments * StreamLogParams.RECORDS_PER_SEGMENT;
+        long lastAddress = segments * sc.getStreamLogParams().recordsPerSegment;
         for (long x = 0; x <= lastAddress; x++){
             writeToLog(log, x);
             assertThat(log.getLogTail()).isEqualTo(x);
@@ -376,11 +376,11 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
         StreamLogFiles log = new StreamLogFiles(sc.getStreamLogParams(), sc.getStreamLogDataStore());
 
         final long numSegments = 3;
-        for (long x = 0; x < StreamLogParams.RECORDS_PER_SEGMENT * numSegments; x++) {
+        for (long x = 0; x < sc.getStreamLogParams().recordsPerSegment * numSegments; x++) {
             writeToLog(log, x);
         }
 
-        final long globalTailBeforeReset = (StreamLogParams.RECORDS_PER_SEGMENT * numSegments) - 1;
+        final long globalTailBeforeReset = (sc.getStreamLogParams().recordsPerSegment * numSegments) - 1;
         assertThat(log.getLogTail()).isEqualTo(globalTailBeforeReset);
 
         log.reset();

@@ -291,4 +291,8 @@ public class LogUnitClient extends AbstractClient {
     public CompletableFuture<Boolean> resetLogUnit(long epoch) {
         return sendMessageWithFuture(CorfuMsgType.RESET_LOGUNIT.payloadMsg(epoch));
     }
+
+    public CompletableFuture<Void> compact() {
+        return sendMessageWithFuture(CorfuMsgType.RUN_COMPACTION.msg());
+    }
 }

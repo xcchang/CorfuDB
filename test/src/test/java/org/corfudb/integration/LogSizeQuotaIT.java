@@ -102,7 +102,7 @@ public class LogSizeQuotaIT extends AbstractIT {
 
         // bump up the sequencer counter to create multiple empty segments
         ServerContext sc = new ServerContextBuilder().build();
-        final int emptySlots = StreamLogParams.RECORDS_PER_SEGMENT;
+        final int emptySlots = sc.getStreamLogParams().recordsPerSegment;
         for (int x = 0; x < emptySlots; x++) {
             rt.getSequencerView().next();
         }

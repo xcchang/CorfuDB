@@ -28,12 +28,13 @@ public class StreamLogParams {
             .build()
             .getSerializedSize();
 
-    public static final int RECORDS_PER_SEGMENT = 20_000;
-
     // End region
 
     // Region: stream log parameters
     public String logPath;
+
+    @Default
+    public int recordsPerSegment;
 
     @Default
     public boolean verifyChecksum;

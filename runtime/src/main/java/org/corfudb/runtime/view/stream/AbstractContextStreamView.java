@@ -132,7 +132,7 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
         ILogData entry;
         do {
             entry = streamReadWithCheck(() -> getNextEntry(getCurrentContext(), maxGlobal), maxGlobal);
-        } while (entry == LogData.COMPACTED);
+        } while (entry != null && entry.getType() == DataType.COMPACTED);
 
         if (entry != null) {
             // Update the pointer.

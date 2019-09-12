@@ -143,13 +143,6 @@ public class AddressSpaceView extends AbstractView {
     }
 
     /**
-     * Remove all log entries that are less than the trim mark
-     */
-    public void gc(long trimMark) {
-        readCache.asMap().entrySet().removeIf(e -> e.getKey() < trimMark);
-    }
-
-    /**
      * Reset all in-memory caches.
      */
     public void resetCaches() {
@@ -220,7 +213,8 @@ public class AddressSpaceView extends AbstractView {
 
         for (int i = 0; i < numUnits; ++i) {
             try {
-                futures[i].get();
+                CompletableFuture future = futures[i];
+                future.get();
                 log.trace("sparseTrimmed one server[{}]", servers.get(i));
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -762,12 +756,7 @@ public class AddressSpaceView extends AbstractView {
                     + address + " on read");
         }
 
-        if (logData.isCompacted()) {
-            if (throwException) {
-                throw new TrimmedException(String.format("Trimmed address %s", address));
-            }
-            return false;
-        }
+        log.trace("Trimmed address {}", address);
 
         return true;
     }
