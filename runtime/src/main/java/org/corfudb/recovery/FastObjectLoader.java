@@ -469,8 +469,6 @@ public class FastObjectLoader {
                 break;
             case HOLE:
                 break;
-            case TRIMMED:
-                break;
             case EMPTY:
                 log.warn("applyForEachAddress[address={}] is empty");
                 break;
