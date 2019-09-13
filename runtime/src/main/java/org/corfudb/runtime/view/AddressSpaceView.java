@@ -530,7 +530,6 @@ public class AddressSpaceView extends AbstractView {
 
         Map<Long, ILogData> readAddresses = fetchAll(addresses, options);
         return filterCompactedAddresses(readAddresses, options);
-
     }
 
     /**
