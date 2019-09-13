@@ -326,6 +326,7 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
                         + " and we don't have a copy");
             });
         } catch (TrimmedException ex) {
+            // TrimmedException happens if the access version is smaller than compaction mark.
             log.warn("getUpcallResultInner: Encountered a trim exception while accessing version {}",
                     timestamp);
             throw ex;
