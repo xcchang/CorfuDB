@@ -28,6 +28,7 @@ import org.corfudb.protocols.wireprotocol.TailsResponse;
 import org.corfudb.runtime.exceptions.DataCorruptionException;
 import org.corfudb.runtime.exceptions.LogUnitException;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
+import org.corfudb.util.serializer.Serializers;
 import org.roaringbitmap.longlong.LongIterator;
 import org.roaringbitmap.longlong.Roaring64NavigableMap;
 
@@ -835,7 +836,7 @@ public class StreamLogFiles implements StreamLog {
             data = entry.getData();
         } else {
             ByteBuf buf = Unpooled.buffer();
-            ICorfuPayload.serialize(buf, entry);
+            entry.serializePayload(buf);
             data = buf.array();
         }
 
