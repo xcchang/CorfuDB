@@ -528,7 +528,6 @@ public class AddressSpaceView extends AbstractView {
 
         Map<Long, ILogData> readAddresses = fetchAll(addresses, options);
         return filterCompactedAddresses(readAddresses, options);
-
     }
 
     /**
@@ -628,7 +627,7 @@ public class AddressSpaceView extends AbstractView {
                 if (options.isClientCacheable()) {
                     // After fetching a value, we need to insert it in the cache.
                     // Even if trimmed exceptions are thrown, we cache the valid data.
-                    result.put(entry.getKey(), cacheLoadAndGet(readCache, entry.getKey(), entry.getValue()));
+                    cacheLoadAndGet(readCache, entry.getKey(), entry.getValue());
                 }
             }
         }
