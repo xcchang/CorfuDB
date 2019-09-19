@@ -71,15 +71,15 @@ public class ProtobufSerializer implements ISerializer {
             bbis.readFully(data);
             Record record = Record.parseFrom(data);
             Any payload = record.getPayload();
-            Any anyMetadata = record.getMetadata();
-            Message metadata = null;
-            if (anyMetadata.isInitialized()) {
-                metadata = anyMetadata.unpack(classMap.get(anyMetadata.getTypeUrl()));
-            }
 
             if (type.equals(MessageType.KEY)) {
                 return payload.unpack(classMap.get(payload.getTypeUrl()));
             } else {
+                Message metadata = null;
+                if (record.hasMetadata()) {
+                    Any anyMetadata = record.getMetadata();
+                    metadata = anyMetadata.unpack(classMap.get(anyMetadata.getTypeUrl()));
+                }
                 return new CorfuRecord(
                         payload.unpack(classMap.get(payload.getTypeUrl())),
                         metadata);
@@ -104,7 +104,7 @@ public class ProtobufSerializer implements ISerializer {
 
         if (o instanceof CorfuRecord) {
             CorfuRecord corfuRecord = (CorfuRecord) o;
-            Any message = Any.pack(((CorfuRecord) o).getPayload());
+            Any message = Any.pack(corfuRecord.getPayload());
             Record.Builder recordBuilder = Record.newBuilder()
                     .setPayload(message);
             if (corfuRecord.getMetadata() != null) {
