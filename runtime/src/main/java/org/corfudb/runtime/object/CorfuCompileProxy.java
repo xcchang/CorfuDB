@@ -149,10 +149,14 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
 
         // Since the VLO is thread safe we don't need to use a thread safe stream implementation
         // because the VLO will control access to the stream
-        underlyingObject = new VersionLockedObject<T>(this::getNewInstance,
+        underlyingObject = new VersionLockedObject<>(
+                this::getNewInstance,
                 new StreamViewSMRAdapter(rt, rt.getStreamsView().getUnsafe(streamID)),
-                upcallTargetMap, undoRecordTargetMap,
-                undoTargetMap, resetSet);
+                upcallTargetMap,
+                undoRecordTargetMap,
+                undoTargetMap,
+                resetSet
+        );
 
         metrics = CorfuRuntime.getDefaultMetrics();
         mpObj = CorfuComponent.OBJECT.toString();
@@ -198,10 +202,11 @@ public class CorfuCompileProxy<T> implements ICorfuSMRProxyInternal<T> {
             log.debug("Access[{}] conflictObj={} version={}", this, conflictObject, timestamp);
 
             try {
-                return underlyingObject.access(o -> o.getVersionUnsafe() >= timestamp
-                                && !o.isOptimisticallyModifiedUnsafe(),
+                return underlyingObject.access(
+                        o -> o.getVersionUnsafe() >= timestamp && !o.isOptimisticallyModifiedUnsafe(),
                         o -> o.syncObjectUnsafe(timestamp),
-                        o -> accessMethod.access(o));
+                        accessMethod::access
+                );
             } catch (TrimmedException te) {
                 log.warn("accessInner: Encountered a trim exception while accessing version {} on attempt {}",
                         timestamp, x);

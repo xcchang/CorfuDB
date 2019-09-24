@@ -52,15 +52,14 @@ public class StreamViewSMRAdapter implements ISMRStream {
         if (logData.hasCheckpointMetadata()) {
             // This is a CHECKPOINT record.  Extract the SMREntries, if any.
             CheckpointEntry cp = (CheckpointEntry) logData.getPayload(runtime);
-            if (cp.getSmrEntries() != null
-                    && cp.getSmrEntries().getUpdates().size() > 0) {
+            if (cp.getSmrEntries() != null && !cp.getSmrEntries().getUpdates().isEmpty()) {
                 cp.getSmrEntries().getUpdates().forEach(e -> {
                     e.setRuntime(runtime);
                     e.setGlobalAddress(logData.getGlobalAddress());
                 });
                 return cp.getSmrEntries().getUpdates();
             } else {
-                return (List<SMREntry>) Collections.EMPTY_LIST;
+                return Collections.emptyList();
             }
         } else {
             return ((ISMRConsumable) logData.getPayload(runtime)).getSMRUpdates(streamView.getId());

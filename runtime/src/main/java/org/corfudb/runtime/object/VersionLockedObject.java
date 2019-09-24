@@ -134,7 +134,7 @@ public class VersionLockedObject<T> {
      * @param resetSet          Reset set for this object.
      */
     public VersionLockedObject(Supplier<T> newObjectFn,
-                               StreamViewSMRAdapter smrStream,
+                               ISMRStream smrStream,
                                Map<String, ICorfuSMRUpcallTarget<T>> upcallTargets,
                                Map<String, IUndoRecordFunction<T>> undoRecordTargets,
                                Map<String, IUndoFunction<T>> undoTargets,
