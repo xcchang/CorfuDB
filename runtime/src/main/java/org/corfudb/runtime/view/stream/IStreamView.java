@@ -24,8 +24,7 @@ import org.corfudb.runtime.view.Address;
  *
  * <p>Created by mwei on 1/5/17.
  */
-public interface IStreamView extends
-        Iterator<ILogData> {
+public interface IStreamView extends Iterator<ILogData> {
 
     /** Return the ID of the stream this view is for.
      * @return  The ID of the stream.

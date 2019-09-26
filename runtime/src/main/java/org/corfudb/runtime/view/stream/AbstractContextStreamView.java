@@ -154,18 +154,18 @@ public abstract class AbstractContextStreamView<T extends AbstractStreamContext>
     public final synchronized List<ILogData> remainingUpTo(long maxGlobal) {
 
         // Pop the context if it has changed.
-        if (getCurrentContext().getGlobalPointer()
-                >= getCurrentContext().maxGlobalAddress) {
+        if (getCurrentContext().getGlobalPointer() >= getCurrentContext().maxGlobalAddress) {
             final T last = streamContexts.pollFirst();
             log.trace("Completed context {}@{}, removing.",
                     last.id, last.maxGlobalAddress);
         }
 
-        final List<ILogData> entries = getNextEntries(getCurrentContext(), maxGlobal,
-                this::doesEntryUpdateContext);
+        final List<ILogData> entries = getNextEntries(
+                getCurrentContext(), maxGlobal, this::doesEntryUpdateContext
+        );
 
         // Nothing read, nothing to process.
-        if (entries.size() == 0) {
+        if (entries.isEmpty()) {
             // We've resolved up to maxGlobal, so remember it. (if it wasn't max)
             if (maxGlobal != Address.MAX) {
                 // Set Global Pointer and check that it is not pointing to an address in the trimmed space.

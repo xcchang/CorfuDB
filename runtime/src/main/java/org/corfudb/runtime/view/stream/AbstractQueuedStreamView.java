@@ -1,5 +1,7 @@
 package org.corfudb.runtime.view.stream;
 
+import static org.corfudb.runtime.view.stream.AbstractQueuedStreamView.*;
+
 import com.google.common.annotations.VisibleForTesting;
 import lombok.Data;
 import lombok.Getter;
@@ -52,8 +54,8 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 public abstract class AbstractQueuedStreamView extends
-        AbstractContextStreamView<AbstractQueuedStreamView
-                .QueuedStreamContext> {
+        AbstractContextStreamView<QueuedStreamContext> {
+
     @Getter
     private final ReadOptions readOptions;
 
@@ -787,8 +789,7 @@ public abstract class AbstractQueuedStreamView extends
             remainingUpTo(context.minResolution);
             context.minResolution = Address.NON_ADDRESS;
             context.setGlobalPointerCheckGCTrimMark(oldPointer);
-            prevAddress = context
-                    .resolvedQueue.lower(context.getGlobalPointer());
+            prevAddress = context.resolvedQueue.lower(context.getGlobalPointer());
             log.trace("previous[{}]: updated resolved queue {}", this, context.resolvedQueue);
         }
 
@@ -846,7 +847,7 @@ public abstract class AbstractQueuedStreamView extends
     }
 
     @VisibleForTesting
-    AbstractQueuedStreamView.QueuedStreamContext getContext() {
+    QueuedStreamContext getContext() {
         return this.baseContext;
     }
 
@@ -859,8 +860,7 @@ public abstract class AbstractQueuedStreamView extends
     static class QueuedStreamContext extends AbstractStreamContext {
 
         /** A queue of addresses which have already been resolved. */
-        final NavigableSet<Long> resolvedQueue
-                = new TreeSet<>();
+        final NavigableSet<Long> resolvedQueue = new TreeSet<>();
 
         /** The minimum global address which we have resolved this
          * stream to.
@@ -875,8 +875,7 @@ public abstract class AbstractQueuedStreamView extends
         /**
          * A priority queue of potential addresses to be read from.
          */
-        final NavigableSet<Long> readQueue
-                = new TreeSet<>();
+        final NavigableSet<Long> readQueue = new TreeSet<>();
 
         /** List of checkpoint records, if a successful checkpoint has been observed.
          */

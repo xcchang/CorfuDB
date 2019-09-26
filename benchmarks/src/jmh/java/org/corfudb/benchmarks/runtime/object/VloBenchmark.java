@@ -5,7 +5,10 @@ import static org.corfudb.benchmarks.runtime.object.VloBenchmark.VloState.getSmr
 import lombok.AllArgsConstructor;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.protocols.logprotocol.ISMRConsumable;
 import org.corfudb.protocols.logprotocol.SMREntry;
+import org.corfudb.protocols.wireprotocol.DataType;
+import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.TokenResponse;
 import org.corfudb.runtime.object.ICorfuSMRAccess;
 import org.corfudb.runtime.object.ISMRStream;
@@ -25,10 +28,14 @@ import org.openjdk.jmh.runner.options.TimeValue;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -106,21 +113,22 @@ public class VloBenchmark {
 
         public static ISMRStream getSmrStream() {
             return new ISMRStream(){
-                private final Map<>
+                private final TreeSet<SMREntry> queue = new TreeSet<>();
 
                 @Override
                 public List<SMREntry> remainingUpTo(long maxGlobal) {
+                    queue.higher()
                     return new ArrayList<>();
                 }
 
                 @Override
                 public List<SMREntry> current() {
-                    return new ArrayList<>();
+                    return Collections.singletonList(queue.last());
                 }
 
                 @Override
                 public List<SMREntry> previous() {
-                    return new ArrayList<>();
+                    queue.pollLast();
                 }
 
                 @Override
