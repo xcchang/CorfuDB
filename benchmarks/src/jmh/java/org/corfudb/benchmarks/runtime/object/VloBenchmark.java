@@ -118,7 +118,6 @@ public class VloBenchmark {
                 @Override
                 public List<SMREntry> remainingUpTo(long maxGlobal) {
                     queue.higher()
-                    return new ArrayList<>();
                 }
 
                 @Override
@@ -153,7 +152,7 @@ public class VloBenchmark {
 
                 @Override
                 public Stream<SMREntry> stream() {
-                    return Stream.of();
+                    return queue.stream();
                 }
 
                 @Override
