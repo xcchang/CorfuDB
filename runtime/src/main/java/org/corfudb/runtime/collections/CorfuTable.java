@@ -29,6 +29,7 @@ import java.util.stream.Stream;
 import javax.annotation.Nonnull;
 
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 import org.corfudb.annotations.Accessor;
@@ -38,6 +39,7 @@ import org.corfudb.annotations.DontInstrument;
 import org.corfudb.annotations.Mutator;
 import org.corfudb.annotations.MutatorAccessor;
 import org.corfudb.annotations.TransactionalMethod;
+import org.corfudb.protocols.logprotocol.SMRRecordLocator;
 import org.corfudb.util.ImmuableListSetWrapper;
 
 /** The CorfuTable implements a simple key-value store.
@@ -60,6 +62,11 @@ import org.corfudb.util.ImmuableListSetWrapper;
 @Slf4j
 @CorfuObject
 public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
+    @Setter
+    @Getter
+    private boolean cacheEnabled = false;
+
+    private long cacheSize;
 
     @Getter
     private ILocatorStore<K> locatorStore = new MapLocatorStore<>();
@@ -244,6 +251,17 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
         mainMap = mapImpl;
     }
 
+    public CorfuTable(IndexRegistry<K, V> indices, Map<K, V> mapImpl, boolean cacheEnabled, long cacheSize) {
+        indices.forEach(index -> {
+            secondaryIndexes.put(index.getName().get(), new HashMap<>());
+            indexSpec.add(index);
+        });
+        log.info("CorfuTable: creating CorfuTable with the following indexes: {}",
+                secondaryIndexes.keySet());
+        mainMap = mapImpl;
+        this.cacheEnabled = cacheEnabled;
+        this cacheSize = cacheSize;
+    }
     /**
      * Generate a table with the given set of indexes.
      */
@@ -291,15 +309,35 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     /** {@inheritDoc} */
     @Override
     @Accessor
+    //xq this one is tricky
     public boolean containsValue(Object value) {
         return mainMap.containsValue(value);
+    }
+
+    //xq to be implemented.
+    private Object readMSPR(SMRRecordLocator address) {
+        Object a = new Object ();
+        return a;
     }
 
     /** {@inheritDoc} */
     @Override
     @Accessor
     public V get(@ConflictParameter Object key) {
+        Object o = mainMap.get(key);
+        Object rest;
+        if (o instanceof SMRRecordLocator)
+            return (V) readMSPR((SMRRecordLocator)o);
+
         return mainMap.get(key);
+    }
+
+    private Set<Entry<K, V>> batchReadMSPRS(List<SMRRecordLocator> addressLocators) {
+        Set<Entry<K, V>> entries = new HashSet<> (addressLocators.size ());
+        for(SMRRecordLocator i : addressLocators) {
+            //readMSPR(i);
+        }
+        return entries;
     }
 
     /**
@@ -320,6 +358,11 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
                 ((secondaryMap = secondaryIndexes.get(secondaryIndex)) != null)) {
             // If secondary index exists and function for this index is not null
             Map<K, V> res = secondaryMap.get(indexKey);
+
+            //for each one check the entry instance
+            //get a list of entries instance of ILOCATROS
+            //remove ILOCATORS from the res, and reading the real values
+            //api: Set<ISet(Entry<K, V> readMSPR(List<SMRRecordLocator>);
 
             return res == null ?
                     Collections.emptySet() :
@@ -357,7 +400,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
             } else {
                 entryStream = secondaryMap.get(indexKey).entrySet().stream();
             }
-
+            //need to be changed to : collect all SMRRecordLocator and readas a batch
             return entryStream.filter(entryPredicate).collect(Collectors.toCollection(ArrayList::new));
         }
 
@@ -366,24 +409,34 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
         throw new IllegalArgumentException("Secondary Index " + secondaryIndex + " is not defined.");
     }
 
+    private V mainMapPut(K key, V value) {
+        //totalSize += newValueSize;
+        return mainMapPut(key, value);
+    }
+
     /** {@inheritDoc} */
     @Override
     @MutatorAccessor(name = "put", undoFunction = "undoPut", undoRecordFunction = "undoPutRecord")
     public V put(@ConflictParameter K key, V value) {
-        V previous = mainMap.put(key, value);
+        V previous = mainMapPut(key, value);
         // If we have index functions, update the secondary indexes.
         if (!secondaryIndexes.isEmpty()) {
             unmapSecondaryIndexes(key, previous);
             mapSecondaryIndexes(key, value);
         }
+
+        //if (totalSize > cacheSize)
+        //    triggerDropValues();
         return previous;
     }
 
+    //need to inspect
     @DontInstrument
     protected V undoPutRecord(CorfuTable<K, V> table, K key, V value) {
         return table.mainMap.get(key);
     }
 
+    //need to inspect
     @DontInstrument
     protected void undoPut(CorfuTable<K, V> table, V undoRecord, K key, V value) {
         // Same as undoRemove (restore previous value)
@@ -444,7 +497,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @Override
     @Mutator(name = "put", noUpcall = true)
     public void insert(@ConflictParameter K key, V value) {
-        V previous = mainMap.put(key, value);
+        V previous = mainMapPut(key, value);
         // If we have index functions, update the secondary indexes.
         if (!secondaryIndexes.isEmpty()) {
             unmapSecondaryIndexes(key, previous);
@@ -462,9 +515,11 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
      */
     @Accessor
     public List<V> scanAndFilter(Predicate<? super V> p) {
-        return mainMap.values().parallelStream()
-                                    .filter(p)
-                                    .collect(Collectors.toCollection(ArrayList::new));
+        List rest = mainMap.values().parallelStream()
+                .filter(p)
+                .collect(Collectors.toCollection(ArrayList::new));
+        // go over rest if the value is an MSRLocator, replace with the real value.
+        return rest;
     }
 
     /** {@inheritDoc} */
@@ -472,9 +527,15 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @Accessor
     public Collection<Map.Entry<K, V>> scanAndFilterByEntry(Predicate<? super Map.Entry<K, V>>
                                                                     entryPredicate) {
+        // go over rest if the value is an MSRLocator, replace with the real value.
         return mainMap.entrySet().parallelStream()
                                     .filter(entryPredicate)
                                     .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private V mainMapRemove(Object key) {
+        //update totalSize;
+        return mainMap.remove(key);
     }
 
     /** {@inheritDoc} */
@@ -483,7 +544,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
                                 undoRecordFunction = "undoRemoveRecord")
     @SuppressWarnings("unchecked")
     public V remove(@ConflictParameter Object key) {
-        V previous =  mainMap.remove(key);
+        V previous =  mainMapRemove(key);
         unmapSecondaryIndexes((K) key, previous);
         return previous;
     }
@@ -496,10 +557,10 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @DontInstrument
     protected void undoRemove(CorfuTable<K, V> table, V undoRecord, K key) {
         if (undoRecord == null) {
-            V previous =  table.mainMap.remove(key);
+            V previous =  table.mainMapRemove(key);
             table.unmapSecondaryIndexes(key, previous);
         } else {
-            V previous = table.mainMap.put(key, undoRecord);
+            V previous = table.mainMapPut(key, undoRecord);
             if (!table.secondaryIndexes.isEmpty()) {
                 table.unmapSecondaryIndexes(key, previous);
                 table.mapSecondaryIndexes(key, undoRecord);
@@ -511,7 +572,7 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     @Override
     @Mutator(name = "remove", noUpcall = true)
     public void delete(@ConflictParameter K key) {
-        V previous =  mainMap.remove(key);
+        V previous =  mainMapRemove(key);
         unmapSecondaryIndexes(key, previous);
     }
 
@@ -524,13 +585,14 @@ public class CorfuTable<K ,V> implements ICorfuMap<K, V> {
     public void putAll(@Nonnull Map<? extends K, ? extends V> m) {
         // If we have no index functions, then just directly put all
         if (secondaryIndexes.isEmpty()) {
+            //get the total size of m values;
             mainMap.putAll(m);
         } else {
             // Otherwise we must update all secondary indexes
             // TODO: Do this in parallel (need to acquire update locks, potentially)
             m.entrySet().stream()
                     .forEach(e -> {
-                        V previous = mainMap.put(e.getKey(), e.getValue());
+                        V previous = mainMapPut(e.getKey(), e.getValue());
                         unmapSecondaryIndexes(e.getKey(), previous);
                         mapSecondaryIndexes(e.getKey(), e.getValue());
                     });

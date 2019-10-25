@@ -25,6 +25,7 @@ public class SMRRecordLocator implements Comparable<SMRRecordLocator>, ICorfuSer
     private long globalAddress;
     private UUID streamId;
     private int index;
+    private long accessTime;
 
     public void serialize(ByteBuf buf) {
         buf.writeLong(globalAddress);
