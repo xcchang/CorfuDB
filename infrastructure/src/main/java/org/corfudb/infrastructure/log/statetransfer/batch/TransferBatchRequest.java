@@ -1,6 +1,7 @@
 package org.corfudb.infrastructure.log.statetransfer.batch;
 
 import com.google.common.collect.ImmutableList;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Builder.Default;

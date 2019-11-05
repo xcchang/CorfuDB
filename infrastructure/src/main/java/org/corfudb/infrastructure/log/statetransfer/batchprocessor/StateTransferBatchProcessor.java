@@ -44,6 +44,7 @@ public interface StateTransferBatchProcessor {
                     .status(SUCCEEDED)
                     .build();
         });
+
         if (resultOfWrite.isError()) {
             return TransferBatchResponse
                     .builder()

@@ -1,5 +1,8 @@
 package org.corfudb.infrastructure.log.statetransfer;
 
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.NOT_TRANSFERRED;
+import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.TRANSFERRED;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import lombok.AccessLevel;
@@ -15,8 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.result.Result;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse.FailureStatus;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.streamprocessor.TransferSegmentFailure;
 
@@ -26,9 +27,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
-
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.NOT_TRANSFERRED;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.SegmentState.TRANSFERRED;
 
 /**
  * A class responsible for managing a state transfer on the current node.
@@ -202,11 +200,10 @@ public class StateTransferManager {
                                 .build();
                     }
 
-
                     // Get all the unknown addresses for this segment.
-                    List<Long> unknownAddressesInRange =
-                            getUnknownAddressesInRange(segment.getStartAddress(),
-                                    segment.getEndAddress());
+                    List<Long> unknownAddressesInRange = getUnknownAddressesInRange(
+                            segment.getStartAddress(), segment.getEndAddress()
+                    );
 
                     // If no addresses to transfer - mark a segment as transferred.
                     if (unknownAddressesInRange.isEmpty()) {
@@ -224,11 +221,19 @@ public class StateTransferManager {
                         Stream<TransferBatchRequest> batchStream = Lists
                                 .partition(unknownAddressesInRange, batchSize)
                                 .stream()
-                                .map(groupedAddresses -> new TransferBatchRequest(groupedAddresses, Optional.empty())
+                                .map(groupedAddresses -> TransferBatchRequest.builder()
+                                        .addresses(groupedAddresses)
+                                        .build()
                                 );
                         // Execute state transfer synchronously.
                         newStatus = synchronousStateTransfer(batchProcessor, batchStream)
-                                .thenApply(result -> createStatusBasedOnTransferResult(result, numAddressesToTransfer))
+                                .exceptionally(error -> TransferSegmentStatus
+                                        .builder()
+                                        .totalTransferred(0L)
+                                        .segmentState(SegmentState.FAILED)
+                                        .causeOfFailure(Optional.of(new TransferSegmentFailure(error)))
+                                        .build()
+                                )
                                 .join();
 
                     }
@@ -254,26 +259,36 @@ public class StateTransferManager {
      * @return A completed future containing a result of total number of addresses transferred
      * or an exception.
      */
-    CompletableFuture<Result<Long, TransferSegmentFailure>> synchronousStateTransfer(
+    CompletableFuture<TransferSegmentStatus> synchronousStateTransfer(
             StateTransferBatchProcessor batchProcessor, Stream<TransferBatchRequest> batchStream) {
-        Result<Long, TransferSegmentFailure> accumulatedResult = Result.ok(0L);
 
-        Result<Long, TransferSegmentFailure> resultOfTransfer =
-                batchStream.reduce(accumulatedResult, (resultSoFar, nextBatch) -> {
-                    TransferBatchResponse transferBatchResponse =
-                            batchProcessor.transfer(nextBatch).join();
-                    if (transferBatchResponse.getStatus() == FailureStatus.FAILED) {
-                        return Result.error(new TransferSegmentFailure());
-                    } else {
-                        return resultSoFar
-                                .map(sumSoFar -> sumSoFar + transferBatchResponse
-                                        .getTransferBatchRequest()
-                                        .getAddresses()
-                                        .size());
-                    }
-                }, (oldSum, newSum) -> newSum);
+        return batchStream.reduce(
+                CompletableFuture.completedFuture(TransferSegmentStatus.builder().build()),
+                (prev, nextBatch) -> currIteration(batchProcessor, prev, nextBatch),
+                (oldSum, newSum) -> newSum
+        );
+    }
 
-        return CompletableFuture.completedFuture(resultOfTransfer);
+    private CompletableFuture<TransferSegmentStatus> currIteration(
+            StateTransferBatchProcessor batchProcessor,
+            CompletableFuture<TransferSegmentStatus> asyncResultSoFar,
+            TransferBatchRequest nextBatch) {
+
+        return asyncResultSoFar.thenCompose(resultSoFar -> batchProcessor
+                .transfer(nextBatch)
+                .thenApply(batch -> {
+                    int size = batch
+                            .getTransferBatchRequest()
+                            .getAddresses()
+                            .size();
+                    long totalTransferred = resultSoFar.getTotalTransferred() + size;
+
+                    return TransferSegmentStatus.builder()
+                            .segmentState(TRANSFERRED)
+                            .totalTransferred(totalTransferred)
+                            .build();
+                })
+        );
     }
 
 
@@ -296,6 +311,7 @@ public class StateTransferManager {
                 return Result.ok(totalTransferred);
             }
         });
+
 
         if (checkedResult.isError()) {
             return TransferSegmentStatus

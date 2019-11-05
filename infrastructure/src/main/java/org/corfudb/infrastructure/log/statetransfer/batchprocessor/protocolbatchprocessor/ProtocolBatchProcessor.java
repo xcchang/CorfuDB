@@ -72,13 +72,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
     @Override
     public CompletableFuture<TransferBatchResponse> transfer(TransferBatchRequest transferBatchRequest) {
         return readRecords(transferBatchRequest, 0)
-                .thenApply(records -> writeRecords(records, streamLog))
-                .exceptionally(error -> TransferBatchResponse
-                        .builder()
-                        .status(FAILED)
-                        .transferBatchRequest(transferBatchRequest)
-                        .build()
-                );
+                .thenApply(records -> writeRecords(records, streamLog));
     }
 
     /**
