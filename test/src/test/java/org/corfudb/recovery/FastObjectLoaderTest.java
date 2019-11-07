@@ -143,16 +143,6 @@ public class FastObjectLoaderTest extends AbstractViewTest {
         assertThatStreamTailsAreCorrect(streamTails);
     }
 
-    private void startCompaction() {
-        // send garbage decisions to LogUnit servers.
-        getRuntime().getGarbageInformer().gcUnsafe();
-
-        // run compaction on LogUnit servers
-        getLogUnit(SERVERS.PORT_0).runCompaction();
-        getRuntime().getAddressSpaceView().resetCaches();
-        getRuntime().getAddressSpaceView().invalidateServerCaches();
-    }
-
     @Before
     public void setRuntime() throws Exception {
         ServerContextBuilder serverContextBuilder = new ServerContextBuilder()
@@ -187,7 +177,7 @@ public class FastObjectLoaderTest extends AbstractViewTest {
     public void canReloadMapsAfterSparseTrim() throws Exception {
         populateMaps(2, getDefaultRuntime(), CorfuTable.class, true, RECORDS_PER_SEGMENT + 1, true);
 
-        startCompaction();
+        startCompaction(getRuntime(), getLogUnit(SERVERS.PORT_0));
         CorfuRuntime rt2 = Helpers.createNewRuntimeWithFastLoader(getDefaultConfigurationString());
         assertThatMapsAreBuilt(rt2);
     }
