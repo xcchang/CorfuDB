@@ -29,13 +29,11 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class LongevityApp {
     private final long durationMs;
-    private final boolean checkPoint;
     final BlockingQueue<Operation> operationQueue;
     final CorfuRuntime rt;
     final State state;
 
     final ExecutorService taskProducer;
-    final ScheduledExecutorService checkpointer;
     final ExecutorService workers;
 
     // How much time we live the application hangs once the duration is finished
@@ -51,7 +49,6 @@ public class LongevityApp {
 
     public LongevityApp(long durationMs, int numberThreads, String configurationString, boolean checkPoint) {
         this.durationMs = durationMs;
-        this.checkPoint = checkPoint;
         this.numberThreads = numberThreads;
 
         operationQueue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
@@ -70,7 +67,6 @@ public class LongevityApp {
         taskProducer = Executors.newSingleThreadExecutor();
 
         workers = Executors.newFixedThreadPool(numberThreads);
-        checkpointer = Executors.newScheduledThreadPool(1);
     }
 
     /**
@@ -124,18 +120,7 @@ public class LongevityApp {
             throw new UnrecoverableCorfuInterruptedError(e);
         } finally {
             taskProducer.shutdownNow();
-            checkpointer.shutdownNow();
-
-            boolean checkpointHasFinished = false;
-            int exitStatus;
-            try {
-                checkpointHasFinished = checkpointer.awaitTermination(APPLICATION_TIMEOUT_IN_MS, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
-                throw new UnrecoverableCorfuInterruptedError(e);
-            }
-
-            exitStatus = checkpointHasFinished ? 0 : 1;
-            System.exit(exitStatus);
+            System.exit(0);
         }
     }
 
