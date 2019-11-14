@@ -135,10 +135,6 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
         try {
             AtomicInteger readRetries = new AtomicInteger(retriesTried);
             return IRetry.build(ExponentialBackoffRetry.class, RetryExhaustedException.class, () -> {
-                if (readRetries.incrementAndGet() >= maxReadRetries) {
-                    throw new RetryExhaustedException("Read retries are exhausted");
-                }
-
                 // If a pipeline completed exceptionally, than return the error.
                 CompletableFuture<ReadBatch> pipelineFuture =
                         readRecords(transferBatchRequest, readRetries.get())
@@ -154,10 +150,17 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
 
                 ReadBatch readBatch = pipelineFuture.join();
 
-                // If the result is an error, print an error message and retry.
+                // If the result is an error, print an error message and retry if possible.
                 if (readBatch.getStatus() == ReadBatch.ReadStatus.FAILED) {
                     readBatch.getCauseOfFailure()
                             .ifPresent(e -> log.error("A read failed with {}.", e.getMessage()));
+
+                    if (readRetries.incrementAndGet() >= maxReadRetries) {
+                        readBatch.getCauseOfFailure().ifPresent(e -> {
+                            throw new RetryExhaustedException(e);
+                        });
+                        throw new RetryExhaustedException("Read retries are exhausted");
+                    }
                     log.error("Retrying {} times.", readRetries.get());
                     throw new RetryNeededException();
                 } else {
@@ -173,7 +176,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
         } catch (InterruptedException | RetryExhaustedException exception) {
             log.error("Retries were exhausted.");
             CompletableFuture<ReadBatch> future = new CompletableFuture<>();
-            future.completeExceptionally(exception);
+            future.completeExceptionally(exception.getCause());
             return future;
         }
     }

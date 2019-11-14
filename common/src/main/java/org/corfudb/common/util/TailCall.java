@@ -50,12 +50,13 @@ public interface TailCall<T> {
     /**
      * Lazily iterates over the pending tail call recursions until it
      * reaches the end.
-     * @return An optional result of a recursive call.
+     * @return A result of a recursive call.
      */
-    default Optional<T> invoke() {
+    default T invoke() {
         return Stream.iterate(this, TailCall::apply)
                 .filter(TailCall::isComplete)
                 .findFirst()
-                .map(TailCall::result);
+                .map(TailCall::result)
+                .orElseThrow(() -> new IllegalStateException("Infinite recursion."));
     }
 }
