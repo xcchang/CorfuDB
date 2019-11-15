@@ -1,7 +1,7 @@
 package org.corfudb.infrastructure.log.statetransfer.policy.dynamicpolicy;
 
-import com.google.common.collect.ImmutableList;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferProcessor.SlidingWindow;
@@ -17,6 +17,7 @@ import java.util.stream.Stream;
 @AllArgsConstructor
 @Getter
 @ToString
+@Builder(toBuilder = true)
 public class DynamicPolicyData {
     /**
      * A current tail of a stream (transfer batch requests yet to be processed).

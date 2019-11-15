@@ -20,7 +20,7 @@ import java.util.Optional;
 @Getter
 @ToString
 @EqualsAndHashCode
-@Builder
+@Builder(toBuilder = true)
 public class TransferBatchRequest {
     /**
      * A batch of addresses, small enough to get transferred within one rpc call.

@@ -14,7 +14,7 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
- * A static policy that looks at the layout, all the addresses to transfer, and a batch size.
+ * A static policy that considers the layout, all the addresses to transfer, and a batch size.
  * For every segment of the layout, batches up the addresses,
  * and then distributes the load in the round robin fashion
  * among the log servers of every segment.

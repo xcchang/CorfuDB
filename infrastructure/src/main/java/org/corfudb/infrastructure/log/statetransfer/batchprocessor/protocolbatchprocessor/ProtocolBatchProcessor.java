@@ -72,9 +72,9 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
     private final AddressSpaceView addressSpaceView;
 
     @Override
-    public CompletableFuture<Void> transfer(TransferBatchRequest transferBatchRequest) {
+    public CompletableFuture<TransferBatchRequest> transfer(TransferBatchRequest transferBatchRequest) {
         return readRecords(transferBatchRequest, 0)
-                .thenAccept(records -> writeRecords(records, streamLog, maxWriteRetries, writeSleepDuration));
+                .thenApply(records -> writeRecords(records, streamLog, maxWriteRetries, writeSleepDuration));
     }
 
     /**
