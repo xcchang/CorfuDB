@@ -2,7 +2,6 @@ package org.corfudb.infrastructure.log.statetransfer;
 
 import lombok.Getter;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
 import org.corfudb.util.CFUtils;
 

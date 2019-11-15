@@ -16,9 +16,6 @@ import java.util.function.IntPredicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus.SegmentState.NOT_TRANSFERRED;
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus.SegmentState.RESTORED;
 import static org.corfudb.runtime.view.Address.NON_ADDRESS;
 
 /**
@@ -164,7 +161,7 @@ public class RedundancyCalculator {
     }
 
     /**
-     * Given a layout, and global trim mark creates an initial list
+     * Given a layout, and global trim mark creates an initial list of segments to transfer
      * of non-empty and bounded transfer segments.
      *
      * @param layout   A current layout.
@@ -174,8 +171,11 @@ public class RedundancyCalculator {
     public ImmutableList<TransferSegment> createStateList(Layout layout, long trimMark) {
         return layout.getSegments()
                 .stream()
-                // Keep all the segments after the trim mark, except the open one.
-                .filter(segment -> segment.getEnd() != NON_ADDRESS && segment.getEnd() > trimMark)
+                // Keep all the segments after the trim mark, except the open one
+                // and also the ones that do not have a current node present.
+                .filter(segment -> segment.getEnd() != NON_ADDRESS &&
+                        segment.getEnd() > trimMark &&
+                        !segmentContainsServer(segment, getServer()))
                 .map(segment -> {
                     // The transfer segment's start is the layout segment's start or a trim mark,
                     // whichever is greater.
@@ -184,33 +184,11 @@ public class RedundancyCalculator {
                     // It is the last address to transfer.
                     long segmentEnd = segment.getEnd() - 1L;
 
-                    if (segmentContainsServer(segment, getServer())) {
-                        TransferSegmentStatus restored = TransferSegmentStatus
-                                .builder()
-                                .segmentState(RESTORED)
-                                .totalTransferred(segmentEnd - segmentStart + 1L)
-                                .build();
-
-                        return TransferSegment
-                                .builder()
-                                .startAddress(segmentStart)
-                                .endAddress(segmentEnd)
-                                .status(restored)
-                                .build();
-                    } else {
-                        TransferSegmentStatus notTransferred = TransferSegmentStatus
-                                .builder()
-                                .segmentState(NOT_TRANSFERRED)
-                                .totalTransferred(0L)
-                                .build();
-
-                        return TransferSegment
-                                .builder()
-                                .startAddress(segmentStart)
-                                .endAddress(segmentEnd)
-                                .status(notTransferred)
-                                .build();
-                    }
+                    return TransferSegment
+                            .builder()
+                            .startAddress(segmentStart)
+                            .endAddress(segmentEnd)
+                            .build();
 
                 })
                 .collect(ImmutableList.toImmutableList());

@@ -10,10 +10,8 @@ import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferException;
 import org.corfudb.infrastructure.log.statetransfer.batch.ReadBatch;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.ReadBatchException;
-import org.corfudb.infrastructure.log.statetransfer.exceptions.StateTransferBatchProcessorException;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
@@ -34,7 +32,6 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static lombok.Builder.Default;
-import static org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse.TransferStatus.FAILED;
 
 /**
  * A transferBatchRequest processor that transfers non-committed addresses one transferBatchRequest at a time
@@ -75,15 +72,9 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
     private final AddressSpaceView addressSpaceView;
 
     @Override
-    public CompletableFuture<TransferBatchResponse> transfer(TransferBatchRequest transferBatchRequest) {
+    public CompletableFuture<Void> transfer(TransferBatchRequest transferBatchRequest) {
         return readRecords(transferBatchRequest, 0)
-                .thenApply(records -> writeRecords(records, streamLog, maxWriteRetries, writeSleepDuration))
-                .exceptionally(error -> TransferBatchResponse
-                        .builder()
-                        .status(FAILED)
-                        .causeOfFailure(Optional.of(new StateTransferBatchProcessorException(error)))
-                        .build()
-                );
+                .thenAccept(records -> writeRecords(records, streamLog, maxWriteRetries, writeSleepDuration));
     }
 
     /**

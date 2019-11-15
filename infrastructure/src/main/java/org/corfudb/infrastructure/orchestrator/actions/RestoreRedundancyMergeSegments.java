@@ -117,7 +117,7 @@ public class RestoreRedundancyMergeSegments extends Action {
 
                 // Perform a state transfer for each segment synchronously and update the state list.
                 ImmutableList<TransferSegment> transferList = transferManager
-                        .handleTransfer(preTransferList);
+                        .handleTransfer(preTransferList, currentLayout);
 
                 // Get all the transfers that failed.
                 List<TransferSegment> failedList = transferList.stream()

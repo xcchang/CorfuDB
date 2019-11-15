@@ -8,14 +8,12 @@ import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.util.StreamUtils;
 import org.corfudb.common.util.StreamUtils.StreamHeadAndTail;
-import org.corfudb.common.util.TailCall;
-import org.corfudb.common.util.TailCalls;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
-import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
-import org.corfudb.infrastructure.log.statetransfer.policy.errorpolicy.ErrorPolicyData;
+import org.corfudb.infrastructure.log.statetransfer.policy.dynamicpolicy.DynamicPolicyData;
+import org.corfudb.infrastructure.log.statetransfer.policy.dynamicpolicy.SlideWindowPolicy;
 import org.corfudb.infrastructure.log.statetransfer.policy.errorpolicy.FailRestPolicy;
-import org.corfudb.infrastructure.log.statetransfer.policy.errorpolicy.WrongEpochExceptionPolicy;
+import org.corfudb.infrastructure.log.statetransfer.policy.errorpolicy.UpdateLayoutPolicy;
 import org.corfudb.infrastructure.log.statetransfer.policy.staticpolicy.InitialBatchStream;
 import org.corfudb.infrastructure.log.statetransfer.policy.staticpolicy.SimpleStaticPolicy;
 import org.corfudb.infrastructure.log.statetransfer.policy.staticpolicy.StaticPolicyData;
@@ -24,7 +22,6 @@ import org.corfudb.runtime.exceptions.WrongEpochException;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static lombok.Builder.Default;
@@ -61,24 +58,8 @@ public class StateTransferProcessor {
          * Slides when the latest scheduled batch transfer completes successfully.
          */
         @Default
-        private final ImmutableList<CompletableFuture<TransferBatchResponse>> pending = ImmutableList.of();
+        private final ImmutableList<CompletableFuture<TransferBatchRequest>> pending = ImmutableList.of();
 
-        /**
-         * Returns a future of true if the oldest scheduled batch transfer completes successfully.
-         * If the window is empty or the latest scheduled transfer completes with a failure,
-         * returns a future of false.
-         *
-         * @return True if the window can be slid, false otherwise.
-         */
-        public CompletableFuture<Boolean> canSlideWindow() {
-            if (pending.isEmpty()) {
-                return CompletableFuture.completedFuture(false);
-            } else {
-                return pending.get(0)
-                        .thenApply(response -> response.getStatus() ==
-                                TransferBatchResponse.TransferStatus.SUCCEEDED);
-            }
-        }
     }
 
     /**
@@ -113,10 +94,10 @@ public class StateTransferProcessor {
      * @param currentWindow  A current sliding window.
      * @return A new updated window.
      */
-    SlidingWindow updateWindow(CompletableFuture<TransferBatchResponse> newBatchResult,
+    SlidingWindow updateWindow(CompletableFuture<TransferBatchRequest> newBatchResult,
                                SlidingWindow currentWindow) {
         return currentWindow.toBuilder()
-                .pending(new ImmutableList.Builder<CompletableFuture<TransferBatchResponse>>()
+                .pending(new ImmutableList.Builder<CompletableFuture<TransferBatchRequest>>()
                         .addAll(currentWindow.getPending())
                         .add(newBatchResult).build())
                 .build();
@@ -126,126 +107,96 @@ public class StateTransferProcessor {
      * Slide a current window over a lazy stream of batches.
      * This entails creating a new instance of a window with a new updated data.
      *
-     * @param newBatchResult A future of a batch transferred by
-     *                       {@link PolicyStreamProcessor#batchProcessor}.
-     * @param slidingWindow  The most recent instance of a sliding window.
+     * @param newBatchResult A future of a batch response.
      * @return An instance of a new sliding window, with a new, updated data,
      * wrapped in a tail-recursive call.
      */
-    CompletableFuture<SlidingWindow> slideWindow(CompletableFuture<TransferBatchResponse> newBatchResult,
-                                                 SlidingWindow slidingWindow) {
+    CompletableFuture<DynamicPolicyData> slideWindow(TransferBatchRequest request,
+                                                     DynamicPolicyData dynamicPolicyData) {
 
-        slidingWindow.canSlideWindow().thenCompose(canSlide -> {
-            if (canSlide) {
+        SlidingWindow slidingWindow = dynamicPolicyData.getSlidingWindow();
+        Stream<Optional<TransferBatchRequest>> stream = dynamicPolicyData.getTail();
+        long remainingSize = dynamicPolicyData.getSize();
+        // Create a policy data needed to handle errors.
+        DynamicPolicyData policyData =
+                new DynamicPolicyData(stream, slidingWindow, remainingSize, runtime);
 
-            } else {
-                // Window is empty -- can't slide.
-                if (slidingWindow.getPending().isEmpty()) {
-                    new FailRestPolicy().applyPolicy(new ErrorPolicyData<>());
-                }
-                // The first in-window transfer response failed.
-                // Try handling it.
-                slidingWindow.getPending().get(0).thenApply(resp -> {
-                    resp.getCauseOfFailure().ifPresent(e -> {
-                        try {
-                            throw e.getCause();
-                        } catch (Throwable cause) {
+        return slidingWindow
+                .getPending()
+                .stream()
+                .findFirst()
+                .map(lastScheduledTransfer -> lastScheduledTransfer.handle((data, exception) ->
+                        Optional.ofNullable(exception).map(ex -> {
+                            Throwable cause = ex.getCause();
                             if (cause instanceof WrongEpochException) {
-                                new WrongEpochExceptionPolicy()
-                                        .applyPolicy(new ErrorPolicyData<>());
+                                return new UpdateLayoutPolicy().applyPolicy(policyData);
+                            } else {
+                                return new FailRestPolicy().applyPolicy(policyData);
                             }
-                            else{
-                                new FailRestPolicy().applyPolicy(new ErrorPolicyData<>());
-                            }
-                        }
-                    })
-                })
+                        }).orElse(new SlideWindowPolicy().applyPolicy(policyData))))
+                .orElseGet(() -> CompletableFuture.completedFuture(new FailRestPolicy().applyPolicy(policyData)));
 
-            }
-        })
-        if (slidingWindow.canSlideWindow()) {
-            CompletableFuture<BatchResult> completedBatch = slidingWindow.getWindow().get(0);
-
-            ImmutableList<CompletableFuture<BatchResult>> newWindow = ImmutableList.copyOf(Stream
-                    .concat(slidingWindow.getWindow().stream().skip(1),
-                            Stream.of(newBatchResult)).collect(Collectors.toList()));
-
-            return TailCalls.done(completedBatch.thenApply(batch -> {
-                if (batch.getResult().isError()) {
-                    return slidingWindow.toBuilder()
-                            .window(newWindow)
-                            .failed(
-                                    new ImmutableList
-                                            .Builder<CompletableFuture<BatchResult>>()
-                                            .addAll(slidingWindow.getFailed())
-                                            .add(CompletableFuture.completedFuture(batch))
-                                            .build()
-                            ).build();
-                } else {
-                    return slidingWindow.toBuilder()
-                            .window(newWindow)
-                            .totalAddressesTransferred(slidingWindow.getTotalAddressesTransferred()
-                                    .thenApply(x -> x + batch.getResult().get()
-                                            .getAddressesTransferred()))
-                            .succeeded(
-                                    new ImmutableList
-                                            .Builder<CompletableFuture<BatchResult>>()
-                                            .addAll(slidingWindow.getSucceeded())
-                                            .add(CompletableFuture.completedFuture(batch))
-                                            .build()
-                            ).build();
-                }
-            }).join());
-        } else {
-            return TailCalls.call(() -> slideWindow(newBatchResult, slidingWindow));
-        }
     }
 
 
-    TailCall<CompletableFuture<Long>> doStateTransfer(
-            Stream<Optional<TransferBatchRequest>> stream,
-            SlidingWindow slidingWindow, long remainingStreamSize) {
-        // Split the stream into a head and a tail.
-        StreamHeadAndTail<TransferBatchRequest> headAndTail =
-                StreamUtils.splitTail(stream, remainingStreamSize);
-        Optional<TransferBatchRequest> head = headAndTail.getHead();
-        Stream<Optional<TransferBatchRequest>> tail = headAndTail.getTail();
-        final int currentPendingSize = slidingWindow.getPending().size();
-        // Head is present and the window is not full yet.
-        if (head.isPresent() && currentPendingSize < windowSize) {
-            TransferBatchRequest transferRequest = head.get();
-            CompletableFuture<TransferBatchResponse> transferResponse =
-                    batchProcessor.transfer(transferRequest);
-            // Update the window and call this function recursively
-            // with a new window and the tail of a stream.
-            return TailCalls.call(() ->
-                    doStateTransfer(
-                            tail,
-                            updateWindow(transferResponse, slidingWindow),
-                            remainingStreamSize - 1));
-        }
-        // Head is present, window is full.
-        else if (head.isPresent() && currentPendingSize == windowSize) {
-            TransferBatchRequest transferRequest = head.get();
-            CompletableFuture<TransferBatchResponse> transferResponse =
-                    batchProcessor.transfer(transferRequest);
+    CompletableFuture<Long> doStateTransfer(CompletableFuture<DynamicPolicyData> dynamicPolicyData) {
+        return dynamicPolicyData.thenApply(data -> {
+            SlidingWindow slidingWindow = data.getSlidingWindow();
+            Stream<Optional<TransferBatchRequest>> stream = data.getTail();
+            long remainingSize = data.getSize();
 
-        }
-        // End of a stream, terminate, finalize transfers and return the total transferred addresses.
-        else {
+            // Split the stream into a head and a tail.
+            StreamHeadAndTail<TransferBatchRequest> headAndTail =
+                    StreamUtils.splitTail(stream, remainingSize);
+            Optional<TransferBatchRequest> head = headAndTail.getHead();
+            Stream<Optional<TransferBatchRequest>> tail = headAndTail.getTail();
 
-        }
+            int currentPendingSize = slidingWindow.getPending().size();
+
+            if (head.isPresent() && currentPendingSize < windowSize) {
+                TransferBatchRequest transferRequest = head.get();
+
+                CompletableFuture<Void> transferResponse = batchProcessor.transfer(transferRequest);
+
+                CompletableFuture<DynamicPolicyData> newData =
+                        CompletableFuture.completedFuture(
+                                new DynamicPolicyData(
+                                        tail,
+                                        updateWindow(transferResponse, slidingWindow),
+                                        remainingSize - 1,
+                                        runtime)
+                        );
+
+                return doStateTransfer(newData);
+            } else if (head.isPresent() && currentPendingSize == windowSize) {
+                TransferBatchRequest transferRequest = head.get();
+
+                CompletableFuture<DynamicPolicyData> dataAfterWindowSlid = batchProcessor
+                        .transfer(transferRequest)
+                        .thenCompose(resp ->
+                                slideWindow(resp, new DynamicPolicyData(
+                                        tail,
+                                        slidingWindow,
+                                        remainingSize - 1,
+                                        runtime))
+                        );
+
+                return doStateTransfer(dataAfterWindowSlid);
+            } else {
+                return CompletableFuture.completedFuture(null);
+            }
+        });
     }
 
     public CompletableFuture<Long> stateTransfer(StaticPolicyData staticPolicyData) {
         SimpleStaticPolicy staticPolicy = new SimpleStaticPolicy();
         InitialBatchStream initialBatchStream = staticPolicy.applyPolicy(staticPolicyData);
         SlidingWindow slidingWindow = SlidingWindow.builder().build();
-        return doStateTransfer(
+        DynamicPolicyData initialDynamicPolicyData = new DynamicPolicyData(
                 initialBatchStream.getInitialStream().map(Optional::of),
-                slidingWindow,
-                initialBatchStream.getInitialBatchStreamSize())
-                .invoke();
+                slidingWindow, initialBatchStream.getInitialBatchStreamSize(),
+                runtime);
+        return doStateTransfer(CompletableFuture.completedFuture(initialDynamicPolicyData));
     }
 
 

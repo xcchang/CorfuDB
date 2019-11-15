@@ -5,7 +5,7 @@ import org.corfudb.infrastructure.log.statetransfer.policy.dynamicpolicy.Dynamic
 import org.corfudb.infrastructure.log.statetransfer.policy.dynamicpolicy.DynamicPolicyData;
 
 @Slf4j
-public class FailRestPolicy implements DynamicPolicy {
+public class UpdateLayoutPolicy implements DynamicPolicy {
 
     @Override
     public DynamicPolicyData applyPolicy(DynamicPolicyData data) {
