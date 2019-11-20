@@ -3,6 +3,7 @@ package org.corfudb.runtime.view;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.collect.Lists;
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.StreamAddressRange;
 import org.corfudb.runtime.view.stream.StreamAddressSpace;
 import org.corfudb.protocols.wireprotocol.StreamsAddressResponse;
@@ -23,7 +24,7 @@ import java.util.UUID;
 /**
  * Created by mwei on 12/10/15.
  */
-
+@Slf4j
 public class SequencerView extends AbstractView {
 
     // Timers used for measuring sequencer operations
@@ -69,6 +70,7 @@ public class SequencerView extends AbstractView {
      */
     public TokenResponse query(UUID... streamIds) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerQuery)){
+            log.info("6");
             if (streamIds.length == 0) {
                 return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                         .nextToken(Collections.emptyList(), 0)));
@@ -87,6 +89,7 @@ public class SequencerView extends AbstractView {
      */
     public long query(UUID streamId) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerQuery)) {
+            log.info("5");
                 return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                         .nextToken(Arrays.asList(streamId), 0))).getStreamTail(streamId);
         }
@@ -100,6 +103,7 @@ public class SequencerView extends AbstractView {
      */
     public TokenResponse next(UUID ... streamIds) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerNextOneStream)) {
+            log.info("4");
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                     .nextToken(Arrays.asList(streamIds), 1)));
         }
@@ -123,6 +127,7 @@ public class SequencerView extends AbstractView {
      */
     public Map<UUID, StreamAddressSpace> getStreamsAddressSpace(List<StreamAddressRange> streamsAddressesRange) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerNextOneStream)) {
+            log.info("3");
             StreamsAddressResponse streamsAddressResponse = layoutHelper(e ->
                     CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                             .getStreamsAddressSpace(streamsAddressesRange)));
@@ -140,6 +145,7 @@ public class SequencerView extends AbstractView {
      */
     public TokenResponse next(TxResolutionInfo conflictInfo, UUID ... streamIds) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerNextMultipleStream)) {
+            log.info("2");
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                     .nextToken(Arrays.asList(streamIds), 1, conflictInfo)));
         }
@@ -159,6 +165,7 @@ public class SequencerView extends AbstractView {
     @Deprecated
     public TokenResponse nextToken(Set<UUID> streamIDs, int numTokens) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerDeprecatedNextOneStream)){
+            log.info("1");
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                     .nextToken(Lists.newArrayList(streamIDs), numTokens)));
         }
@@ -168,6 +175,7 @@ public class SequencerView extends AbstractView {
     public TokenResponse nextToken(Set<UUID> streamIDs, int numTokens,
                                    TxResolutionInfo conflictInfo) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerDeprecatedNextMultipleStream)){
+            log.info("0");
             return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                     .nextToken(Lists.newArrayList(streamIDs), numTokens, conflictInfo)));
         }

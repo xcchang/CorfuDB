@@ -257,7 +257,7 @@ public class RestoreRedundancyMergeSegments extends Action {
             }
             finally {
                 StateTransferStats stateTransferStatistics = stats.get();
-                log.info("State transfer stats: {}", stateTransferStatistics.toString());
+                log.info("State transfer stats: {}", stateTransferStatistics.toJson());
                 dataStore.ifPresent(ds -> ds.saveStateTransferStats(stateTransferStatistics));
             }
 

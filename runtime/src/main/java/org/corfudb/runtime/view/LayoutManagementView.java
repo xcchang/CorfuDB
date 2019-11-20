@@ -355,7 +355,6 @@ public class LayoutManagementView extends AbstractView {
         sealEpoch(currentLayout);
 
         attemptConsensus(newLayout);
-
         //TODO: Since sequencer reset is moved after paxos. Make sure the runtime has the latest
         //TODO: layout view and latest client router epoch. (Use quorum layout fetch.)
         //TODO: Handle condition if primary sequencer is not marked ready, reset fails.
@@ -424,7 +423,7 @@ public class LayoutManagementView extends AbstractView {
      */
     public void reconfigureSequencerServers(Layout originalLayout, Layout newLayout,
                                             boolean forceReconfigure) {
-
+        log.info("Reconfiguring sequencer server");
         boolean acquiredLocked = recoverSequencerLock.tryLock();
         if (acquiredLocked) {
             try {
@@ -445,6 +444,7 @@ public class LayoutManagementView extends AbstractView {
                         || !originalLayout.getPrimarySequencer()
                         .equals(newLayout.getPrimarySequencer())) {
 
+                    log.info("Time to get the view");
                     StreamsAddressResponse streamsAddressesResponse = runtime.getAddressSpaceView()
                             .getLogAddressSpace();
 
@@ -456,6 +456,10 @@ public class LayoutManagementView extends AbstractView {
                     bootstrapWithoutTailsUpdate = false;
                 }
 
+                log.info("Time to bootstrap");
+
+                log.info("Old layout: {}", originalLayout);
+                log.info("New layout: {}", newLayout);
                 // Configuring the new sequencer.
                 boolean sequencerBootstrapResult = CFUtils.getUninterruptibly(
                         runtime.getLayoutView().getRuntimeLayout(newLayout)
@@ -498,7 +502,7 @@ public class LayoutManagementView extends AbstractView {
                 try {
                     reconfigureSequencerServers(layout, layout, true);
                 } catch (Exception e) {
-                    log.error("triggerSequencerBootstrap: Failed with Exception: ", e);
+                    log.error("triggerSequencerBootstrap: Failed with Exception: {}. Error msg: {}.", e.getClass(), e.getMessage());
                 }
                 return true;
             }, service);

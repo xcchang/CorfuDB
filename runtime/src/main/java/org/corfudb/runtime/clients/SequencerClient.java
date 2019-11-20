@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.SequencerMetrics;
 import org.corfudb.protocols.wireprotocol.SequencerRecoveryMsg;
@@ -23,6 +24,7 @@ import org.corfudb.protocols.wireprotocol.TxResolutionInfo;
  *
  * <p>Created by mwei on 12/10/15.
  */
+@Slf4j
 public class SequencerClient extends AbstractClient {
 
     public SequencerClient(IClientRouter router, long epoch) {
@@ -91,6 +93,7 @@ public class SequencerClient extends AbstractClient {
     public CompletableFuture<Boolean> bootstrap(Long initialToken, Map<UUID, StreamAddressSpace> streamAddressSpaceMap,
                                                 Long readyStateEpoch,
                                                 boolean bootstrapWithoutTailsUpdate) {
+        log.info("bootstrap sequencer");
         return sendMessageWithFuture(CorfuMsgType.BOOTSTRAP_SEQUENCER.payloadMsg(
                 new SequencerRecoveryMsg(initialToken, streamAddressSpaceMap, readyStateEpoch,
                         bootstrapWithoutTailsUpdate)));

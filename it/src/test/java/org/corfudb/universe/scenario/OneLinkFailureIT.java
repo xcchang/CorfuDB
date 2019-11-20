@@ -34,6 +34,7 @@ public class OneLinkFailureIT extends GenericIntegrationTest {
     @Test(timeout = 300000)
     public void oneLinkFailureTest() {
         workflow(wf -> {
+            wf.setupDocker(fix -> fix.getLogging().enabled(true));
             wf.deploy();
 
             CorfuCluster corfuCluster = wf.getUniverse()

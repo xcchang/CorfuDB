@@ -40,6 +40,7 @@ public class LayoutView extends AbstractView {
     }
 
     public RuntimeLayout getRuntimeLayout() {
+        log.info("8");
         return layoutHelper(l -> l);
     }
 

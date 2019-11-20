@@ -128,7 +128,6 @@ public abstract class AbstractView {
         while (true) {
 
             final Layout layout = getLayoutUninterruptibly();
-
             try {
                 return function.apply(runtimeLayout.updateAndGet(rLayout -> {
                     if (rLayout == null || rLayout.getLayout().getEpoch() != layout.getEpoch()) {

@@ -168,10 +168,12 @@ public class SequencerServer extends AbstractServer {
             return false;
         }
 
-        if ((sequencerEpoch != serverContext.getServerEpoch())
-                && (!msg.getMsgType().equals(CorfuMsgType.BOOTSTRAP_SEQUENCER))) {
+        long serverEpoch = serverContext.getServerEpoch();
+
+        if ((sequencerEpoch != serverEpoch)
+                && (msg.getMsgType() != CorfuMsgType.BOOTSTRAP_SEQUENCER)) {
             log.warn("Rejecting msg at sequencer : sequencerStateEpoch:{}, serverEpoch:{}, "
-                    + "msg:{}", sequencerEpoch, serverContext.getServerEpoch(), msg);
+                    + "msg:{}", sequencerEpoch, serverEpoch, msg);
             return false;
         }
         return true;
@@ -472,7 +474,7 @@ public class SequencerServer extends AbstractServer {
     @ServerHandler(type = CorfuMsgType.TOKEN_REQ)
     public void tokenRequest(CorfuPayloadMsg<TokenRequest> msg,
                                           ChannelHandlerContext ctx, IServerRouter r) {
-        log.trace("Token request. Msg: {}", msg);
+        log.info("Token request. Msg: {}", msg);
 
         TokenRequest req = msg.getPayload();
         final Timer timer = getTimer(req.getReqType());
