@@ -40,6 +40,8 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -635,39 +637,30 @@ public class StateTransferTest extends AbstractViewTest {
 
         CorfuRuntime rt = getNewRuntime(getDefaultNode()).connect();
 
+        setAggressiveTimeouts(layout, rt);
 
         IStreamView testStream = rt.getStreamsView().get(CorfuRuntime.getStreamID("test"));
 
         for (int i = 0; i < (writtenAddressesBatch1 + writtenAddressesBatch2); i++) {
             testStream.append("testPayload".getBytes());
         }
-        List<List<LogData>> data =
-                Lists.partition(testStream
-                        .streamUpTo(writtenAddressesBatch1)
-                        .map(x -> (LogData) x)
-                        .collect(Collectors.toList()), rt.getParameters().getBulkReadSize());
 
+        final long totalWritten = 50L;
 
-        StreamLog streamLog = getLogUnit(SERVERS.PORT_1).getStreamLog();
-        StreamLog spy = spy(streamLog);
+        final long rangeWriteAllowedCount = (totalWritten / rt.getParameters().getBulkReadSize());
+
+        AtomicLong allowedWrites = new AtomicLong(rangeWriteAllowedCount);
+
+        // Allow only addresses 0 - 49 to be written.
+        addClientRule(rt, SERVERS.ENDPOINT_1, new TestRule().matches(
+                msg -> msg.getMsgType().equals(CorfuMsgType.RANGE_WRITE) &&
+                        allowedWrites.decrementAndGet() < 0).drop());
 
         final RestoreRedundancyMergeSegments action1 = RestoreRedundancyMergeSegments
                 .builder()
                 .currentNode(SERVERS.ENDPOINT_1)
-                .streamLog(spy)
                 .redundancyCalculator(new RedundancyCalculator(SERVERS.ENDPOINT_1))
                 .build();
-
-        // Throw time out on all the addresses after 50.
-        final long cutOffAddress = 50L;
-        data.forEach(part -> {
-
-            if (part.get(0).getGlobalAddress() >= cutOffAddress) {
-                doAnswer(invocation -> {
-                    throw new TimeoutException("Illegal State");
-                }).when(spy).append(part);
-            }
-        });
 
         // Assert that the TimeOutException is thrown
         assertThatThrownBy(() -> action1.impl(rt))
@@ -682,7 +675,7 @@ public class StateTransferTest extends AbstractViewTest {
                 .get()
                 .getKnownAddresses());
 
-        List<Long> transferredRange = LongStream.range(0L, cutOffAddress).boxed().collect(Collectors.toList());
+        List<Long> transferredRange = LongStream.range(0L, totalWritten).boxed().collect(Collectors.toList());
         final long start = 100L;
         final long end = 105L;
 
@@ -691,15 +684,15 @@ public class StateTransferTest extends AbstractViewTest {
         transferredRange.addAll(openSegmentData);
         assertThat(knownAddresses).isEqualTo(transferredRange);
         // Reset the spy rules
-        Mockito.reset(spy);
+        clearClientRules(rt);
 
-        // If this method is called the known addresses should only be the one that were transferred.
-        doAnswer(invocation -> {
-            Set<Long> set = (Set<Long>) invocation.callRealMethod();
-            Set<Long> expected = LongStream.range(0L, cutOffAddress).boxed().collect(Collectors.toSet());
-            assertThat(expected).isEqualTo(set);
-            return set;
-        }).when(spy).getKnownAddressesInRange(0L, start - 1);
+
+        AtomicLong deltaBatches = new AtomicLong(0L);
+
+        // Now count how many batches are transferred.
+        addClientRule(rt, SERVERS.ENDPOINT_1, new TestRule().matches(
+                msg -> msg.getMsgType().equals(CorfuMsgType.RANGE_WRITE) &&
+                        deltaBatches.incrementAndGet() > 0));
 
         action1.impl(rt);
 
@@ -714,6 +707,10 @@ public class StateTransferTest extends AbstractViewTest {
         assertThat(knownAddresses).isEqualTo(LongStream
                 .range(0L, writtenAddressesBatch1 + writtenAddressesBatch2)
                 .boxed().collect(Collectors.toList()));
+
+        // Only the delta is transferred
+        assertThat(deltaBatches.get() * rt.getParameters().getBulkReadSize())
+                .isEqualTo(totalWritten);
 
     }
 
@@ -780,20 +777,15 @@ public class StateTransferTest extends AbstractViewTest {
             testStream.append("testPayload".getBytes());
         }
 
-        StreamLog streamLog1 = getLogUnit(SERVERS.PORT_1).getStreamLog();
-        StreamLog streamLog2 = getLogUnit(SERVERS.PORT_1).getStreamLog();
-
         final RestoreRedundancyMergeSegments action1 = RestoreRedundancyMergeSegments
                 .builder()
                 .currentNode(SERVERS.ENDPOINT_1)
-                .streamLog(streamLog1)
                 .redundancyCalculator(new RedundancyCalculator(SERVERS.ENDPOINT_1))
                 .build();
         final RestoreRedundancyMergeSegments action2 = RestoreRedundancyMergeSegments
                 .builder()
                 .currentNode(SERVERS.ENDPOINT_2)
                 .redundancyCalculator(new RedundancyCalculator(SERVERS.ENDPOINT_1))
-                .streamLog(streamLog2)
                 .build();
 
 

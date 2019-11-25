@@ -6,14 +6,15 @@ import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager;
+import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegment;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.protocolbatchprocessor.ProtocolBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.TransferSegmentException;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.infrastructure.redundancy.RedundancyCalculator;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.exceptions.OutrankedException;
 import org.corfudb.runtime.exceptions.QuorumUnreachableException;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
@@ -33,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegment;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus.SegmentState.FAILED;
 import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus.SegmentState.TRANSFERRED;
 
@@ -49,10 +49,6 @@ public class RestoreRedundancyMergeSegments extends Action {
     @Getter
     @NonNull
     private final String currentNode;
-
-    @Getter
-    @NonNull
-    private final StreamLog streamLog;
 
     @Getter
     @NonNull
@@ -223,18 +219,22 @@ public class RestoreRedundancyMergeSegments extends Action {
         runtime.invalidateLayout();
         Layout layout = runtime.getLayoutView().getLayout();
 
+        // Get the log unit client for the current node.
+        LogUnitClient logUnitClient =
+                runtime.getLayoutView().getRuntimeLayout(layout).getLogUnitClient(currentNode);
+
         // Create a chain replication protocol batch processor.
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
                 .addressSpaceView(runtime.getAddressSpaceView())
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .build();
 
         // Create a state transfer manager.
         StateTransferManager transferManager =
                 StateTransferManager
                         .builder()
-                        .streamLog(streamLog)
+                        .logUnitClient(logUnitClient)
                         .batchSize(runtime.getParameters().getBulkReadSize())
                         .batchProcessor(batchProcessor)
                         .build();

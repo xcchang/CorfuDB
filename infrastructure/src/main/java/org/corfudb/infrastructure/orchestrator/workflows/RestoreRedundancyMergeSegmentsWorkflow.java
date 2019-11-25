@@ -45,7 +45,6 @@ public class RestoreRedundancyMergeSegmentsWorkflow implements IWorkflow {
         this.request = request;
         this.actions = ImmutableList.of(
                 RestoreRedundancyMergeSegments.builder()
-                        .streamLog(streamLog)
                         .currentNode(request.getEndpoint())
                         .redundancyCalculator(new RedundancyCalculator(request.getEndpoint()))
                         .build());

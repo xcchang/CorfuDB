@@ -33,7 +33,6 @@ public class HealNodeWorkflow extends AddNodeWorkflow {
         this.request = healNodeRequest;
         this.actions = ImmutableList.of(new HealNodeToLayout(),
                 RestoreRedundancyMergeSegments.builder()
-                        .streamLog(streamLog)
                         .currentNode(request.getEndpoint())
                         .redundancyCalculator(new RedundancyCalculator(request.getEndpoint()))
                         .build());

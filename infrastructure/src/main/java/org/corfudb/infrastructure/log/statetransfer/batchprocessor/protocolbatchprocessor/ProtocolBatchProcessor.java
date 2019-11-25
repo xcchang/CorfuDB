@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.common.result.Result;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferException;
 import org.corfudb.infrastructure.log.statetransfer.batch.ReadBatch;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
@@ -16,6 +15,7 @@ import org.corfudb.infrastructure.log.statetransfer.exceptions.ReadBatchExceptio
 import org.corfudb.infrastructure.log.statetransfer.exceptions.StateTransferBatchProcessorException;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.exceptions.RetryExhaustedException;
 import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.ReadOptions;
@@ -69,7 +69,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
             .build();
 
     @Getter
-    private final StreamLog streamLog;
+    private final LogUnitClient logUnitClient;
 
     @Getter
     private final AddressSpaceView addressSpaceView;
@@ -77,7 +77,8 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
     @Override
     public CompletableFuture<TransferBatchResponse> transfer(TransferBatchRequest transferBatchRequest) {
         return readRecords(transferBatchRequest, 0)
-                .thenApply(records -> writeRecords(records, streamLog, maxWriteRetries, writeSleepDuration))
+                .thenApply(records ->
+                        writeRecords(records, logUnitClient, maxWriteRetries, writeSleepDuration))
                 .exceptionally(error -> TransferBatchResponse
                         .builder()
                         .status(FAILED)

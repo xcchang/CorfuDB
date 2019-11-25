@@ -1,12 +1,12 @@
 package org.corfudb.infrastructure.log.statetransfer.batchprocessor.protocolbatchprocessor;
 
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.DataTest;
 import org.corfudb.infrastructure.log.statetransfer.batch.ReadBatch;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.runtime.view.AddressSpaceView;
 import org.corfudb.runtime.view.ReadOptions;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,6 @@ import java.util.stream.LongStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -39,14 +38,14 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
-        doNothing().when(streamLog).append(stubList);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(stubList);
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(stubMap).when(addressSpaceView).simpleProtocolRead(addresses, readOptions);
 
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         CompletableFuture<TransferBatchResponse> f =
@@ -66,13 +65,13 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .serverCacheable(false)
                 .build();
         List<LogData> recordsFromStubMap = getRecordsFromStubMap(stubMap);
-        StreamLog streamLog = mock(StreamLog.class);
-        doThrow(new IllegalStateException()).when(streamLog).append(recordsFromStubMap);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doThrow(new IllegalStateException()).when(logUnitClient).writeRange(recordsFromStubMap);
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(stubMap).when(addressSpaceView).simpleProtocolRead(addresses, readOptions);
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         CompletableFuture<TransferBatchResponse> f =
@@ -92,13 +91,13 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
-        doNothing().when(streamLog).append(stubList);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(stubList);
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(stubMap).when(addressSpaceView).simpleProtocolRead(addresses, readOptions);
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         CompletableFuture<ReadBatch> f =
@@ -129,9 +128,9 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
-        doNothing().when(streamLog).append(firstReadList);
-        doNothing().when(streamLog).append(secondReadList);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(firstReadList);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(secondReadList);
 
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(firstReadMap).when(addressSpaceView).simpleProtocolRead(addresses, readOptions);
@@ -141,7 +140,7 @@ class ProtocolBatchProcessorTest extends DataTest {
 
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         ProtocolBatchProcessor spy = spy(batchProcessor);
@@ -169,9 +168,9 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
 
-        doNothing().when(streamLog).append(secondReadList);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(secondReadList);
 
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
 
@@ -181,7 +180,7 @@ class ProtocolBatchProcessorTest extends DataTest {
 
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         ProtocolBatchProcessor spy = spy(batchProcessor);
@@ -204,13 +203,13 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
-        doNothing().when(streamLog).append(stubList);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(stubList);
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(stubMap).when(addressSpaceView).simpleProtocolRead(addresses, readOptions);
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         ReadBatch res = batchProcessor.checkReadRecords(addresses, stubMap, Optional.empty());
@@ -231,13 +230,13 @@ class ProtocolBatchProcessorTest extends DataTest {
                 .clientCacheable(false)
                 .serverCacheable(false)
                 .build();
-        StreamLog streamLog = mock(StreamLog.class);
-        doNothing().when(streamLog).append(stubList);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
+        doReturn(CompletableFuture.completedFuture(true)).when(logUnitClient).writeRange(stubList);
         AddressSpaceView addressSpaceView = mock(AddressSpaceView.class);
         doReturn(stubMap).when(addressSpaceView).simpleProtocolRead(readAddresses, readOptions);
         ProtocolBatchProcessor batchProcessor = ProtocolBatchProcessor
                 .builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .addressSpaceView(addressSpaceView)
                 .build();
         ReadBatch res = batchProcessor.checkReadRecords(addresses, stubMap, Optional.empty());

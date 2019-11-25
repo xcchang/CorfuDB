@@ -2,11 +2,11 @@ package org.corfudb.infrastructure.log.statetransfer.batchprocessor;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.batch.ReadBatch;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.protocols.wireprotocol.LogData;
+import org.corfudb.runtime.clients.LogUnitClient;
 import org.corfudb.util.Sleep;
 
 import java.time.Duration;
@@ -37,28 +37,32 @@ public interface StateTransferBatchProcessor {
      *
      * @param readBatch           The non-empty batch of log entries as well as an optional
      *                            node they were read from.
-     * @param streamlog           A stream log interface.
+     * @param logUnitClient       A log unit client.
      * @param writeRetriesAllowed A total number of write retries allowed in case of an exception.
      * @param writeSleepDuration  A duration between retries.
      * @return A transferBatchResponse, a final result of a transfer.
      */
     default TransferBatchResponse writeRecords(
-            ReadBatch readBatch, StreamLog streamlog,
+            ReadBatch readBatch, LogUnitClient logUnitClient,
             AtomicInteger writeRetriesAllowed, Duration writeSleepDuration) {
+
         List<Long> addresses = readBatch.getAddresses();
         Optional<String> destination = readBatch.getDestination();
+
         try {
-            streamlog.append(readBatch.getData());
+            logUnitClient.writeRange(readBatch.getData()).join();
         } catch (Exception e) {
             // If the exceptions are no longer tolerated, rethrow.
             if (writeRetriesAllowed.decrementAndGet() == 0) {
                 throw e;
             } else {
+
                 Sleep.sleepUninterruptibly(writeSleepDuration);
                 // Get all the addresses that were supposed to be written to a stream log.
                 long start = addresses.get(0);
                 long end = addresses.get(addresses.size() - 1);
-                Set<Long> knownAddresses = streamlog.getKnownAddressesInRange(start, end);
+                Set<Long> knownAddresses =
+                        logUnitClient.requestKnownAddresses(start, end).join().getKnownAddresses();
                 // Get all the addresses that were not written.
                 Set<Long> nonWrittenAddresses =
                         Sets.difference(new HashSet<>(addresses), knownAddresses);
@@ -69,7 +73,7 @@ public interface StateTransferBatchProcessor {
                         .collect(ImmutableList.toImmutableList());
                 ReadBatch newReadBatch = readBatch.toBuilder().data(nonWrittenData).build();
                 // Try writing the records and also preserve the the original request.
-                return writeRecords(newReadBatch, streamlog, writeRetriesAllowed, writeSleepDuration)
+                return writeRecords(newReadBatch, logUnitClient, writeRetriesAllowed, writeSleepDuration)
                         .toBuilder()
                         .transferBatchRequest(new TransferBatchRequest(addresses, destination))
                         .build();

@@ -7,11 +7,14 @@ import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.Transfe
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
+import org.corfudb.protocols.wireprotocol.KnownAddressResponse;
+import org.corfudb.runtime.clients.LogUnitClient;
 import org.junit.jupiter.api.Test;
 
 import java.util.AbstractMap.SimpleEntry;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -29,16 +32,16 @@ class StateTransferManagerTest implements TransferSegmentCreator {
 
     @Test
     void getUnknownAddressesInRange() {
-        StreamLog streamLog = mock(StreamLog.class);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
         Set<Long> retVal = LongStream.range(0L, 80L).boxed().collect(Collectors.toSet());
 
-        doReturn(retVal)
-                .when(streamLog)
-                .getKnownAddressesInRange(0L, 100L);
+        doReturn(CompletableFuture.completedFuture(new KnownAddressResponse(retVal)))
+                .when(logUnitClient)
+                .requestKnownAddresses(0L, 100L);
 
         StateTransferManager stateTransferManager =
                 StateTransferManager.builder()
-                        .streamLog(streamLog)
+                        .logUnitClient(logUnitClient)
                         .batchSize(10)
                         .batchProcessor(new SuccessfulBatchProcessor())
                         .build();
@@ -58,9 +61,9 @@ class StateTransferManagerTest implements TransferSegmentCreator {
     @Test
     void handleTransfer() {
         // Any status besides NOT_TRANSFERRED should not be updated
-        StreamLog streamLog = mock(StreamLog.class);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
         StateTransferManager manager = StateTransferManager.builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .batchSize(10)
                 .batchProcessor(new SuccessfulBatchProcessor())
                 .build();
@@ -121,7 +124,7 @@ class StateTransferManagerTest implements TransferSegmentCreator {
                 ImmutableList.copyOf(LongStream.range(25L, 51L).boxed().collect(Collectors.toList()));
 
         manager = StateTransferManager.builder()
-                .streamLog(streamLog)
+                .logUnitClient(logUnitClient)
                 .batchSize(10)
                 .batchProcessor(new FaultyBatchProcessor(10))
                 .build();
@@ -140,9 +143,9 @@ class StateTransferManagerTest implements TransferSegmentCreator {
     @Test
     void synchronousStateTransferTest() {
         StateTransferBatchProcessor batchProcessor = new SuccessfulBatchProcessor();
-        StreamLog streamLog = mock(StreamLog.class);
+        LogUnitClient logUnitClient = mock(LogUnitClient.class);
         int batchSize = 10;
-        StateTransferManager manager = new StateTransferManager(streamLog, batchSize, batchProcessor);
+        StateTransferManager manager = new StateTransferManager(logUnitClient, batchSize, batchProcessor);
         Stream<TransferBatchRequest> stream = Lists
                 .partition(LongStream.range(0, 100).boxed().collect(Collectors.toList()), batchSize)
                 .stream()
@@ -164,7 +167,7 @@ class StateTransferManagerTest implements TransferSegmentCreator {
                 .stream()
                 .map(partition -> TransferBatchRequest.builder().addresses(partition).build());
         batchProcessor = new FaultyBatchProcessor(10);
-        manager = new StateTransferManager(streamLog, batchSize, batchProcessor);
+        manager = new StateTransferManager(logUnitClient, batchSize, batchProcessor);
         status = manager.synchronousStateTransfer(stream, 80);
         assertThat(status.getSegmentState()).isEqualTo(FAILED);
         assertThat(status.getTotalTransferred()).isEqualTo(0L);

@@ -12,12 +12,12 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchResponse.TransferStatus;
 import org.corfudb.infrastructure.log.statetransfer.batchprocessor.StateTransferBatchProcessor;
 import org.corfudb.infrastructure.log.statetransfer.exceptions.TransferSegmentException;
+import org.corfudb.runtime.clients.LogUnitClient;
 
 import java.util.Iterator;
 import java.util.List;
@@ -143,11 +143,11 @@ public class StateTransferManager {
     }
 
     /**
-     * A stream log of the current node.
+     * A log unit client to the current node.
      */
     @Getter
     @NonNull
-    private final StreamLog streamLog;
+    private final LogUnitClient logUnitClient;
 
     /**
      * A size of one batch of transfer.
@@ -171,8 +171,8 @@ public class StateTransferManager {
      * @return A list of addresses, currently not present in the stream log.
      */
     ImmutableList<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
-        Set<Long> knownAddresses = streamLog
-                .getKnownAddressesInRange(rangeStart, rangeEnd);
+        Set<Long> knownAddresses = logUnitClient
+                .requestKnownAddresses(rangeStart, rangeEnd).join().getKnownAddresses();
 
         return LongStream.range(rangeStart, rangeEnd + 1L)
                 .filter(address -> !knownAddresses.contains(address))
