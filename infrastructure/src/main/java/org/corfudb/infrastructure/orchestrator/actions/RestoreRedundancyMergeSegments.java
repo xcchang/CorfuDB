@@ -105,7 +105,7 @@ public class RestoreRedundancyMergeSegments extends Action {
                         currentNode, currentLayout);
 
                 // Trim a current stream log and retrieve a global trim mark.
-                long trimMark = setTrimOnNewLogUnit(currentLayout, runtime);
+                long trimMark = trimLog(runtime);
 
                 // Create a pre transfer state list.
                 ImmutableList<TransferSegment> preTransferList =
@@ -139,7 +139,7 @@ public class RestoreRedundancyMergeSegments extends Action {
                 // State transfer did not happen. Try merging segments if possible.
                 if (transferredSegments.isEmpty()) {
                     log.info("State transfer on: {}: No transfer occurred, " +
-                                    "try merging the segments.", currentNode);
+                            "try merging the segments.", currentNode);
                     layoutManagementView.mergeSegments(currentLayout);
                 }
                 // State transfer happened.
@@ -187,22 +187,31 @@ public class RestoreRedundancyMergeSegments extends Action {
         }).setOptions(retrySettings).run();
 
     }
+
     /**
-     * Sets the trim mark on this endpoint's log unit and also perform a prefix trim.
+     * Sets the trim mark on this endpoint's log unit, performs a prefix trim and then compaction.
      *
-     * @param layout  A current layout.
      * @param runtime A current runtime.
      * @return A retrieved trim mark.
      */
-    long setTrimOnNewLogUnit(Layout layout, CorfuRuntime runtime) {
+    long trimLog(CorfuRuntime runtime) {
 
         long trimMark = runtime.getAddressSpaceView().getTrimMark().getSequence();
 
+        Layout layout = runtime.getLayoutView().getLayout();
+
         Token prefixToken = new Token(layout.getEpoch(), trimMark - 1);
-        runtime.getLayoutView().getRuntimeLayout(layout)
-                .getLogUnitClient(currentNode)
+
+        LogUnitClient logUnitClient = runtime
+                .getLayoutView()
+                .getRuntimeLayout(layout)
+                .getLogUnitClient(currentNode);
+
+        logUnitClient
                 .prefixTrim(prefixToken)
+                .thenCompose(nop -> logUnitClient.compact())
                 .join();
+
         return trimMark;
     }
 
