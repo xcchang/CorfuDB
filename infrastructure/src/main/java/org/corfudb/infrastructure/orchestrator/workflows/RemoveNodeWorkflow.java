@@ -64,7 +64,6 @@ public class RemoveNodeWorkflow implements IWorkflow {
 
         @Override
         public void impl(@Nonnull CorfuRuntime runtime) throws Exception {
-            runtime.invalidateLayout();
             Layout layout = new Layout(runtime.getLayoutView().getLayout());
             runtime.getLayoutManagementView().removeNode(layout,
                     request.getEndpoint());
