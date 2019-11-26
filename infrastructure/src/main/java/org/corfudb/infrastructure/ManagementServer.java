@@ -1,12 +1,16 @@
 package org.corfudb.infrastructure;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.management.ClusterStateContext;
+import org.corfudb.infrastructure.management.FailureDetector;
 import org.corfudb.infrastructure.management.ReconfigurationEventHandler;
 import org.corfudb.infrastructure.orchestrator.Orchestrator;
+import org.corfudb.protocols.wireprotocol.ClusterState;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
@@ -15,6 +19,7 @@ import org.corfudb.protocols.wireprotocol.NodeState;
 import org.corfudb.protocols.wireprotocol.failuredetector.FailureDetectorMetrics;
 import org.corfudb.protocols.wireprotocol.orchestrator.OrchestratorMsg;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.exceptions.UnreachableClusterException;
 import org.corfudb.runtime.view.IReconfigurationHandlerPolicy;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.util.concurrent.SingletonResource;
@@ -26,6 +31,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -40,7 +47,6 @@ import java.util.stream.Collectors;
  * <p>Created by zlokhandwala on 9/28/16.
  */
 @Slf4j
-@Builder
 public class ManagementServer extends AbstractServer {
 
     private final ServerContext serverContext;
@@ -48,7 +54,8 @@ public class ManagementServer extends AbstractServer {
     /**
      * A {@link SingletonResource} which provides a {@link CorfuRuntime}.
      */
-    private final SingletonResource<CorfuRuntime> corfuRuntime;
+    private final SingletonResource<CorfuRuntime> corfuRuntime =
+            SingletonResource.withInitial(this::getNewCorfuRuntime);
 
     /**
      * Policy to be used to handle failures/healing.
@@ -62,6 +69,27 @@ public class ManagementServer extends AbstractServer {
 
     private final Orchestrator orchestrator;
 
+    /**
+     * System down handler to break out of live-locks if the runtime cannot reach the cluster for a
+     * certain amount of time. This handler can be invoked at anytime if the Runtime is stuck and
+     * cannot make progress on an RPC call after trying for more than
+     * SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT number of retries.
+     */
+    private final Runnable runtimeSystemDownHandler = () -> {
+        log.warn("ManagementServer: Runtime stalled. Invoking systemDownHandler after {} "
+                + "unsuccessful tries.", SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        throw new UnreachableClusterException("Runtime stalled. Invoking systemDownHandler after "
+                + SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT + " unsuccessful tries.");
+    };
+
+    /**
+     * The number of tries to be made to execute any RPC request before the runtime gives up and
+     * invokes the systemDownHandler.
+     * This is set to 60  based on the fact that the sleep duration between RPC retries is
+     * defaulted to 1 second in the Runtime parameters. This gives the Runtime a total of 1 minute
+     * to make progress. Else the ongoing task is aborted.
+     */
+    private static final int SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT = 60;
 
     private final ExecutorService executor;
     private final ExecutorService heartbeatThread;
@@ -86,7 +114,64 @@ public class ManagementServer extends AbstractServer {
         return Arrays.asList(executor, heartbeatThread);
     }
 
+    /**
+     * Returns new ManagementServer.
+     *
+     * @param serverContext context object providing parameters and objects
+     */
+    public ManagementServer(ServerContext serverContext) {
+        this.serverContext = serverContext;
 
+        this.executor = Executors.newFixedThreadPool(serverContext.getManagementServerThreadCount(),
+                new ServerThreadFactory("management-", new ServerThreadFactory.ExceptionHandler()));
+        this.heartbeatThread = Executors.newSingleThreadExecutor(
+                new ServerThreadFactory("heartbeat-", new ServerThreadFactory.ExceptionHandler()));
+
+        this.failureHandlerPolicy = serverContext.getFailureHandlerPolicy();
+
+        ClusterStateContext.HeartbeatCounter counter = new ClusterStateContext.HeartbeatCounter();
+
+        FailureDetector failureDetector = new FailureDetector(counter, serverContext.getLocalEndpoint());
+
+        // Creating a management agent.
+        ClusterState defaultView = ClusterState.builder()
+                .localEndpoint(serverContext.getLocalEndpoint())
+                .nodes(ImmutableMap.of())
+                .unresponsiveNodes(ImmutableList.of())
+                .build();
+        clusterContext =  ClusterStateContext.builder()
+                .counter(counter)
+                .clusterView(new AtomicReference<>(defaultView))
+                .build();
+
+        Layout managementLayout = serverContext.copyManagementLayout();
+        managementAgent = new ManagementAgent(
+                corfuRuntime, serverContext, clusterContext, failureDetector,managementLayout
+        );
+
+        orchestrator = new Orchestrator(corfuRuntime, serverContext);
+    }
+
+    /**
+     * Returns a connected instance of the CorfuRuntime.
+     *
+     * @return A connected instance of runtime.
+     */
+    private CorfuRuntime getNewCorfuRuntime() {
+        final CorfuRuntime.CorfuRuntimeParameters params =
+                serverContext.getManagementRuntimeParameters();
+        params.setSystemDownHandlerTriggerLimit(SYSTEM_DOWN_HANDLER_TRIGGER_LIMIT);
+        final CorfuRuntime runtime = CorfuRuntime.fromParameters(params);
+        final Layout managementLayout = serverContext.copyManagementLayout();
+        // Runtime can be set up either using the layout or the bootstrapEndpoint address.
+        if (managementLayout != null) {
+            managementLayout.getLayoutServers().forEach(runtime::addLayoutServer);
+        }
+        runtime.connect();
+        log.info("getCorfuRuntime: Corfu Runtime connected successfully");
+        params.setSystemDownHandler(runtimeSystemDownHandler);
+        return runtime;
+    }
     /**
      * Handler for this server.
      */

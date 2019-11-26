@@ -66,13 +66,13 @@ public class StateTransferManager {
         }
 
         /**
-         * Compute the total number of transferred addresses.
+         * Get the total number of addresses in range.
          * {@link #endAddress} and {@link #startAddress} can only be non-negative longs such that
          * {@link #endAddress} >= {@link #startAddress}.
          *
-         * @return Sum of the total addresses transferred.
+         * @return Total number of addresses in this segment.
          */
-        public long computeTotalTransferred() {
+        public long getTotal() {
             return endAddress - startAddress + 1L;
         }
 
@@ -205,7 +205,7 @@ public class StateTransferManager {
                     // If no addresses to transfer - mark a segment as transferred.
                     if (unknownAddressesInRange.isEmpty()) {
                         log.debug("All addresses are present in a range, skipping transfer.");
-                        long totalTransferred = segment.computeTotalTransferred();
+                        long totalTransferred = segment.getTotal();
 
                         newStatus = TransferSegmentStatus
                                 .builder()

@@ -1,6 +1,5 @@
 package org.corfudb.infrastructure;
 
-import org.corfudb.infrastructure.configuration.ServerConfigurator;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.DetectorMsg;
 import org.corfudb.protocols.wireprotocol.LayoutBootstrapRequest;
@@ -36,10 +35,9 @@ public class ManagementServerTest extends AbstractServerTest {
         router.addServer(new LayoutServer(serverContext));
         router.addServer(new BaseServer(serverContext));
         // Required to fetch global tails while handling failures.
-        ServerConfigurator serverConfigurator = new ServerConfigurator(serverContext);
         // Required for management server to bootstrap during initialization.
         router.addServer(new SequencerServer(serverContext));
-        managementServer = serverConfigurator.getManagementServer();
+        managementServer = new ManagementServer(serverContext);
         return managementServer;
     }
 

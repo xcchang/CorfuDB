@@ -207,10 +207,9 @@ public class RestoreRedundancyMergeSegments extends Action {
                 .getRuntimeLayout(layout)
                 .getLogUnitClient(currentNode);
 
-        logUnitClient
-                .prefixTrim(prefixToken)
-                .thenCompose(nop -> logUnitClient.compact())
-                .join();
+        logUnitClient.prefixTrim(prefixToken).join();
+
+        logUnitClient.compact().join();
 
         return trimMark;
     }

@@ -47,7 +47,7 @@ public class AddNodeWorkflow implements IWorkflow {
      *
      * @param request request to add a node
      */
-    public AddNodeWorkflow(AddNodeRequest request, StreamLog streamLog) {
+    public AddNodeWorkflow(AddNodeRequest request) {
         this.id = UUID.randomUUID();
         this.request = request;
         actions = ImmutableList.of(new BootstrapNode(),

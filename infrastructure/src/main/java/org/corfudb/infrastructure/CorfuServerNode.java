@@ -16,8 +16,6 @@ import io.netty.handler.ssl.SslHandler;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.configuration.CorfuConfig;
-import org.corfudb.infrastructure.configuration.ServerConfigurator;
 import org.corfudb.protocols.wireprotocol.NettyCorfuMessageDecoder;
 import org.corfudb.protocols.wireprotocol.NettyCorfuMessageEncoder;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
@@ -66,35 +64,30 @@ public class CorfuServerNode implements AutoCloseable {
      * @param serverContext Initialized Server Context.
      */
     public CorfuServerNode(@Nonnull ServerContext serverContext) {
-
-        this(serverContext, createServerMap(serverContext));
-    }
-
-    public CorfuServerNode(@NonNull ServerContext serverContext,
-                           @NonNull Map<Class, AbstractServer> serverMap) {
-        this.serverContext = serverContext;
-        this.serverMap = serverMap;
-        this.router = new NettyServerRouter(new ArrayList<>(serverMap.values()));
-        this.serverContext.setServerRouter(router);
-        this.close = new AtomicBoolean(false);
+        this(serverContext,
+                ImmutableMap.<Class, AbstractServer>builder()
+                        .put(BaseServer.class, new BaseServer(serverContext))
+                        .put(SequencerServer.class, new SequencerServer(serverContext))
+                        .put(LayoutServer.class, new LayoutServer(serverContext))
+                        .put(LogUnitServer.class, new LogUnitServer(serverContext))
+                        .put(ManagementServer.class, new ManagementServer(serverContext))
+                        .build()
+        );
     }
 
     /**
-     * Given a server context create a map from class to a server.
+     * Corfu Server initialization.
      *
-     * @param context Corfu server context.
-     * @return A map.
+     * @param serverContext Initialized Server Context.
+     * @param serverMap     Server Map with all components.
      */
-    private static ImmutableMap<Class, AbstractServer> createServerMap(ServerContext context) {
-        ServerConfigurator configurator = new ServerConfigurator(context);
-
-        return ImmutableMap.<Class, AbstractServer>builder()
-                .put(BaseServer.class, new BaseServer(context))
-                .put(SequencerServer.class, new SequencerServer(context))
-                .put(LayoutServer.class, new LayoutServer(context))
-                .put(LogUnitServer.class, configurator.getLogUnitServer())
-                .put(ManagementServer.class, configurator.getManagementServer())
-                .build();
+    public CorfuServerNode(@Nonnull ServerContext serverContext,
+                           @Nonnull Map<Class, AbstractServer> serverMap) {
+        this.serverContext = serverContext;
+        this.serverMap = serverMap;
+        router = new NettyServerRouter(new ArrayList<>(serverMap.values()));
+        this.serverContext.setServerRouter(router);
+        this.close = new AtomicBoolean(false);
     }
 
     /**

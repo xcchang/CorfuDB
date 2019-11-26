@@ -71,15 +71,11 @@ public class Orchestrator {
 
     final ExecutorService executor;
 
-    final StreamLog streamLog;
-
-
     public Orchestrator(@Nonnull SingletonResource<CorfuRuntime> runtime,
-                        @Nonnull ServerContext serverContext,
-                        @NonNull StreamLog streamLog) {
+                        @Nonnull ServerContext serverContext) {
         this.serverContext = serverContext;
         this.getRuntime = runtime;
-        this.streamLog = streamLog;
+
         executor = Executors.newFixedThreadPool(Runtime.getRuntime()
                 .availableProcessors(), new ThreadFactory() {
 
@@ -117,7 +113,7 @@ public class Orchestrator {
                 query(msg, ctx, r);
                 break;
             case ADD_NODE:
-                workflow = new AddNodeWorkflow((AddNodeRequest) orchReq.getRequest(), streamLog);
+                workflow = new AddNodeWorkflow((AddNodeRequest) orchReq.getRequest());
                 dispatch(workflow, msg, ctx, r);
                 break;
             case REMOVE_NODE:
@@ -125,7 +121,7 @@ public class Orchestrator {
                 dispatch(workflow, msg, ctx, r);
                 break;
             case HEAL_NODE:
-                workflow = new HealNodeWorkflow((HealNodeRequest) orchReq.getRequest(), streamLog);
+                workflow = new HealNodeWorkflow((HealNodeRequest) orchReq.getRequest());
                 dispatch(workflow, msg, ctx, r);
                 break;
             case FORCE_REMOVE_NODE:
@@ -134,7 +130,7 @@ public class Orchestrator {
                 break;
             case RESTORE_REDUNDANCY_MERGE_SEGMENTS:
                 workflow = new RestoreRedundancyMergeSegmentsWorkflow(
-                        (RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest(), streamLog);
+                        (RestoreRedundancyMergeSegmentsRequest) orchReq.getRequest());
                 dispatch(workflow, msg, ctx, r);
                 break;
             default:
