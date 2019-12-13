@@ -1,8 +1,12 @@
 package org.corfudb.universe.node.server.vm;
 
+import static org.corfudb.universe.node.server.CorfuServer.Mode;
+import static org.corfudb.universe.node.server.CorfuServer.Persistence;
+
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.NonNull;
 import lombok.ToString;
 import org.corfudb.universe.node.server.CorfuServerParams;
 import org.slf4j.event.Level;
@@ -10,9 +14,6 @@ import org.slf4j.event.Level;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
-
-import static org.corfudb.universe.node.server.CorfuServer.Mode;
-import static org.corfudb.universe.node.server.CorfuServer.Persistence;
 
 
 /**
@@ -22,11 +23,11 @@ import static org.corfudb.universe.node.server.CorfuServer.Persistence;
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
 public class VmCorfuServerParams extends CorfuServerParams {
-    private final String vmName;
+    private final VmName vmName;
 
     @Builder
     public VmCorfuServerParams(
-            String vmName, int port, Mode mode, Persistence persistence,
+            VmName vmName, int port, Mode mode, Persistence persistence,
             Level logLevel, String clusterName, Duration stopTimeout, String serverVersion,
             Path serverJarDirectory, String dockerImage) {
 
@@ -35,5 +36,23 @@ public class VmCorfuServerParams extends CorfuServerParams {
                 Optional.empty(), serverVersion, serverJarDirectory, dockerImage
         );
         this.vmName = vmName;
+    }
+
+    @Builder
+    @EqualsAndHashCode
+    @Getter
+    public static class VmName implements Comparable<VmName> {
+        @NonNull
+        private final String name;
+
+        @Override
+        public int compareTo(VmName other) {
+            return name.compareTo(other.name);
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
     }
 }

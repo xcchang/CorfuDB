@@ -3,13 +3,11 @@ package org.corfudb.universe.scenario.fixture;
 import com.google.common.collect.ImmutableList;
 import lombok.Getter;
 import lombok.Setter;
-import org.corfudb.common.result.Result;
 import org.corfudb.universe.group.cluster.CorfuClusterParams;
 import org.corfudb.universe.group.cluster.CorfuClusterParams.CorfuClusterParamsBuilder;
 import org.corfudb.universe.group.cluster.SupportClusterParams;
 import org.corfudb.universe.group.cluster.SupportClusterParams.SupportClusterParamsBuilder;
 import org.corfudb.universe.logging.LoggingParams;
-import org.corfudb.universe.node.Node;
 import org.corfudb.universe.node.Node.NodeType;
 import org.corfudb.universe.node.client.ClientParams;
 import org.corfudb.universe.node.client.ClientParams.ClientParamsBuilder;
@@ -20,15 +18,16 @@ import org.corfudb.universe.node.server.SupportServerParams;
 import org.corfudb.universe.node.server.SupportServerParams.SupportServerParamsBuilder;
 import org.corfudb.universe.node.server.vm.VmCorfuServerParams;
 import org.corfudb.universe.node.server.vm.VmCorfuServerParams.VmCorfuServerParamsBuilder;
+import org.corfudb.universe.node.server.vm.VmCorfuServerParams.VmName;
 import org.corfudb.universe.scenario.fixture.FixtureUtil.FixtureUtilBuilder;
 import org.corfudb.universe.universe.UniverseParams;
 import org.corfudb.universe.universe.UniverseParams.UniverseParamsBuilder;
 import org.corfudb.universe.universe.vm.VmConfigPropertiesLoader;
-import org.corfudb.universe.universe.vm.VmConfigPropertiesLoader.PropsLoaderException;
 import org.corfudb.universe.universe.vm.VmUniverseParams;
 import org.corfudb.universe.universe.vm.VmUniverseParams.Credentials;
 import org.corfudb.universe.universe.vm.VmUniverseParams.VmCredentialsParams;
 import org.corfudb.universe.universe.vm.VmUniverseParams.VmUniverseParamsBuilder;
+import org.corfudb.universe.util.IpAddress;
 import org.slf4j.event.Level;
 
 import java.nio.file.Paths;
@@ -44,7 +43,7 @@ import java.util.concurrent.ConcurrentMap;
  */
 public interface Fixtures {
 
-    String ANY_ADDRESS = "0.0.0.0";
+    IpAddress ANY_ADDRESS = IpAddress.builder().ip("0.0.0.0").build();
 
     /**
      * Common constants used for test
@@ -149,13 +148,9 @@ public interface Fixtures {
                     //empty
                     .orElse(new Properties());
 
-            Result<Properties, PropsLoaderException> vmPropertiesResult = VmConfigPropertiesLoader
-                    .loadVmProperties();
-
-            if (vmPropertiesResult.isError()) {
-                throw vmPropertiesResult.getError();
-            }
-            Properties vmProperties = vmPropertiesResult.get();
+            Properties vmProperties = VmConfigPropertiesLoader
+                    .loadVmProperties()
+                    .get();
 
             servers
                     .logLevel(Level.INFO)
@@ -202,9 +197,9 @@ public interface Fixtures {
             );
             serversParams.forEach(clusterParams::add);
 
-            ConcurrentMap<String, String> vmIpAddresses = new ConcurrentHashMap<>();
+            ConcurrentMap<VmName, IpAddress> vmIpAddresses = new ConcurrentHashMap<>();
             for (int i = 0; i < clusterParams.getNumNodes(); i++) {
-                vmIpAddresses.put(vmPrefix + (i + 1), ANY_ADDRESS);
+                vmIpAddresses.put(VmName.builder().name(vmPrefix + (i + 1)).build(), ANY_ADDRESS);
             }
 
             VmUniverseParams universeParams = universe
