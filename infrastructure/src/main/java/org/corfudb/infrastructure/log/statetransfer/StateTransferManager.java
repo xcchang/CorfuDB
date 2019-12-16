@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.log.statetransfer;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import lombok.AccessLevel;
@@ -37,6 +38,158 @@ import static org.corfudb.infrastructure.log.statetransfer.StateTransferManager.
 @Slf4j
 @Builder
 public class StateTransferManager {
+
+    /**
+     * A log unit client to the current node.
+     */
+    @Getter
+    @NonNull
+    private final LogUnitClient logUnitClient;
+
+    /**
+     * A size of one batch of transfer.
+     */
+    @Getter
+    @NonNull
+    private final int batchSize;
+
+    /**
+     * A batch processor that transfers addresses one batch at a time.
+     */
+    @Getter
+    @NonNull
+    private final StateTransferBatchProcessor batchProcessor;
+
+
+    /**
+     * Given a range, return the addresses that are currently not present in the stream log.
+     *
+     * @param rangeStart Start address.
+     * @param rangeEnd   End address.
+     * @return A list of addresses, currently not present in the stream log.
+     */
+    @VisibleForTesting
+    ImmutableList<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
+        Set<Long> knownAddresses = logUnitClient
+                .requestKnownAddresses(rangeStart, rangeEnd).join().getKnownAddresses();
+
+        return LongStream.range(rangeStart, rangeEnd + 1L)
+                .filter(address -> !knownAddresses.contains(address))
+                .boxed()
+                .collect(ImmutableList.toImmutableList());
+    }
+
+    /**
+     * Performs the state transfer for the current transfer segments and also
+     * updates their state as a result.
+     *
+     * @param transferSegments A list of the segment currently present in the system.
+     * @return A list with the updated transfer segments.
+     */
+    public ImmutableList<TransferSegment> handleTransfer(List<TransferSegment> transferSegments) {
+
+        return transferSegments.stream().map(segment -> {   // For each of the segments:
+                    TransferSegmentStatus newStatus = segment.getStatus();
+
+                    // If a segment is not NOT_TRANSFERRED -> return it as is.
+                    if (newStatus.getSegmentState() != NOT_TRANSFERRED) {
+                        return segment;
+                    }
+
+                    // Get all the unknown addresses for this segment.
+                    List<Long> unknownAddressesInRange =
+                            getUnknownAddressesInRange(segment.getStartAddress(),
+                                    segment.getEndAddress());
+
+                    // If no addresses to transfer - mark a segment as transferred.
+                    if (unknownAddressesInRange.isEmpty()) {
+                        log.debug("All addresses are present in a range, skipping transfer.");
+                        long totalTransferred = segment.getTotal();
+
+                        newStatus = TransferSegmentStatus
+                                .builder()
+                                .segmentState(TRANSFERRED)
+                                .totalTransferred(totalTransferred)
+                                .build();
+                    } else {
+                        // Get total number of addresses needed to transfer.
+                        long numAddressesToTransfer = unknownAddressesInRange.size();
+                        // Create a transferBatchRequest stream.
+                        Stream<TransferBatchRequest> batchStream = Lists
+                                .partition(unknownAddressesInRange, batchSize)
+                                .stream()
+                                .map(groupedAddresses ->
+                                        new TransferBatchRequest(groupedAddresses, Optional.empty())
+                                );
+                        // Execute state transfer synchronously.
+                        newStatus = synchronousStateTransfer(batchStream, numAddressesToTransfer);
+                    }
+
+                    return TransferSegment
+                            .builder()
+                            .startAddress(segment.getStartAddress())
+                            .endAddress(segment.getEndAddress())
+                            .status(newStatus)
+                            .build();
+                }
+
+        ).collect(ImmutableList.toImmutableList());
+    }
+
+    /**
+     * Given a stream of batch requests, and a total number
+     * of transferred addresses needed, execute a state transfer synchronously.
+     *
+     * @param batchStream A stream of batch requests.
+     * @param totalNeeded A total number of addresses needed for transfer.
+     * @return A status representing a final status of a transferred segment.
+     */
+    @VisibleForTesting
+    TransferSegmentStatus synchronousStateTransfer(
+            Stream<TransferBatchRequest> batchStream, long totalNeeded) {
+        long accTransferred = 0L;
+
+        Iterator<TransferBatchRequest> iterator = batchStream.iterator();
+
+        while (iterator.hasNext()) {
+            TransferBatchRequest nextBatch = iterator.next();
+            TransferBatchResponse response =
+                    batchProcessor.transfer(nextBatch).join();
+
+            if (response.getStatus() == TransferStatus.FAILED) {
+                Optional<TransferSegmentException> causeOfFailure =
+                        Optional.of(response.getCauseOfFailure()
+                                .map(TransferSegmentException::new)
+                                .orElse(new TransferSegmentException("Failed to transfer.")));
+
+                return TransferSegmentStatus
+                        .builder()
+                        .totalTransferred(0L)
+                        .segmentState(FAILED)
+                        .causeOfFailure(causeOfFailure)
+                        .build();
+            }
+            accTransferred += response.getTransferBatchRequest().getAddresses().size();
+        }
+
+        if (accTransferred == totalNeeded) {
+            return TransferSegmentStatus
+                    .builder()
+                    .totalTransferred(accTransferred)
+                    .segmentState(TRANSFERRED)
+                    .build();
+        }
+
+        String errorMsg = String.format("Needed: %s, but transferred: %s",
+                totalNeeded, accTransferred);
+
+        return TransferSegmentStatus
+                .builder()
+                .totalTransferred(0L)
+                .segmentState(FAILED)
+                .causeOfFailure(Optional.of(new TransferSegmentException(errorMsg)))
+                .build();
+    }
 
     /**
      * A data class that represents a non-empty and bounded segment to be transferred.
@@ -140,154 +293,5 @@ public class StateTransferManager {
         @Default
         @Exclude
         private final Optional<TransferSegmentException> causeOfFailure = Optional.empty();
-    }
-
-    /**
-     * A log unit client to the current node.
-     */
-    @Getter
-    @NonNull
-    private final LogUnitClient logUnitClient;
-
-    /**
-     * A size of one batch of transfer.
-     */
-    @Getter
-    @NonNull
-    private final int batchSize;
-
-    /**
-     * A batch processor that transfers addresses one batch at a time.
-     */
-    @Getter
-    @NonNull
-    private final StateTransferBatchProcessor batchProcessor;
-
-    /**
-     * Given a range, return the addresses that are currently not present in the stream log.
-     *
-     * @param rangeStart Start address.
-     * @param rangeEnd   End address.
-     * @return A list of addresses, currently not present in the stream log.
-     */
-    ImmutableList<Long> getUnknownAddressesInRange(long rangeStart, long rangeEnd) {
-        Set<Long> knownAddresses = logUnitClient
-                .requestKnownAddresses(rangeStart, rangeEnd).join().getKnownAddresses();
-
-        return LongStream.range(rangeStart, rangeEnd + 1L)
-                .filter(address -> !knownAddresses.contains(address))
-                .boxed()
-                .collect(ImmutableList.toImmutableList());
-    }
-
-    /**
-     * Performs the state transfer for the current transfer segments and also
-     * updates their state as a result.
-     *
-     * @param transferSegments A list of the segment currently present in the system.
-     * @return A list with the updated transfer segments.
-     */
-    public ImmutableList<TransferSegment> handleTransfer(List<TransferSegment> transferSegments) {
-
-        return transferSegments.stream().map(segment -> {   // For each of the segments:
-                    TransferSegmentStatus newStatus = segment.getStatus();
-
-                    // If a segment is not NOT_TRANSFERRED -> return it as is.
-                    if (newStatus.getSegmentState() != NOT_TRANSFERRED) {
-                        return segment;
-                    }
-
-                    // Get all the unknown addresses for this segment.
-                    List<Long> unknownAddressesInRange =
-                            getUnknownAddressesInRange(segment.getStartAddress(),
-                                    segment.getEndAddress());
-
-                    // If no addresses to transfer - mark a segment as transferred.
-                    if (unknownAddressesInRange.isEmpty()) {
-                        log.debug("All addresses are present in a range, skipping transfer.");
-                        long totalTransferred = segment.getTotal();
-
-                        newStatus = TransferSegmentStatus
-                                .builder()
-                                .segmentState(TRANSFERRED)
-                                .totalTransferred(totalTransferred)
-                                .build();
-                    } else {
-                        // Get total number of addresses needed to transfer.
-                        long numAddressesToTransfer = unknownAddressesInRange.size();
-                        // Create a transferBatchRequest stream.
-                        Stream<TransferBatchRequest> batchStream = Lists
-                                .partition(unknownAddressesInRange, batchSize)
-                                .stream()
-                                .map(groupedAddresses ->
-                                        new TransferBatchRequest(groupedAddresses, Optional.empty())
-                                );
-                        // Execute state transfer synchronously.
-                        newStatus = synchronousStateTransfer(batchStream, numAddressesToTransfer);
-                    }
-
-                    return TransferSegment
-                            .builder()
-                            .startAddress(segment.getStartAddress())
-                            .endAddress(segment.getEndAddress())
-                            .status(newStatus)
-                            .build();
-                }
-
-        ).collect(ImmutableList.toImmutableList());
-    }
-
-    /**
-     * Given a stream of batch requests, and a total number
-     * of transferred addresses needed, execute a state transfer synchronously.
-     *
-     * @param batchStream A stream of batch requests.
-     * @param totalNeeded A total number of addresses needed for transfer.
-     * @return A status representing a final status of a transferred segment.
-     */
-    TransferSegmentStatus synchronousStateTransfer(
-            Stream<TransferBatchRequest> batchStream, long totalNeeded) {
-        long accTransferred = 0L;
-
-        Iterator<TransferBatchRequest> iterator = batchStream.iterator();
-
-        while (iterator.hasNext()) {
-            TransferBatchRequest nextBatch = iterator.next();
-            TransferBatchResponse response =
-                    batchProcessor.transfer(nextBatch).join();
-
-            if (response.getStatus() == TransferStatus.FAILED) {
-                Optional<TransferSegmentException> causeOfFailure =
-                        Optional.of(response.getCauseOfFailure()
-                                .map(TransferSegmentException::new)
-                                .orElse(new TransferSegmentException("Failed to transfer.")));
-
-                return TransferSegmentStatus
-                        .builder()
-                        .totalTransferred(0L)
-                        .segmentState(FAILED)
-                        .causeOfFailure(causeOfFailure)
-                        .build();
-            }
-            accTransferred += response.getTransferBatchRequest().getAddresses().size();
-        }
-
-        if (accTransferred == totalNeeded) {
-            return TransferSegmentStatus
-                    .builder()
-                    .totalTransferred(accTransferred)
-                    .segmentState(TRANSFERRED)
-                    .build();
-        }
-
-        String errorMsg = String.format("Needed: %s, but transferred: %s",
-                totalNeeded, accTransferred);
-
-        return TransferSegmentStatus
-                .builder()
-                .totalTransferred(0L)
-                .segmentState(FAILED)
-                .causeOfFailure(Optional.of(new TransferSegmentException(errorMsg)))
-                .build();
     }
 }

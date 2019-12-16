@@ -2,7 +2,6 @@ package org.corfudb.infrastructure.orchestrator.workflows;
 
 import com.google.common.collect.ImmutableList;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.orchestrator.Action;
 import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.infrastructure.redundancy.RedundancyCalculator;

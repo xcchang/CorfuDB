@@ -22,7 +22,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
-
 import static org.corfudb.util.Utils.getLogTail;
 
 /**
@@ -217,6 +216,7 @@ public class LayoutManagementView extends AbstractView {
      * @throws OutrankedException if consensus is outranked.
      */
     public void mergeSegments(Layout currentLayout) {
+        Layout tempLayout = currentLayout;
         Layout newLayout;
         Predicate<Layout> shouldMergeSegments = layout -> {
             if (layout.getSegments().size() > 1) {
@@ -227,27 +227,27 @@ public class LayoutManagementView extends AbstractView {
             return false;
         };
 
-        if (shouldMergeSegments.test(currentLayout)) {
+        if (shouldMergeSegments.test(tempLayout)) {
 
-            log.info("mergeSegments: layout is {}", currentLayout);
+            log.info("mergeSegments: layout is {}", tempLayout);
 
-            sealEpoch(currentLayout);
+            sealEpoch(tempLayout);
 
-            while(shouldMergeSegments.test(currentLayout)){
-                LayoutBuilder layoutBuilder = new LayoutBuilder(currentLayout);
-                currentLayout = layoutBuilder
+            while(shouldMergeSegments.test(tempLayout)){
+                LayoutBuilder layoutBuilder = new LayoutBuilder(tempLayout);
+                tempLayout = layoutBuilder
                         .mergePreviousSegment(1)
                         .build();
             }
 
-            newLayout = currentLayout;
+            newLayout = tempLayout;
 
             attemptConsensus(newLayout);
         } else {
-            log.info("mergeSegments: skipping, no segments to merge {}", currentLayout);
-            newLayout = currentLayout;
+            log.info("mergeSegments: skipping, no segments to merge {}", tempLayout);
+            newLayout = tempLayout;
         }
-        reconfigureSequencerServers(currentLayout, newLayout, false);
+        reconfigureSequencerServers(tempLayout, newLayout, false);
     }
 
     /**

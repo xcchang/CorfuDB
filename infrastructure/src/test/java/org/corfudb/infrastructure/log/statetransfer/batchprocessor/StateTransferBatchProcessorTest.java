@@ -32,7 +32,7 @@ import static org.mockito.Mockito.mock;
 class StateTransferBatchProcessorTest extends DataTest {
 
     @Test
-    void writeRecordsSuccess() {
+    public void writeRecordsSuccess() {
         // Write successfully, a response should be sent to the caller.
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<LogData> stubList = createStubList(addresses);
@@ -52,7 +52,7 @@ class StateTransferBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void writeRecordsFailure() {
+    public void writeRecordsFailure() {
         // Write and fail immediately, exception should be propagated to the caller.
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<LogData> stubList = createStubList(addresses);
@@ -71,7 +71,7 @@ class StateTransferBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void writeRecordsRetry() {
+    public void writeRecordsRetry() {
         // Try writing 10 records, write only 5 of them, catch the exception.
         // Then retry writing the rest and succeed.
         // At the end return a transfer batch response with status SUCCEEDED and the correct
@@ -110,7 +110,7 @@ class StateTransferBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void writeRecordsRetryEmpty() {
+    public void writeRecordsRetryEmpty() {
         // Try writing 10 records, write all of them, but catch the exception.
         // Retry and succeed.
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());

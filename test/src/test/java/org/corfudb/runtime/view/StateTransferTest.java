@@ -2,15 +2,12 @@ package org.corfudb.runtime.view;
 
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Range;
 import lombok.Getter;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.infrastructure.ServerContextBuilder;
 import org.corfudb.infrastructure.TestLayoutBuilder;
 import org.corfudb.infrastructure.TestServerRouter;
-import org.corfudb.infrastructure.log.StreamLog;
-import org.corfudb.infrastructure.log.statetransfer.exceptions.TransferSegmentException;
 import org.corfudb.infrastructure.orchestrator.actions.RestoreRedundancyMergeSegments;
 import org.corfudb.infrastructure.redundancy.RedundancyCalculator;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
@@ -30,17 +27,14 @@ import org.corfudb.util.Sleep;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mockito;
 
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
@@ -50,8 +44,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.corfudb.runtime.view.ClusterStatusReport.ClusterStatus.STABLE;
 import static org.corfudb.test.TestUtils.setAggressiveTimeouts;
 import static org.corfudb.test.TestUtils.waitForLayoutChange;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
 
 /**
  * Created by zlokhandwala on 2019-06-06.
@@ -94,7 +86,7 @@ public class StateTransferTest extends AbstractViewTest {
     public void verifyAddNode() throws Exception {
         addServer(SERVERS.PORT_0);
         addServer(SERVERS.PORT_1);
-        final long writtenAddressesBatch1 = 3L;
+
         Layout l1 = new TestLayoutBuilder()
                 .setEpoch(1L)
                 .addLayoutServer(SERVERS.PORT_0)

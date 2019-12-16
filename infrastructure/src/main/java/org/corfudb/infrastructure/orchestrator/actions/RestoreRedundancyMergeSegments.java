@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.orchestrator.actions;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import lombok.Builder;
 import lombok.Builder.Default;
@@ -81,6 +82,7 @@ public class RestoreRedundancyMergeSegments extends Action {
      * @param transferManager A transfer manager that runs the state transfer.
      * @return A new layout, if a redundancy restoration occurred; a current layout otherwise.
      */
+    @VisibleForTesting
     Layout restoreWithBackOff(CorfuRuntime runtime, StateTransferManager transferManager)
             throws InterruptedException {
 
@@ -106,33 +108,7 @@ public class RestoreRedundancyMergeSegments extends Action {
 
                 // Trim a current stream log and retrieve a global trim mark.
                 long trimMark = trimLog(runtime);
-
-                // Create a pre transfer state list.
-                ImmutableList<TransferSegment> preTransferList =
-                        redundancyCalculator.createStateList(currentLayout, trimMark);
-
-                // Perform a state transfer for each segment synchronously and update the state list.
-                ImmutableList<TransferSegment> transferList = transferManager
-                        .handleTransfer(preTransferList);
-
-                // Get all the transfers that failed.
-                List<TransferSegment> failedList = transferList.stream()
-                        .filter(segment -> segment.getStatus().getSegmentState() == FAILED)
-                        .collect(Collectors.toList());
-
-                // Throw the first transfer segment exception if any of the transfers have failed.
-                Optional<TransferSegmentException> transferSegmentFailure = failedList.stream()
-                        .findFirst()
-                        .flatMap(ts -> ts.getStatus().getCauseOfFailure());
-
-                transferSegmentFailure.ifPresent(failure -> {
-                    throw failure;
-                });
-
-                // Filter all the segments with a status TRANSFERRED.
-                List<TransferSegment> transferredSegments = transferList.stream()
-                        .filter(segment -> segment.getStatus().getSegmentState() == TRANSFERRED)
-                        .collect(Collectors.toList());
+                List<TransferSegment> transferredSegments = getTransferSegments(transferManager, currentLayout, trimMark);
 
                 LayoutManagementView layoutManagementView = runtime.getLayoutManagementView();
 
@@ -188,12 +164,43 @@ public class RestoreRedundancyMergeSegments extends Action {
 
     }
 
+    private List<TransferSegment> getTransferSegments(
+            StateTransferManager transferManager, Layout currentLayout, long trimMark) {
+        // Create a pre transfer state list.
+        ImmutableList<TransferSegment> preTransferList =
+                redundancyCalculator.createStateList(currentLayout, trimMark);
+
+        // Perform a state transfer for each segment synchronously and update the state list.
+        ImmutableList<TransferSegment> transferList = transferManager
+                .handleTransfer(preTransferList);
+
+        // Get all the transfers that failed.
+        List<TransferSegment> failedList = transferList.stream()
+                .filter(segment -> segment.getStatus().getSegmentState() == FAILED)
+                .collect(Collectors.toList());
+
+        // Throw the first transfer segment exception if any of the transfers have failed.
+        Optional<TransferSegmentException> transferSegmentFailure = failedList.stream()
+                .findFirst()
+                .flatMap(ts -> ts.getStatus().getCauseOfFailure());
+
+        transferSegmentFailure.ifPresent(failure -> {
+            throw failure;
+        });
+
+        // Filter all the segments with a status TRANSFERRED.
+        return transferList.stream()
+                .filter(segment -> segment.getStatus().getSegmentState() == TRANSFERRED)
+                .collect(Collectors.toList());
+    }
+
     /**
      * Sets the trim mark on this endpoint's log unit, performs a prefix trim and then compaction.
      *
      * @param runtime A current runtime.
      * @return A retrieved trim mark.
      */
+    @VisibleForTesting
     long trimLog(CorfuRuntime runtime) {
 
         long trimMark = runtime.getAddressSpaceView().getTrimMark().getSequence();

@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.redundancy;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 import lombok.AllArgsConstructor;
@@ -32,6 +33,7 @@ public class RedundancyCalculator {
     @Getter
     private final String server;
 
+    @VisibleForTesting
     boolean segmentContainsServer(LayoutSegment segment, String server) {
         return segment.getFirstStripe().getLogServers().contains(server);
     }
@@ -45,6 +47,7 @@ public class RedundancyCalculator {
      * @param layout          A current layout.
      * @return A new, updated layout.
      */
+    @VisibleForTesting
     Layout restoreRedundancyForSegment(TransferSegment transferSegment, Layout layout) {
         List<LayoutSegment> segments = layout.getSegments().stream().map(layoutSegment -> {
             if (layoutSegment.getEnd() == transferSegment.getEndAddress() + 1L) {

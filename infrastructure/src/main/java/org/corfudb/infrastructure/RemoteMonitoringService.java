@@ -451,6 +451,7 @@ public class RemoteMonitoringService implements MonitoringService {
         return restoreRedundancyAndMergeSegments(layout);
     }
 
+    @VisibleForTesting
     boolean handleMergeSegments(String localEndpoint,
                                 SingletonResource<CorfuRuntime> runtimeSingletonResource,
                                 Layout layout, Duration retryQueryTimeout) {

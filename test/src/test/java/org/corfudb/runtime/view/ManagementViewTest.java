@@ -29,11 +29,9 @@ import org.corfudb.runtime.view.ClusterStatusReport.ClusterStatus;
 import org.corfudb.runtime.view.ClusterStatusReport.ConnectivityStatus;
 import org.corfudb.runtime.view.ClusterStatusReport.NodeStatus;
 import org.corfudb.runtime.view.stream.IStreamView;
-import org.corfudb.util.Sleep;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -45,14 +43,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.corfudb.test.TestUtils.setAggressiveTimeouts;
 import static org.corfudb.test.TestUtils.waitForLayoutChange;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**

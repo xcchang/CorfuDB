@@ -2,7 +2,6 @@ package org.corfudb.infrastructure.log.statetransfer;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegment;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus;
 import org.corfudb.infrastructure.log.statetransfer.batch.TransferBatchRequest;
@@ -31,7 +30,7 @@ import static org.mockito.Mockito.spy;
 class StateTransferManagerTest implements TransferSegmentCreator {
 
     @Test
-    void getUnknownAddressesInRange() {
+    public void getUnknownAddressesInRange() {
         LogUnitClient logUnitClient = mock(LogUnitClient.class);
         Set<Long> retVal = LongStream.range(0L, 80L).boxed().collect(Collectors.toSet());
 
@@ -59,7 +58,7 @@ class StateTransferManagerTest implements TransferSegmentCreator {
 
 
     @Test
-    void handleTransfer() {
+    public void handleTransfer() {
         // Any status besides NOT_TRANSFERRED should not be updated
         LogUnitClient logUnitClient = mock(LogUnitClient.class);
         StateTransferManager manager = StateTransferManager.builder()
@@ -141,7 +140,7 @@ class StateTransferManagerTest implements TransferSegmentCreator {
     }
 
     @Test
-    void synchronousStateTransferTest() {
+    public void synchronousStateTransferTest() {
         StateTransferBatchProcessor batchProcessor = new SuccessfulBatchProcessor();
         LogUnitClient logUnitClient = mock(LogUnitClient.class);
         int batchSize = 10;

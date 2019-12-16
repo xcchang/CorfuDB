@@ -178,7 +178,7 @@ public class RedundancyCalculatorTest extends LayoutBasedTestHelper implements T
                 nonPresentSegment)));
 
         TransferSegmentStatus presentSegmentStatus = presentSegment.status;
-        assertThat(SegmentState.RESTORED)
+        assertThat(RESTORED)
                 .isEqualTo(presentSegmentStatus.getSegmentState());
 
         TransferSegmentStatus nonPresentSegmentStatus = nonPresentSegment.status;

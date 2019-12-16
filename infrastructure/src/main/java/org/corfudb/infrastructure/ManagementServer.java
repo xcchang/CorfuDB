@@ -3,7 +3,6 @@ package org.corfudb.infrastructure;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelHandlerContext;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.management.ClusterStateContext;

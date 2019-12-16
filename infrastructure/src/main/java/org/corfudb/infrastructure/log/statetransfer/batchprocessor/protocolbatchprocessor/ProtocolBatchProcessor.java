@@ -1,5 +1,6 @@
 package org.corfudb.infrastructure.log.statetransfer.batchprocessor.protocolbatchprocessor;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Ordering;
 import com.google.common.collect.Sets;
 import lombok.Builder;
@@ -94,6 +95,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
      * @param retries              The number of retries.
      * @return A result of reading records.
      */
+    @VisibleForTesting
     CompletableFuture<ReadBatch> readRecords(TransferBatchRequest transferBatchRequest, int retries) {
         return CompletableFuture
                 .supplyAsync(() -> {
@@ -131,6 +133,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
      * @param retriesTried         Configurable number of retries for the current transferBatchRequest.
      * @return Future of the result of the retry.
      */
+    @VisibleForTesting
     CompletableFuture<ReadBatch> retryReadRecords
     (TransferBatchRequest transferBatchRequest, int retriesTried) {
         try {
@@ -188,6 +191,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
      * @param destination An optional destination of the source of records.
      * @return A read batch.
      */
+    @VisibleForTesting
     ReadBatch checkReadRecords(List<Long> addresses,
                                Map<Long, ILogData> readResult,
                                Optional<String> destination) {

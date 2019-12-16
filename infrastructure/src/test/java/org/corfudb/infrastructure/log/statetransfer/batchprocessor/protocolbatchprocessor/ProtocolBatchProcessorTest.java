@@ -29,7 +29,7 @@ import static org.mockito.Mockito.spy;
 class ProtocolBatchProcessorTest extends DataTest {
 
     @Test
-    void transferFull() {
+    public void transferFull() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<LogData> stubList = createStubList(addresses);
         Map<Long, ILogData> stubMap = createStubMap(stubList);
@@ -56,7 +56,7 @@ class ProtocolBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void transferFail() {
+    public void transferFail() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         Map<Long, ILogData> stubMap = createStubMapFromLongs(addresses);
         ReadOptions readOptions = ReadOptions.builder()
@@ -82,7 +82,7 @@ class ProtocolBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void testReadRecordsSuccess() {
+    public void testReadRecordsSuccess() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<LogData> stubList = createStubList(addresses);
         Map<Long, ILogData> stubMap = createStubMap(stubList);
@@ -113,7 +113,7 @@ class ProtocolBatchProcessorTest extends DataTest {
      * On the first try returns the incomplete set of records, on the second retry returns a complete set of records.
      */
     @Test
-    void retryReadRecordsIncomplete() {
+    public void retryReadRecordsIncomplete() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<Long> readAddresses = LongStream.range(0L, 10L).boxed().filter(x -> x % 2 == 0).collect(Collectors.toList());
         List<Long> unreadAddresses = LongStream.range(0L, 10L).boxed().filter(x -> x % 2 != 0).collect(Collectors.toList());
@@ -158,7 +158,7 @@ class ProtocolBatchProcessorTest extends DataTest {
      * Handle time outs..
      */
     @Test
-    void retryReadRecordsTimeout() {
+    public void retryReadRecordsTimeout() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
 
         List<LogData> secondReadList = createStubList(addresses);
@@ -194,7 +194,7 @@ class ProtocolBatchProcessorTest extends DataTest {
 
 
     @Test
-    void checkReadRecordsComplete() {
+    public void checkReadRecordsComplete() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<LogData> stubList = createStubList(addresses);
         Map<Long, ILogData> stubMap = createStubMap(stubList);
@@ -219,7 +219,7 @@ class ProtocolBatchProcessorTest extends DataTest {
     }
 
     @Test
-    void checkReadRecordsInComplete() {
+    public void checkReadRecordsInComplete() {
         List<Long> addresses = LongStream.range(0L, 10L).boxed().collect(Collectors.toList());
         List<Long> readAddresses = LongStream.range(0L, 10L).boxed().filter(x -> x % 2 == 0).collect(Collectors.toList());
         List<Long> unreadAddresses = LongStream.range(0L, 10L).boxed().filter(x -> x % 2 != 0).collect(Collectors.toList());
