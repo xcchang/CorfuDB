@@ -224,7 +224,7 @@ public class Utils {
                                 .getLogTail());
                 globalLogTail = Long.max(globalLogTail, response.getLogTail());
             }
-        } else if (segment.getReplicationMode() == Layout.ReplicationMode.QUORUM_REPLICATION) {
+        } else {
             throw new UnsupportedOperationException();
         }
 
@@ -254,7 +254,7 @@ public class Utils {
                                 .getAllTails());
                 luResponses.add(res);
             }
-        } else if (segment.getReplicationMode() == Layout.ReplicationMode.QUORUM_REPLICATION) {
+        } else {
             throw new UnsupportedOperationException();
         }
 
@@ -320,7 +320,7 @@ public class Utils {
                                 .getLogAddressSpace());
                 luResponses.add(res);
             }
-        } else if (segment.getReplicationMode() == Layout.ReplicationMode.QUORUM_REPLICATION) {
+        } else {
             throw new UnsupportedOperationException();
         }
 

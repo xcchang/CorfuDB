@@ -5,19 +5,12 @@ enum DataType {
     EMPTY = 1;
     HOLE = 2;
     TRIMMED = 3;
-    PROPOSAL = 4;
 }
 
 enum CheckpointEntryType {
     START = 0;
     CONTINUATION = 1;
     END = 2;
-}
-
-message DataRank {
-    required int64 rank = 1;
-    required int64 uuid_most_significant = 2;
-    required int64 uuid_least_significant = 3;
 }
 
 message LogEntry {
@@ -27,7 +20,6 @@ message LogEntry {
     repeated string	streams = 6;
     map<string, int64> logical_addresses = 7;
     map<string, int64> backpointers = 8;
-    optional DataRank rank = 9;
     optional CheckpointEntryType checkpointEntryType = 10;
     optional int64 checkpointId_most_significant = 11;
     optional int64 checkpointId_least_significant = 12;

@@ -35,8 +35,8 @@ import org.corfudb.runtime.clients.ManagementHandler;
 import org.corfudb.runtime.clients.SequencerHandler;
 import org.corfudb.runtime.clients.TestClientRouter;
 import org.corfudb.runtime.clients.TestRule;
-import org.corfudb.runtime.exceptions.OutrankedException;
 
+import org.corfudb.runtime.exceptions.OutrankedException;
 import org.corfudb.util.NodeLocator;
 import org.junit.After;
 import org.junit.AfterClass;
