@@ -593,20 +593,14 @@ public class CheckpointSmokeTest extends AbstractViewTest {
         Map<String, Long> mA = instantiateMap(streamA);
         Map<String, Long> mB = instantiateMap(streamB);
         final String author = "CPWriter";
-        final int iter = 1000;
+        final int iter = 4;
 
         for (int x = 0; x < iter; x++) {
             mA.put(Integer.toString(x), (long) x);
-            mB.put(Integer.toString(x), (long) x);
-        }
-
-        for (String key : mA.keySet()) {
-            mA.remove(key);
         }
 
         MultiCheckpointWriter mcw1 = new MultiCheckpointWriter();
         mcw1.addMap((SMRMap) mA);
-        mcw1.addMap((SMRMap) mB);
         Token trimAddress = mcw1.appendCheckpoints(r, author);
 
         r.getAddressSpaceView().prefixTrim(trimAddress);
@@ -616,6 +610,7 @@ public class CheckpointSmokeTest extends AbstractViewTest {
 
         CorfuRuntime rt2 = getNewRuntime(getDefaultNode()).connect();
 
+        System.out.println ("test");
         Map<String, Long> mA2 = rt2.getObjectsView()
                 .build()
                 .setStreamName(streamA)
@@ -623,7 +618,7 @@ public class CheckpointSmokeTest extends AbstractViewTest {
                 })
                 .setSerializer(serializer)
                 .open();
-
+        System.out.println ("after");
         rt2.getObjectsView().TXBegin();
         mA2.put("a", 2l);
         rt2.getObjectsView().TXEnd();
