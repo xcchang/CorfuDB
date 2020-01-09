@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
@@ -722,6 +723,24 @@ public class StateTransferTest extends AbstractViewTest {
                 .build();
     }
 
+    private CorfuRuntime getTestRuntime(int port, UUID nodeId) {
+        return getNewRuntime(NodeLocator.builder()
+                .host("test")
+                .port(port)
+                .nodeId(nodeId)
+                .build()).connect();
+    }
+
+    private CompletableFuture<Void> runRestore(RestoreRedundancyMergeSegments restore, CorfuRuntime rt) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                restore.impl(rt);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
     /**
      * This tests verifies that multiple running state transfers run to completion.
      */
@@ -789,35 +808,11 @@ public class StateTransferTest extends AbstractViewTest {
 
         List<CompletableFuture<Void>> futures = new ArrayList();
 
-        CorfuRuntime rt1 = getNewRuntime(NodeLocator.builder()
-                .host("test")
-                .port(server2)
-                .nodeId(sc1.getNodeId())
-                .build()).connect();
+        CorfuRuntime rt1 = getTestRuntime(server2, sc1.getNodeId());
+        CorfuRuntime rt2 = getTestRuntime(server3, sc2.getNodeId());
 
-
-        CorfuRuntime rt2 = getNewRuntime(NodeLocator.builder()
-                .host("test")
-                .port(server3)
-                .nodeId(sc2.getNodeId())
-                .build()).connect();
-
-
-        futures.add(CompletableFuture.runAsync(() -> {
-            try {
-                action1.impl(rt1);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }));
-
-        futures.add(CompletableFuture.runAsync(() -> {
-            try {
-                action2.impl(rt2);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }));
+        futures.add(runRestore(action1, rt1));
+        futures.add(runRestore(action2, rt2));
 
         waitForLayoutChange(l -> l.getSegments().size() == 1, rt);
 
