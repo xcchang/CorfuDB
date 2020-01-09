@@ -707,54 +707,67 @@ public class StateTransferTest extends AbstractViewTest {
 
     }
 
+    private ServerContext configureContext(int port) {
+        return new ServerContextBuilder()
+                .setSingle(false)
+                .setServerRouter(new TestServerRouter(port))
+                .setPort(port).build();
+    }
+
+    private RestoreRedundancyMergeSegments getRestoreAction(String endpoint) {
+        return RestoreRedundancyMergeSegments
+                .builder()
+                .currentNode(endpoint)
+                .redundancyCalculator(new RedundancyCalculator(endpoint))
+                .build();
+    }
+
     /**
      * This tests verifies that multiple running state transfers run to completion.
      */
     @Test
     public void verifyConcurrentCompletion() throws Exception {
 
-        ServerContext sc1 = new ServerContextBuilder()
-                .setSingle(false)
-                .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
-                .setPort(SERVERS.PORT_0).build();
-        addServer(SERVERS.PORT_0, sc1);
+        int server1 = SERVERS.PORT_0;
+        int server2 = SERVERS.PORT_1;
+        int server3 = SERVERS.PORT_2;
 
-        ServerContext sc2 = new ServerContextBuilder()
-                .setSingle(false)
-                .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
-                .setPort(SERVERS.PORT_1).build();
-        addServer(SERVERS.PORT_1, sc2);
+        ServerContext sc1 = configureContext(server1);
 
-        ServerContext sc3 = new ServerContextBuilder()
-                .setSingle(false)
-                .setServerRouter(new TestServerRouter(SERVERS.PORT_2))
-                .setPort(SERVERS.PORT_2).build();
-        addServer(SERVERS.PORT_2, sc3);
+        addServer(server1, sc1);
+
+        ServerContext sc2 = configureContext(server2);
+
+        addServer(server2, sc2);
+
+        ServerContext sc3 = configureContext(server3);
+
+        addServer(server3, sc3);
 
         final long writtenAddressesBatch1 = 100;
 
         Layout layout = new TestLayoutBuilder()
                 .setEpoch(1L)
-                .addLayoutServer(SERVERS.PORT_0)
-                .addLayoutServer(SERVERS.PORT_1)
-                .addLayoutServer(SERVERS.PORT_2)
-                .addSequencer(SERVERS.PORT_0)
-                .addSequencer(SERVERS.PORT_1)
-                .addLayoutServer(SERVERS.PORT_2)
+                .addLayoutServer(server1)
+                .addLayoutServer(server2)
+                .addLayoutServer(server3)
+                .addSequencer(server1)
+                .addSequencer(server2)
+                .addLayoutServer(server3)
                 .buildSegment()
                 .setStart(0L)
                 .setEnd(writtenAddressesBatch1)
                 .buildStripe()
-                .addLogUnit(SERVERS.PORT_0)
+                .addLogUnit(server1)
                 .addToSegment()
                 .addToLayout()
                 .buildSegment()
                 .setStart(writtenAddressesBatch1)
                 .setEnd(-1)
                 .buildStripe()
-                .addLogUnit(SERVERS.PORT_0)
-                .addLogUnit(SERVERS.PORT_1)
-                .addLogUnit(SERVERS.PORT_2)
+                .addLogUnit(server1)
+                .addLogUnit(server2)
+                .addLogUnit(server3)
                 .addToSegment()
                 .addToLayout()
                 .build();
@@ -770,30 +783,22 @@ public class StateTransferTest extends AbstractViewTest {
             testStream.append("testPayload".getBytes());
         }
 
-        final RestoreRedundancyMergeSegments action1 = RestoreRedundancyMergeSegments
-                .builder()
-                .currentNode(SERVERS.ENDPOINT_1)
-                .redundancyCalculator(new RedundancyCalculator(SERVERS.ENDPOINT_1))
-                .build();
-        final RestoreRedundancyMergeSegments action2 = RestoreRedundancyMergeSegments
-                .builder()
-                .currentNode(SERVERS.ENDPOINT_2)
-                .redundancyCalculator(new RedundancyCalculator(SERVERS.ENDPOINT_1))
-                .build();
+        final RestoreRedundancyMergeSegments action1 = getRestoreAction(SERVERS.ENDPOINT_1);
+        final RestoreRedundancyMergeSegments action2 = getRestoreAction(SERVERS.ENDPOINT_2);
 
 
         List<CompletableFuture<Void>> futures = new ArrayList();
 
         CorfuRuntime rt1 = getNewRuntime(NodeLocator.builder()
                 .host("test")
-                .port(SERVERS.PORT_1)
+                .port(server2)
                 .nodeId(sc1.getNodeId())
                 .build()).connect();
 
 
         CorfuRuntime rt2 = getNewRuntime(NodeLocator.builder()
                 .host("test")
-                .port(SERVERS.PORT_2)
+                .port(server3)
                 .nodeId(sc2.getNodeId())
                 .build()).connect();
 
