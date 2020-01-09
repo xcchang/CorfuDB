@@ -4,7 +4,6 @@ import com.google.common.collect.ImmutableList;
 import org.corfudb.infrastructure.LayoutBasedTestHelper;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegment;
 import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus;
-import org.corfudb.infrastructure.log.statetransfer.StateTransferManager.TransferSegmentStatus.SegmentState;
 import org.corfudb.infrastructure.log.statetransfer.TransferSegmentCreator;
 import org.corfudb.runtime.view.Layout;
 import org.corfudb.runtime.view.Layout.LayoutSegment;

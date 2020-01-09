@@ -904,7 +904,7 @@ public class StateTransferTest extends AbstractViewTest {
         corfuRuntime.getManagementView()
                 .addNode(SERVERS.ENDPOINT_2, addNodeRetries, Duration.ofMinutes(1L), Duration.ofSeconds(1));
         corfuRuntime.invalidateLayout();
-        final long epochAfterAdd = 5L;
+        final long epochAfterAdd = 4L;
         Layout expectedLayout = new TestLayoutBuilder()
                 .setEpoch(epochAfterAdd)
                 .addLayoutServer(SERVERS.PORT_0)
@@ -926,7 +926,7 @@ public class StateTransferTest extends AbstractViewTest {
 
         // Perform State Transfer
         for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_MODERATE; i++) {
-            if (corfuRuntime.getLayoutView().getLayout().getEpoch() >= expectedLayout.getEpoch()) {
+            if (corfuRuntime.getLayoutView().getLayout().getEpoch() == epochAfterAdd) {
                 break;
             }
             corfuRuntime.invalidateLayout();
