@@ -926,7 +926,7 @@ public class StateTransferTest extends AbstractViewTest {
 
         // Perform State Transfer
         for (int i = 0; i < PARAMETERS.NUM_ITERATIONS_MODERATE; i++) {
-            if (corfuRuntime.getLayoutView().getLayout().getEpoch() == epochAfterAdd) {
+            if (corfuRuntime.getLayoutView().getLayout().getEpoch() >= epochAfterAdd) {
                 break;
             }
             corfuRuntime.invalidateLayout();
