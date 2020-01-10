@@ -68,13 +68,24 @@ public class SequencerView extends AbstractView {
      * @return the global tail or a list of tails
      */
     public TokenResponse query(UUID... streamIds) {
+        return query(Arrays.asList(streamIds));
+    }
+
+    /**
+     * Return the next token in the sequencer for the global tail or the tails
+     * of multiple streams.
+     *
+     * @param streamIds the streams to query
+     * @return the global tail or a list of tails
+     */
+    public TokenResponse query(List<UUID> streamIds) {
         try (Timer.Context context = MetricsUtils.getConditionalContext(sequencerQuery)){
-            if (streamIds.length == 0) {
+            if (streamIds.size() == 0) {
                 return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
                         .nextToken(Collections.emptyList(), 0)));
             } else {
                 return layoutHelper(e -> CFUtils.getUninterruptibly(e.getPrimarySequencerClient()
-                        .nextToken(Arrays.asList(streamIds), 0)));
+                        .nextToken(streamIds, 0)));
             }
         }
     }

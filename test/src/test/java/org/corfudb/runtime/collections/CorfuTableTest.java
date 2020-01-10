@@ -1,13 +1,19 @@
 package org.corfudb.runtime.collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import com.google.common.collect.Lists;
 import com.google.common.reflect.TypeToken;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.ConcurrentModificationException;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -16,12 +22,58 @@ import org.assertj.core.api.Assertions;
 import org.assertj.core.data.MapEntry;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
 import org.corfudb.runtime.view.AbstractViewTest;
+import org.corfudb.runtime.view.ReactiveStream;
 import org.junit.Test;
 
 public class CorfuTableTest extends AbstractViewTest {
 
     Collection<String> project(Collection<Map.Entry<String, String>> entries) {
         return entries.stream().map(entry -> entry.getValue()).collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    ReactiveStream.Subscriber sub = new ReactiveStream.Subscriber() {
+        @Override
+        public void onNext(Map<UUID, Object> updates) {
+
+        }
+
+        @Override
+        public void onError(Throwable error) {
+
+        }
+
+        @Override
+        public void onComplete() {
+
+        }
+    };
+
+    @Test
+    public void reducedStream() {
+        String name = "testTable";
+        CorfuTable<String, String>
+                table0 = getDefaultRuntime().getObjectsView().build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setArguments(new StringIndexer())
+                .setStreamName(name)
+                .open();
+
+        ReactiveStream reactiveStream = new ReactiveStream(getRuntime());
+        reactiveStream.subscribe(Stream.of(
+                UUID.nameUUIDFromBytes(name.getBytes())).collect(Collectors.toList()),
+                sub
+        );
+
+        final int ITER_COUNT = 100;
+        final int SLEEP = 1000;
+        for (int i = 0; i < ITER_COUNT; i++) {
+            LockSupport.parkNanos(SLEEP * SLEEP);
+            System.out.println("put");
+            table0.put(String.valueOf(i), String.valueOf(i));
+        }
+
+        LockSupport.parkNanos(SLEEP * SLEEP * SLEEP);
+        reactiveStream.addressQueues.values().stream().findFirst().get();
     }
 
     @Test

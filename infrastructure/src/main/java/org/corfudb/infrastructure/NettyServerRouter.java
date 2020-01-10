@@ -10,6 +10,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
+import io.netty.handler.flush.FlushConsolidationHandler;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +27,7 @@ import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
  */
 @Slf4j
 @ChannelHandler.Sharable
-public class NettyServerRouter extends ChannelInboundHandlerAdapter implements IServerRouter {
+public class NettyServerRouter extends FlushConsolidationHandler implements IServerRouter {
 
     /**
      * This map stores the mapping from message type to netty server handler.
