@@ -128,9 +128,8 @@ public class ManagementServer extends AbstractServer {
 
         this.failureHandlerPolicy = serverContext.getFailureHandlerPolicy();
 
-        ClusterStateContext.HeartbeatCounter counter = new ClusterStateContext.HeartbeatCounter();
 
-        FailureDetector failureDetector = new FailureDetector(counter, serverContext.getLocalEndpoint());
+        FailureDetector failureDetector = new FailureDetector(serverContext.getLocalEndpoint());
 
         // Creating a management agent.
         ClusterState defaultView = ClusterState.builder()
@@ -139,7 +138,6 @@ public class ManagementServer extends AbstractServer {
                 .unresponsiveNodes(ImmutableList.of())
                 .build();
         clusterContext =  ClusterStateContext.builder()
-                .counter(counter)
                 .clusterView(new AtomicReference<>(defaultView))
                 .build();
 
@@ -171,6 +169,7 @@ public class ManagementServer extends AbstractServer {
         params.setSystemDownHandler(runtimeSystemDownHandler);
         return runtime;
     }
+
     /**
      * Handler for this server.
      */
@@ -375,13 +374,13 @@ public class ManagementServer extends AbstractServer {
      * Servers periodically inspect cluster and ask each other of the connectivity/node state
      * (connection status between current node and all the others).
      * The node provides its current node state.
-     * <p>
+     *
      * Default NodeState has been providing unless the node is not bootstrapped.
      * Failure detector updates ClusterNodeState by current state then current NodeState can be provided to other nodes.
      *
      * @param msg corfu message containing NODE_STATE_REQUEST
      * @param ctx netty ChannelHandlerContext
-     * @param r   server router
+     * @param r server router
      */
     @ServerHandler(type = CorfuMsgType.NODE_STATE_REQUEST)
     public void handleNodeStateRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
@@ -409,16 +408,14 @@ public class ManagementServer extends AbstractServer {
 
         long epoch = Layout.INVALID_EPOCH;
         Layout layout = serverContext.copyManagementLayout();
-        if (layout != null) {
+        if (layout != null){
             epoch = layout.getEpoch();
         }
 
         //Node state is connected by default.
         //We believe two servers are connected if another servers is able to send command NODE_STATE_REQUEST
         // and get a response. If we are able to provide NodeState we believe that the state is CONNECTED.
-        return NodeState.getNotReadyNodeState(serverContext.getLocalEndpoint(),
-                epoch,
-                clusterContext.getCounter().get());
+        return NodeState.getNotReadyNodeState(serverContext.getLocalEndpoint());
     }
 
     /**
