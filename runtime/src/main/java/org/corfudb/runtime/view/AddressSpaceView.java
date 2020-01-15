@@ -12,6 +12,8 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.netty.handler.timeout.TimeoutException;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.corfudb.protocols.wireprotocol.DataType;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.IToken;
@@ -39,17 +41,26 @@ import org.corfudb.util.Utils;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.time.Duration;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NavigableSet;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -66,6 +77,9 @@ public class AddressSpaceView extends AbstractView {
     private final static long DEFAULT_MAX_CACHE_ENTRIES = 5000;
     private final static boolean NO_THROW = false;
 
+    ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+    BlockingQueue<Pair<Long, CompletableFuture<ILogData>>> queue = new LinkedBlockingDeque<>();
+
     /**
      * A cache for read results.
      */
@@ -76,12 +90,13 @@ public class AddressSpaceView extends AbstractView {
             .clientCacheable(true)
             .serverCacheable(true)
             .build();
-
     /**
      * Constructor for the Address Space View.
      */
     public AddressSpaceView(@Nonnull final CorfuRuntime runtime) {
         super(runtime);
+
+        executorService.scheduleAtFixedRate(this::processQueue, 0, 50, TimeUnit.MICROSECONDS);
 
         CacheBuilder<Object, Object> cacheBuilder = CacheBuilder.newBuilder();
 
@@ -663,6 +678,24 @@ public class AddressSpaceView extends AbstractView {
         }
 
         return true;
+    }
+
+    public void processQueue() {
+        List<Pair<Long, CompletableFuture<ILogData>>> next = new LinkedList<>();
+        queue.drainTo(next);
+        Set<Long> addresses = next.stream().map(Pair::getKey).collect(Collectors.toSet());
+        Map<Long, ILogData> values = read(addresses);
+        for (Pair<Long, CompletableFuture<ILogData>> waiting: next) {
+            waiting.getRight().complete(values.get(waiting.getLeft()));
+        }
+    }
+
+
+    private  @Nonnull
+    ILogData fetch2(final long address) {
+        CompletableFuture<ILogData> result = new CompletableFuture<>();
+        queue.offer(new ImmutablePair<>(address, result));
+        return CFUtils.getUninterruptibly(result);
     }
 
     /**

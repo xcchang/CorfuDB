@@ -52,6 +52,7 @@ public class LocalCorfuClient implements CorfuClient {
                 CorfuRuntimeParameters
                         .builder()
                         .layoutServers(layoutServers)
+                        .cacheDisabled(true)
                         .systemDownHandler(this::systemDownHandler);
 
         prometheusMetricsPort.ifPresent(parametersBuilder::prometheusMetricsPort);
