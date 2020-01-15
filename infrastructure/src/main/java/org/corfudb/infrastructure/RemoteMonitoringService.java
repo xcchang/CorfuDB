@@ -416,15 +416,14 @@ public class RemoteMonitoringService implements MonitoringService {
      * A new task is not spawned if a task is already in progress.
      * This method does not wait on the completion of the restore redundancy and merge segments task.
      *
-     * @return Detector task.
      */
-    private DetectorTask restoreRedundancyAndMergeSegments(Layout layout) {
+    private void restoreRedundancyAndMergeSegments(Layout layout) {
         String localEndpoint = serverContext.getLocalEndpoint();
 
         // Check that the task is not currently running.
         if(!mergeSegmentsTask.isDone()){
             log.trace("Merge segments task already in progress. Skipping spawning another task.");
-            return DetectorTask.SKIPPED;
+            return;
         }
 
         // Check that the current node can invoke a restoration action,
@@ -438,17 +437,16 @@ public class RemoteMonitoringService implements MonitoringService {
             );
             mergeSegmentsTask = CompletableFuture.supplyAsync(redundancyAction, failureDetectorWorker);
 
-            return DetectorTask.COMPLETED;
+            return;
         }
 
         log.trace("No segments to merge. Skipping step.");
-        return DetectorTask.SKIPPED;
     }
 
 
     @VisibleForTesting
-    public DetectorTask restoreRedundancy(Layout layout) {
-        return restoreRedundancyAndMergeSegments(layout);
+    public void restoreRedundancy(Layout layout) {
+        restoreRedundancyAndMergeSegments(layout);
     }
 
     @VisibleForTesting
