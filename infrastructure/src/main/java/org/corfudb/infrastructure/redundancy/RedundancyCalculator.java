@@ -115,6 +115,7 @@ public class RedundancyCalculator {
      */
     public static boolean canRestoreRedundancy(Layout layout, String server) {
         if (layout.getSegments().size() == 1) {
+            // Single segment present in the layout. No segments to merge.
             return false;
         } else {
 

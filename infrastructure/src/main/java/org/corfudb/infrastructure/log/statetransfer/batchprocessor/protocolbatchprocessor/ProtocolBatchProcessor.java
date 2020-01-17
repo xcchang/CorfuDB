@@ -58,7 +58,7 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
     @Default
     private final AtomicInteger maxWriteRetries = new AtomicInteger(3);
     @Default
-    private final Duration writeSleepDuration = Duration.ofMillis(500);
+    private final Duration writeSleepDuration = Duration.ofMillis(300);
     /**
      * Default read options for the replication protocol read.
      */
@@ -83,7 +83,8 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
                 .exceptionally(error -> TransferBatchResponse
                         .builder()
                         .status(FAILED)
-                        .causeOfFailure(Optional.of(new StateTransferBatchProcessorException(error)))
+                        .causeOfFailure(Optional.of(new StateTransferBatchProcessorException(
+                                "Failed batch: " + transferBatchRequest, error)))
                         .build()
                 );
     }
@@ -113,9 +114,12 @@ public class ProtocolBatchProcessor implements StateTransferBatchProcessor {
                                 transferBatchRequest.getDestination()
                         ))
                 ).thenCompose(checkedReadResult -> {
+                    // If the protocol read threw an exception, we retry.
                     if (checkedReadResult.isError()) {
                         return retryReadRecords(transferBatchRequest, retries);
                     } else {
+                        // If the protocol read went fine but we read only part of the records,
+                        // we retry.
                         ReadBatch readBatch = checkedReadResult.get();
                         if (readBatch.getStatus() == ReadBatch.ReadStatus.FAILED) {
                             return retryReadRecords(readBatch.createRequest(), retries);

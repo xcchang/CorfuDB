@@ -64,8 +64,8 @@ public class StateTransferManager {
     /**
      * Given a range, return the addresses that are currently not present in the stream log.
      *
-     * @param rangeStart Start address.
-     * @param rangeEnd   End address.
+     * @param rangeStart Start address (inclusive).
+     * @param rangeEnd   End address (inclusive).
      * @return A list of addresses, currently not present in the stream log.
      */
     @VisibleForTesting
@@ -103,7 +103,8 @@ public class StateTransferManager {
 
                     // If no addresses to transfer - mark a segment as transferred.
                     if (unknownAddressesInRange.isEmpty()) {
-                        log.debug("All addresses are present in a range, skipping transfer.");
+                        log.debug("All addresses are present in the range: [{}, {}], skipping transfer.",
+                                segment.getStartAddress(), segment.getEndAddress());
                         long totalTransferred = segment.getTotal();
 
                         newStatus = TransferSegmentStatus
@@ -155,7 +156,12 @@ public class StateTransferManager {
             TransferBatchRequest nextBatch = iterator.next();
             TransferBatchResponse response =
                     batchProcessor.transfer(nextBatch).join();
-
+            // In case of an error that is not handled by a batch processor, e.g. WrongEpochException,
+            // we return a failed segment status to the caller and the exception. This exception is
+            // thrown in a retry block of a RestoreRedundancyMergeSegments' restoreWithBackOff
+            // method, which results in a retry.
+            // The layout will be invalidated and only the non-transferred addresses of the
+            // segment will be considered for the subsequent transfer.
             if (response.getStatus() == TransferStatus.FAILED) {
                 Optional<TransferSegmentException> causeOfFailure =
                         Optional.of(response.getCauseOfFailure()
@@ -164,7 +170,7 @@ public class StateTransferManager {
 
                 return TransferSegmentStatus
                         .builder()
-                        .totalTransferred(0L)
+                        .totalTransferred(accTransferred)
                         .segmentState(FAILED)
                         .causeOfFailure(causeOfFailure)
                         .build();
@@ -199,7 +205,7 @@ public class StateTransferManager {
     @ToString
     @Builder
     @AllArgsConstructor(access = AccessLevel.PRIVATE)
-    public static class TransferSegment implements Comparable<TransferSegment> {
+    public static class TransferSegment {
         /**
          * Start address of a segment range to transfer, inclusive and non-negative.
          */
@@ -212,12 +218,6 @@ public class StateTransferManager {
          * A status of a transfer of a segment.
          */
         private final TransferSegmentStatus status;
-
-        @Override
-        public int compareTo(TransferSegment other) {
-            return Long.compare(this.getStartAddress(), other.getStartAddress());
-        }
-
         /**
          * Get the total number of addresses in range.
          * {@link #endAddress} and {@link #startAddress} can only be non-negative longs such that

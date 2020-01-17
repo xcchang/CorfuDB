@@ -33,7 +33,7 @@ public interface StateTransferBatchProcessor {
     CompletableFuture<TransferBatchResponse> transfer(TransferBatchRequest transferBatchRequest);
 
     /**
-     * Appends records to the stream log.
+     * Appends records to the stream log. If a log throws an exception during an append, wait and retry.
      *
      * @param readBatch           The non-empty batch of log entries as well as an optional
      *                            node they were read from.

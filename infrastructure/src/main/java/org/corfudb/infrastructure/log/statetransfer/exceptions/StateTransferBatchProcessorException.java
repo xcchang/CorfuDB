@@ -19,4 +19,8 @@ public class StateTransferBatchProcessorException extends StateTransferException
     public StateTransferBatchProcessorException(String message) {
         super(message);
     }
+
+    public StateTransferBatchProcessorException(String message, Throwable throwable) {
+        super(message, throwable);
+    }
 }
