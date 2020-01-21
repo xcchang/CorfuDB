@@ -522,7 +522,8 @@ public class RemoteMonitoringService implements MonitoringService {
             if (FileChannelPerf.reportSpike()) {
                 Set<String> failedNodes = new HashSet<>();
                 failedNodes.add(serverContext.getLocalEndpoint());
-                log.info ("detected failure");
+                log.info("Detected a failure due to disk latency spike > {} seconds for {} ",
+                        ServerContext.OP_SPIKE_LATENCY, ServerContext.OP_SPIKE_CNT);
                 return detectFailure(layout, failedNodes, pollReport).get ();
             }
 

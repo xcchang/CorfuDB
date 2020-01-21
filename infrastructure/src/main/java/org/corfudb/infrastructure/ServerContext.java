@@ -119,8 +119,8 @@ public class ServerContext implements AutoCloseable {
      */
     public static final Duration SHUTDOWN_TIMER = Duration.ofSeconds(5);
 
-    private static final Duration OP_SPIKE_LATENCY = Duration.ofSeconds(1); //Consider 1 second as the spike for r/w/sync disk operation
-    private static final Duration OP_SPIKE_CNT = Duration.ofSeconds(30); //If continuously the spike happens for 30 seconds, report a disk problem.
+    static final Duration OP_SPIKE_LATENCY = Duration.ofSeconds(1); //Consider 1 second as the spike for r/w/sync disk operation
+    static final Duration OP_SPIKE_CNT = Duration.ofSeconds(30); //If continuously the spike happens for 30 seconds, report a disk problem.
 
     @Getter
     private final Map<String, Object> serverConfig;

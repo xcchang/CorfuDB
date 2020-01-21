@@ -82,7 +82,7 @@ public class FileChannelPerf implements Closeable {
         return this;
     }
 
-    public int read(ByteBuffer buf, boolean use_position, long position) throws IOException {
+    private int read(ByteBuffer buf, boolean use_position, long position) throws IOException {
         final long start = System.nanoTime();
         final int size = buf.remaining();
         int res = 0;
