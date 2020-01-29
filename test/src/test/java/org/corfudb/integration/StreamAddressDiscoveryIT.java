@@ -891,7 +891,7 @@ public class StreamAddressDiscoveryIT extends AbstractIT {
             LogEntry cpStart = (CheckpointEntry) runtimeRestart.getAddressSpaceView().read(checkpointStartRecord)
                     .getPayload(runtimeRestart);
             assertThat(((CheckpointEntry) cpStart).getDict()
-                    .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)).isEqualTo("8");
+                    .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)).isEqualTo("8");
 
             // Fetch Address Space for the given stream
             StreamAddressSpace addressSpaceA = runtimeRestart.getAddressSpaceView().getLogAddressSpace()
@@ -1160,7 +1160,7 @@ public class StreamAddressDiscoveryIT extends AbstractIT {
             // Because the stream was empty, it should force a hole on 0, and this should be the start address
             LogEntry cpStart = (CheckpointEntry) runtime.getAddressSpaceView().read(1L).getPayload(runtime);
             assertThat(((CheckpointEntry) cpStart).getDict()
-                    .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)).isEqualTo("0");
+                    .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)).isEqualTo("0");
 
             // Trim the log at B's CPToken
             runtime.getAddressSpaceView().prefixTrim(cpToken);

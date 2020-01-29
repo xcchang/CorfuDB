@@ -26,7 +26,7 @@ import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.Layout;
 
 import static org.corfudb.protocols.wireprotocol.IMetadata.LogUnitMetadataType.CHECKPOINTED_STREAM_ID;
-import static org.corfudb.protocols.wireprotocol.IMetadata.LogUnitMetadataType.CHECKPOINTED_STREAM_START_LOG_ADDRESS;
+import static org.corfudb.protocols.wireprotocol.IMetadata.LogUnitMetadataType.CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS;
 import static org.corfudb.protocols.wireprotocol.IMetadata.LogUnitMetadataType.CHECKPOINT_ID;
 import static org.corfudb.protocols.wireprotocol.IMetadata.LogUnitMetadataType.CHECKPOINT_TYPE;
 
@@ -199,12 +199,12 @@ public interface IMetadata {
      */
     default Long getCheckpointedStreamStartLogAddress() {
         return (Long) getMetadataMap()
-                .getOrDefault(LogUnitMetadataType.CHECKPOINTED_STREAM_START_LOG_ADDRESS,
+                .getOrDefault(CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS,
                         Address.NO_BACKPOINTER);
     }
 
     default void setCheckpointedStreamStartLogAddress(Long startLogAddress) {
-        getMetadataMap().put(CHECKPOINTED_STREAM_START_LOG_ADDRESS, startLogAddress);
+        getMetadataMap().put(CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS, startLogAddress);
     }
 
     /**
@@ -242,7 +242,7 @@ public interface IMetadata {
         CHECKPOINT_TYPE(6, TypeToken.of(CheckpointEntry.CheckpointEntryType.class)),
         CHECKPOINT_ID(7, TypeToken.of(UUID.class)),
         CHECKPOINTED_STREAM_ID(8, TypeToken.of(UUID.class)),
-        CHECKPOINTED_STREAM_START_LOG_ADDRESS(9, TypeToken.of(Long.class)),
+        CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS(9, TypeToken.of(Long.class)),
         CLIENT_ID(10, TypeToken.of(UUID.class)),
         THREAD_ID(11, TypeToken.of(Long.class)),
         EPOCH(12, TypeToken.of(Long.class)),

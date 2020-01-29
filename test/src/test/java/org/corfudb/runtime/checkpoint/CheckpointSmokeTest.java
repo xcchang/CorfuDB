@@ -77,7 +77,7 @@ public class CheckpointSmokeTest extends AbstractViewTest {
         LogEntry cpStart = (CheckpointEntry) r.getAddressSpaceView().read(1L)
                 .getPayload(r);
         assertThat(((CheckpointEntry) cpStart).getDict()
-                .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)).isEqualTo("0");
+                .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)).isEqualTo("0");
     }
 
     /** First smoke test, steps:
@@ -491,7 +491,7 @@ public class CheckpointSmokeTest extends AbstractViewTest {
         // Write cp #1 of 3
         if (write1) {
             long addr1 = r.getSequencerView().query(streamId);
-            mdKV.put(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS, Long.toString(addr1 + 1));
+            mdKV.put(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS, Long.toString(addr1 + 1));
             CheckpointEntry cp1 = new CheckpointEntry(CheckpointEntry.CheckpointEntryType.START,
                     checkpointAuthor, checkpointId, streamId, mdKV, null);
             startAddress = sv.append(cp1, null, null);

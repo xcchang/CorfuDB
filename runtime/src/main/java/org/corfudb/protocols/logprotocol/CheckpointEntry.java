@@ -47,10 +47,9 @@ public class CheckpointEntry extends LogEntry {
     public enum CheckpointDictKey {
         START_TIME(0),
         END_TIME(1),
-        START_LOG_ADDRESS(2),
-        ENTRY_COUNT(3),
-        BYTE_COUNT(4),
-        SNAPSHOT_ADDRESS(5);
+        ENTRY_COUNT(2),
+        BYTE_COUNT(3),
+        SNAPSHOT_ADDRESS(4);
 
         public final int type;
 
@@ -161,8 +160,8 @@ public class CheckpointEntry extends LogEntry {
         super.serialize(b);
 
         if (cpType == CheckpointEntryType.END
-                && getDict().get(CheckpointDictKey.START_LOG_ADDRESS) == null) {
-            throw new IllegalArgumentException(dict.get(CheckpointDictKey.START_LOG_ADDRESS));
+                && getDict().get(CheckpointDictKey.SNAPSHOT_ADDRESS) == null) {
+            throw new IllegalArgumentException(dict.get(CheckpointDictKey.SNAPSHOT_ADDRESS));
         }
 
         b.writeByte(cpType.asByte());

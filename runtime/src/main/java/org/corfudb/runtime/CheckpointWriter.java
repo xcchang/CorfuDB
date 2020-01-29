@@ -192,11 +192,8 @@ public class CheckpointWriter<T extends StreamingMap> {
      * @return Global log address of the START record.
      */
     public void startCheckpoint(Token txnSnapshot) {
-        long vloVersion = txnSnapshot.getSequence();
         startTime = LocalDateTime.now();
         this.mdkv.put(CheckpointEntry.CheckpointDictKey.START_TIME, startTime.toString());
-        // VLO version at time of snapshot
-        this.mdkv.put(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS, Long.toString(vloVersion));
         this.mdkv.put(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS,
                 Long.toString(txnSnapshot.getSequence()));
 

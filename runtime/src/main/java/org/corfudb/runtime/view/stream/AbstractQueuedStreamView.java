@@ -639,7 +639,7 @@ public abstract class AbstractQueuedStreamView extends
             if (context.checkpoint.id == null &&
                     cpEntry.getCpType() == CheckpointEntry.CheckpointEntryType.END
                     && Long.decode(cpEntry.getDict()
-                    .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)) <= maxGlobal) {
+                    .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)) <= maxGlobal) {
                 log.trace("Checkpoint[{}] END found at address {} type {} id {} author {}",
                         this, data.getGlobalAddress(), cpEntry.getCpType(),
                         Utils.toReadableId(cpEntry.getCheckpointId()), cpEntry.getCheckpointAuthorId());
@@ -650,7 +650,7 @@ public abstract class AbstractQueuedStreamView extends
                 // with the highest VLO version.
                 UUID checkpointId = cpEntry.getCheckpointId();
                 long checkpointVLOVersion = Long.decode(cpEntry.getDict()
-                        .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS));
+                        .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS));
                 boolean isCheckpointForHighestVLOVersion = latestValidCheckpoint.validateHigher(checkpointId,
                         checkpointVLOVersion);
 

@@ -1193,7 +1193,7 @@ public class ClusterReconfigIT extends AbstractIT {
         CheckpointEntry cpEntry = (CheckpointEntry) runtime2.getAddressSpaceView()
                 .read(checkpointAddressSpace.getHighestAddress())
                 .getPayload(runtime2);
-        assertThat(cpEntry.getDict().get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)).
+        assertThat(cpEntry.getDict().get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)).
                 isEqualTo(String.valueOf(numEntries));
 
         // Verify the object has correct state.
