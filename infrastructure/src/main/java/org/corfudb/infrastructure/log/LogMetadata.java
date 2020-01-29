@@ -111,7 +111,7 @@ public class LogMetadata {
      */
     private void updateFromCheckpoint(LogData entry, boolean initialize) {
         UUID streamId = entry.getCheckpointedStreamId();
-        long lastUpdateToStream = entry.getCheckpointedStreamStartLogAddress();
+        long lastUpdateToStream = entry.getCheckpointedStreamSnapshotAddress();
 
         if (Address.isAddress(lastUpdateToStream)) {
             // 1. Update stream tail

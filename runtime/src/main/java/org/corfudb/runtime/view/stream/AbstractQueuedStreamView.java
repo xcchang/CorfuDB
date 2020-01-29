@@ -660,7 +660,7 @@ public abstract class AbstractQueuedStreamView extends
                 if (isCheckpointForHighestVLOVersion) {
                     // We found a highest checkpoint, set this as our valid checkpoint.
                     latestValidCheckpoint = new StreamCheckpoint(checkpointId);
-                    latestValidCheckpoint.setStartAddress(data.getCheckpointedStreamStartLogAddress());
+                    latestValidCheckpoint.setStartAddress(data.getCheckpointedStreamSnapshotAddress());
                     latestValidCheckpoint.setNumEntries(1);
                     latestValidCheckpoint.setTotalBytes((long) data.getSizeEstimate());
                     latestValidCheckpoint.addAddress(data.getGlobalAddress());

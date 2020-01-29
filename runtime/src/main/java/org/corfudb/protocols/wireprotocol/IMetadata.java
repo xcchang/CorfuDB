@@ -197,13 +197,13 @@ public interface IMetadata {
     /**
      * Returns the tail of the checkpointed stream at the time of taking the checkpoint snapshot.
      */
-    default Long getCheckpointedStreamStartLogAddress() {
+    default Long getCheckpointedStreamSnapshotAddress() {
         return (Long) getMetadataMap()
                 .getOrDefault(CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS,
                         Address.NO_BACKPOINTER);
     }
 
-    default void setCheckpointedStreamStartLogAddress(Long startLogAddress) {
+    default void setCheckpointedStreamSnapshotAddress(Long startLogAddress) {
         getMetadataMap().put(CHECKPOINTED_STREAM_SNAPSHOT_ADDRESS, startLogAddress);
     }
 
