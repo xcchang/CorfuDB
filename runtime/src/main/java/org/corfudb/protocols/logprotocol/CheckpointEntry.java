@@ -47,10 +47,9 @@ public class CheckpointEntry extends LogEntry {
     public enum CheckpointDictKey {
         START_TIME(0),
         END_TIME(1),
-        START_LOG_ADDRESS(2),
+        START_LOG_ADDRESS(2), //the tail of the stream while taking the checkpoint
         ENTRY_COUNT(3),
-        BYTE_COUNT(4),
-        SNAPSHOT_ADDRESS(5);
+        BYTE_COUNT(4);
 
         public final int type;
 

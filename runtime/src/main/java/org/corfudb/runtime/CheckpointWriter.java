@@ -197,8 +197,6 @@ public class CheckpointWriter<T extends StreamingMap> {
         this.mdkv.put(CheckpointEntry.CheckpointDictKey.START_TIME, startTime.toString());
         // VLO version at time of snapshot
         this.mdkv.put(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS, Long.toString(vloVersion));
-        this.mdkv.put(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS,
-                Long.toString(txnSnapshot.getSequence()));
 
         ImmutableMap<CheckpointEntry.CheckpointDictKey,String> mdkv =
                 ImmutableMap.copyOf(this.mdkv);

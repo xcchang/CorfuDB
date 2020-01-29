@@ -666,9 +666,9 @@ public abstract class AbstractQueuedStreamView extends
                     latestValidCheckpoint.addAddress(data.getGlobalAddress());
 
                     if (cpEntry.getDict().get(CheckpointEntry.CheckpointDictKey
-                            .SNAPSHOT_ADDRESS) != null) {
+                            .START_LOG_ADDRESS) != null) {
                         latestValidCheckpoint.setSnapshot(Long.decode(cpEntry.getDict()
-                                .get(CheckpointEntry.CheckpointDictKey.SNAPSHOT_ADDRESS)));
+                                .get(CheckpointEntry.CheckpointDictKey.START_LOG_ADDRESS)));
                     }
                 }
             } else if (latestValidCheckpoint.getId() != null &&
