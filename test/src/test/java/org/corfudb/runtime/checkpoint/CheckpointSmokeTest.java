@@ -125,9 +125,22 @@ public class CheckpointSmokeTest extends AbstractViewTest {
         m.put(key1, key1Val);
         m.put(key2, key2Val);
 
+        UUID checkpointStreamID = CorfuRuntime.getCheckpointStreamIdFromId(streamId);
+        Map<String, Long> cpMap = r.getObjectsView()
+                .build()
+                .setStreamID(checkpointStreamID)
+                .setTypeToken(new TypeToken<CorfuTable<String, Long>>() {})
+                .setSerializer(serializer)
+                .open();
+
         // Write our successful checkpoint, 3 records total.
         writeCheckpointRecords(streamId, checkpointAuthor, checkpointId,
                 new Object[]{new Object[]{key8, key8Val}, new Object[]{key7, key7Val}});
+
+        IStreamView ckStream = r.getStreamsView().get(checkpointStreamID);
+        System.out.println("cpMap size " + cpMap.size() + " ckStream " + ckStream.remaining());
+
+        AddressMapStreamView ckAdress = new AddressMapStreamView(r, checkpointStreamID);
 
         // Write our 3rd 'real' key, then check all 3 keys + the checkpoint keys
         m.put(key3, key3Val);
