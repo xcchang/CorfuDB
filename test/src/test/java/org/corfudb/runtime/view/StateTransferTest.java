@@ -1,5 +1,6 @@
 package org.corfudb.runtime.view;
 
+import com.google.common.base.Supplier;
 import com.google.common.collect.ContiguousSet;
 import com.google.common.collect.DiscreteDomain;
 import com.google.common.collect.Range;
@@ -31,13 +32,16 @@ import org.junit.Test;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -898,8 +902,7 @@ public class StateTransferTest extends AbstractViewTest {
             testStreamNoCodec.append(DEFAULT_PAYLOAD);
         }
 
-        // Add new Server
-        addServer(SERVERS.PORT_2);
+        // Add new Server   addServer(SERVERS.PORT_2);
         final int addNodeRetries = 3;
         corfuRuntime.getManagementView()
                 .addNode(SERVERS.ENDPOINT_2, addNodeRetries, Duration.ofMinutes(1L), Duration.ofSeconds(1));
@@ -948,5 +951,98 @@ public class StateTransferTest extends AbstractViewTest {
                     .getPayload(rt)).isEqualTo(DEFAULT_PAYLOAD);
         }
 
+    }
+
+    private void pollLayoutThenRunTask(CorfuRuntime rt, Function<Layout, Void> task) {
+        Layout layout = rt.getLayoutView().getLayout();
+        while (layout.getSegments().size() == 1) {
+            try {
+                rt.invalidateLayout();
+                layout = rt.getLayoutView().getLayout();
+                TimeUnit.MILLISECONDS.sleep(100L);
+                System.out.println("Waiting until split: " + layout.getSegments());
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        task.apply(layout);
+    }
+
+    /**
+     * This test verifies that restore redundancy workflow does not interfere with the add workflow.
+     * Layout: 1: [0 - 1000]
+     * <p>
+     * 1. Add node 2 and trigger a state transfer.
+     * 2. At the same time from the same node (2) trigger a restore redundancy workflow.
+     * 3. Restore redundancy workflow should not execute.
+     * 4. Verify that both nodes have a correct data after the node was added.
+     */
+    @Test
+    public void testRestoreAfterAdd() {
+        final byte[] bytes = "payload".getBytes();
+        addServer(SERVERS.PORT_0);
+
+        final long writtenAddressesBatch = 100_000L;
+
+        Layout layout = new TestLayoutBuilder()
+                .setEpoch(1L)
+                .addLayoutServer(SERVERS.PORT_0)
+                .addSequencer(SERVERS.PORT_0)
+                .buildSegment()
+                .setStart(0L)
+                .setEnd(-1L)
+                .buildStripe()
+                .addLogUnit(SERVERS.PORT_0)
+                .addToSegment()
+                .addToLayout()
+                .build();
+
+        bootstrapAllServers(layout);
+
+        CorfuRuntime rt = getNewRuntime(getDefaultNode()).connect();
+
+        IStreamView testStream = rt.getStreamsView().get(CorfuRuntime.getStreamID("test"));
+
+        for (int i = 0; i < writtenAddressesBatch; i++) {
+            testStream.append(bytes);
+        }
+
+
+        final int addNodeRetries = 3;
+        Duration timeout = Duration.ofMinutes(1L);
+        Duration pollPeriod = Duration.ofSeconds(1);
+
+        addServer(SERVERS.PORT_1);
+
+        Runnable addNodeTask = () -> rt.getManagementView()
+                .addNode(SERVERS.ENDPOINT_1, addNodeRetries, timeout, pollPeriod);
+
+        Function<Layout, Void> restoreForLayout = l -> {
+            rt.invalidateLayout();
+            getManagementServer(SERVERS.PORT_1)
+                    .getManagementAgent()
+                    .getRemoteMonitoringService()
+                    .restoreRedundancy(l);
+            return null;
+        };
+
+        List<String> completionList = Collections.synchronizedList(new ArrayList<>());
+
+        Runnable restoreAfterSegmentSplit = () -> pollLayoutThenRunTask(rt, restoreForLayout);
+
+        Supplier<CompletableFuture<Void>> addNodeAsync =
+                () -> CompletableFuture.runAsync(addNodeTask)
+                        .thenRun(() -> completionList.add("ADD"));
+
+        Supplier<CompletableFuture<Void>> restoreAndSetFlagAsync =
+                () -> CompletableFuture.runAsync(restoreAfterSegmentSplit)
+                        .thenRun(() -> completionList.add("RESTORE"));
+
+        CompletableFuture.allOf(addNodeAsync.get(), restoreAndSetFlagAsync.get()).join();
+
+        assertThat(completionList.size()).isEqualTo(2);
+        assertThat(completionList.get(0)).isEqualTo("ADD");
+        assertThat(completionList.get(1)).isEqualTo("RESTORE");
     }
 }
