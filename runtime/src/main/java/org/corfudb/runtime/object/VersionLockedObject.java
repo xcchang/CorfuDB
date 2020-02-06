@@ -746,10 +746,25 @@ public class VersionLockedObject<T extends ICorfuSMR<T>> {
         long syncTo = (timestamp == Address.OPTIMISTIC) ? Address.MAX : timestamp;
 
         Stream<SMRRecord> smrRecordStream = stream.streamUpTo(syncTo);
-        applyUpdateStreamUnsafe(smrRecordStream, timestamp);
+        syncStreamUnsafeInner(smrRecordStream, timestamp);
     }
 
-    private void applyUpdateStreamUnsafe(Stream<SMRRecord> smrRecordStream, long timestamp) {
+    private boolean isFirstRecordWithInUnsyncSMREntry(AtomicLong lastSyncAddress, SMRRecord record) {
+        return lastSyncAddress.get() != Address.NON_ADDRESS &&
+                record.getGlobalAddress() > lastSyncAddress.get();
+    }
+
+    private void flushGarbageLocator(long syncTail, List<SMRRecordLocator> garbageLocators) {
+        // flush garbage if there is garbage
+        if (!garbageLocators.isEmpty()) {
+            // vlo prevent concurrent access
+            // to garbageReceivingQueue to maintain order by marker address.
+            garbageInformer.addUnsafe(syncTail, garbageLocators);
+            garbageLocators.clear();
+        }
+    }
+
+    private void syncStreamUnsafeInner(Stream<SMRRecord> smrRecordStream, long timestamp) {
         // AtomicLong is used as a container to bypass the restriction of lambda expression
         final AtomicLong lastSyncAddress = new AtomicLong(Address.NON_ADDRESS);
         boolean isOptimistic = timestamp == Address.OPTIMISTIC;
@@ -773,17 +788,9 @@ public class VersionLockedObject<T extends ICorfuSMR<T>> {
 
                             // Record with global address larger than lastSyncAddress indicates that all SMRRecords
                             // from last global address has been applied. Therefore, syncTail could be updated.
-                            if (lastSyncAddress.get() != Address.NON_ADDRESS &&
-                                    record.getGlobalAddress() > lastSyncAddress.get()) {
+                            if (isFirstRecordWithInUnsyncSMREntry(lastSyncAddress, record)) {
                                 syncTail = Math.max(syncTail, lastSyncAddress.get());
-
-                                // flush garbage if there is garbage
-                                if (!garbageLocators.isEmpty()) {
-                                    // vlo prevent concurrent access
-                                    // to garbageReceivingQueue to maintain order by marker address.
-                                    garbageInformer.addUnsafe(syncTail, garbageLocators);
-                                    garbageLocators.clear();
-                                }
+                                flushGarbageLocator(syncTail, garbageLocators);
                             }
 
                             // to check whether the SMRRecord is first encountered by VLO
@@ -819,13 +826,7 @@ public class VersionLockedObject<T extends ICorfuSMR<T>> {
         // update syncTail after applying all SMRRecords. 
         if (!isOptimistic) {
             syncTail = Math.max(syncTail, lastSyncAddress.get());
-
-            // flush garbage if there is garbage
-            if (!garbageLocators.isEmpty()) {
-                // vlo prevent concurrent access
-                // to garbageReceivingQueue to maintain order by marker address.
-                garbageInformer.addUnsafe(syncTail, garbageLocators);
-            }
+            flushGarbageLocator(syncTail, garbageLocators);
         }
     }
 
@@ -851,7 +852,7 @@ public class VersionLockedObject<T extends ICorfuSMR<T>> {
      * @param updates smr records
      */
     public void applyUpdatesToStreamUnsafe(List<SMRRecord> updates, long globalAddress) {
-        applyUpdateStreamUnsafe(updates.stream(), globalAddress);
+        syncStreamUnsafeInner(updates.stream(), globalAddress);
         seek(globalAddress + 1);
     }
 

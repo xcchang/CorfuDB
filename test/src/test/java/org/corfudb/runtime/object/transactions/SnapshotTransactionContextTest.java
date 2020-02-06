@@ -111,6 +111,8 @@ public class SnapshotTransactionContextTest extends AbstractTransactionContextTe
         t2(this::TXEnd);
     }
 
+
+
     @Test
     public void snapshotReadBeforeCompactionMark() {
         final int entryNum = RECORDS_PER_SEGMENT + 1;
