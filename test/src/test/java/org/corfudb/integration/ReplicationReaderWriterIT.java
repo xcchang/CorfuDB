@@ -1,6 +1,7 @@
 package org.corfudb.integration;
 
 import com.google.common.reflect.TypeToken;
+import javassist.bytecode.ByteArray;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.logreplication.fsm.LogReplicationConfig;
 import org.corfudb.logreplication.message.DataMessage;
@@ -142,19 +143,19 @@ public class ReplicationReaderWriterIT extends AbstractIT {
     }
 
     public static void openStreams(HashMap<String, CorfuTable<Long, Long>> tables, CorfuRuntime rt, int num_streams) {
-        for (int i = 0; i < num_streams; i++) {
+        for (int i = 0; i < num_streams - 1; i++) {
             String name = "test" + Integer.toString(i);
-
             CorfuTable<Long, Long> table = rt.getObjectsView()
                     .build()
                     .setStreamName(name)
                     .setTypeToken(new TypeToken<CorfuTable<Long, Long>>() {
                     })
-                    .setSerializer(Serializers.PRIMITIVE)
+                    .setSerializer(new TestSerializer(Byte.MAX_VALUE))
                     .open();
             tables.put(name, table);
         }
     }
+
 
     public static void generateData(HashMap<String, CorfuTable<Long, Long>> tables,
                       HashMap<String, HashMap<Long, Long>> hashMap,
@@ -620,7 +621,6 @@ public class ReplicationReaderWriterIT extends AbstractIT {
     @Test
     public void testLogEntryTransfer() throws IOException {
         // setup environment
-        System.out.println("\ntest start ok");
         setupEnv();
 
         openStreams(srcTables, srcDataRuntime);
@@ -650,6 +650,7 @@ public class ReplicationReaderWriterIT extends AbstractIT {
         assertThat(diff).isEqualTo(dstEntries);
         printTails("after writing to server2", srcDataRuntime, dstDataRuntime);
 
+       //Serializers.registerSerializer(new TestSerializer(Byte.MAX_VALUE));
         //verify data with hashtable
         openStreams(dstTables, dstDataRuntime);
         verifyData("after log writing at dst", dstTables, srcHashMap);
