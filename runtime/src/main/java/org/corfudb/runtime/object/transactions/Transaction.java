@@ -6,8 +6,11 @@ import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NonNull;
 
+import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.runtime.CorfuRuntime;
+
+import java.util.concurrent.TimeUnit;
 
 
 /**
@@ -19,6 +22,7 @@ import org.corfudb.runtime.CorfuRuntime;
 @Getter
 @AllArgsConstructor
 @Builder
+@Slf4j
 public class Transaction {
 
     /**
@@ -40,6 +44,12 @@ public class Transaction {
     @Default
     final Token snapshot = Token.UNINITIALIZED;;
 
+    @Default
+    final long maxDurationThreshold = TimeUnit.MINUTES.toMillis(10);
+
+    @Default
+    final long sampleSize = 100;
+
     /**
      * Start the transaction with the parameters given
      * to the builder.
@@ -53,10 +63,25 @@ public class Transaction {
         return runtime.getObjectsView().isTransactionLogging();
     }
 
+    private void checkRunaway(long currentTime, Long threadId,
+                              AbstractTransactionalContext context) {
+        long delta = currentTime - context.getStartTime();
+        if (delta > getMaxDurationThreshold()) {
+            log.error("Potential runaway transaction with Thread ID {}, TX ID {}, Duration {} min.",
+                    threadId, context.getTransactionID(), TimeUnit.MILLISECONDS.toMinutes(delta));
+        }
+    }
+
     /**
      * Verifies that this transaction has a valid snapshot and context.
      */
     private void verify() {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime % getSampleSize() == 0) {
+            TransactionalContext.globalTx.forEach(
+                    (threadId, context) -> checkRunaway(currentTime, threadId, context));
+        }
+
         final AbstractTransactionalContext parentCtx = TransactionalContext.getCurrentContext();
         if (parentCtx != null) {
             // In a nested transaction, the runtime should be the same as the parent's

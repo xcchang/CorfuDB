@@ -1,9 +1,11 @@
 package org.corfudb.runtime.object.transactions;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class TransactionalContext {
+
+    public final static ConcurrentHashMap<Long, AbstractTransactionalContext> globalTx =
+            new ConcurrentHashMap<>();
 
     /** A thread local stack containing all transaction contexts
      * for a given thread.
@@ -77,6 +82,7 @@ public class TransactionalContext {
     public static AbstractTransactionalContext newContext(AbstractTransactionalContext context) {
         log.debug("TX begin[{}]", context);
         getTransactionStack().addFirst(context);
+        globalTx.put(Thread.currentThread().getId(), context);
         return context;
     }
 
@@ -87,6 +93,7 @@ public class TransactionalContext {
     public static AbstractTransactionalContext removeContext() {
         AbstractTransactionalContext r = getTransactionStack().pollFirst();
         if (getTransactionStack().isEmpty()) {
+            globalTx.remove(Thread.currentThread().getId());
             synchronized (getTransactionStack()) {
                 getTransactionStack().notifyAll();
             }
