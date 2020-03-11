@@ -41,6 +41,10 @@ public class LogReplicationRuntime {
     @Getter
     private final EventLoopGroup nettyEventLoop;
 
+
+    @Getter
+    private LogReplicationClient client;
+
     public LogReplicationRuntime(@Nonnull RuntimeParameters parameters) {
 
         // Set the local parameters field
@@ -113,8 +117,7 @@ public class LogReplicationRuntime {
         log.info("Connected");
         IClientRouter router = getRouter(node);
 
-        // Temp
-        LogReplicationClient client = new LogReplicationClient(router);
+        client = new LogReplicationClient(router);
         try {
             Boolean pongReceived = client.ping().get();
             log.info("Pong {}", pongReceived);

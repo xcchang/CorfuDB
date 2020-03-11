@@ -6,6 +6,9 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
+import org.corfudb.protocols.wireprotocol.LogReplicationMetadataResponse;
+import org.corfudb.protocols.wireprotocol.LogReplicationQueryLeadershipResponse;
+import org.corfudb.protocols.wireprotocol.PriorityLevel;
 import org.corfudb.runtime.clients.IClient;
 import org.corfudb.runtime.clients.IClientRouter;
 
@@ -18,23 +21,36 @@ public class LogReplicationClient implements IClient {
     @Setter
     private IClientRouter router;
 
+    @Setter
+    private PriorityLevel priorityLevel = PriorityLevel.NORMAL;
+
     public LogReplicationClient(IClientRouter router) {
-        setRouter(router);
+        this.router = router;
+    }
+
+    <T> CompletableFuture<T> sendMessageWithFuture(CorfuMsg msg) {
+        return router.sendMessageAndGetCompletable(msg.setPriorityLevel(priorityLevel));
+    }
+
+    public String getHost() {
+        return getRouter().getHost();
+    }
+
+    public Integer getPort() {
+        return getRouter().getPort();
     }
 
     public CompletableFuture<Boolean> ping() {
-        System.out.println("Ping!!!!!! ");
+        System.out.println("Ping 0 !!!!!! ");
         return getRouter().sendMessageAndGetCompletable(
                 new CorfuMsg(CorfuMsgType.PING).setEpoch(0));
     }
 
-    @Override
-    public void setRouter(IClientRouter router) {
-        this.router = router;
+    public CompletableFuture<LogReplicationQueryLeadershipResponse> queryLeadership() {
+        return sendMessageWithFuture(CorfuMsgType.LOG_REPLICATION_QUERY_LEADERSHIP_REQUEST.msg());
     }
 
-    @Override
-    public IClientRouter getRouter() {
-        return router;
+    public CompletableFuture<LogReplicationMetadataResponse> queryMetadata() {
+        return sendMessageWithFuture(CorfuMsgType.LOG_REPLICATION_METADATA_REQUEST.msg());
     }
 }

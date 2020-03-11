@@ -110,6 +110,13 @@ public enum CorfuMsgType {
     KNOWN_ADDRESS_REQUEST(86, new TypeToken<CorfuPayloadMsg<KnownAddressRequest>>() {}),
     KNOWN_ADDRESS_RESPONSE(87, new TypeToken<CorfuPayloadMsg<KnownAddressResponse>>() {}),
 
+    LOG_REPLICATION_QUERY_LEADERSHIP_REQUEST(90, TypeToken.of(CorfuMsg.class)),
+    LOG_REPLICATION_LEADERSHIP_RESPONSE(91, new TypeToken<CorfuPayloadMsg<LogReplicationQueryLeadershipResponse>>() {}),
+
+    LOG_REPLICATION_METADATA_REQUEST(92, TypeToken.of(CorfuMsg.class)),
+    LOG_REPLICATION_METADATA_RESPONSE(93, TypeToken.of(CorfuMsg.class)),
+
+
     ERROR_SERVER_EXCEPTION(200, new TypeToken<CorfuPayloadMsg<ExceptionMsg>>() {}, true),
     ;
 

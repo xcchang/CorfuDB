@@ -3,13 +3,13 @@ package org.corfudb.logreplication.receive;
 import com.google.common.reflect.TypeToken;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.protocols.wireprotocol.LogReplicationMetadataResponse;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.util.serializer.Serializers;
 
-import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -174,6 +174,17 @@ public class PersistedWriterMetadata {
 
     public long getLastSnapSeqNum() {
         return writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapSeqNum.getVal());
+    }
+
+    public LogReplicationMetadataResponse logReplicationMetadata() {
+        LogReplicationMetadataResponse response = new LogReplicationMetadataResponse(
+                writerMetaDataTable.get(PersistedWriterMetadataType.SnapshotEpic.getVal()),
+                writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapStart.getVal()),
+                writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapTransferDone.getVal()),
+                writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapApplyDone.getVal()),
+                writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapSeqNum.getVal()),
+                writerMetaDataTable.get(PersistedWriterMetadataType.LastLogProcessed.getVal()));
+        return response;
     }
 
     public enum PersistedWriterMetadataType {

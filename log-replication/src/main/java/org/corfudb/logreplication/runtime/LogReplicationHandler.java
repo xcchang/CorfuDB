@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
+import org.corfudb.protocols.wireprotocol.LogReplicationQueryLeadershipResponse;
 import org.corfudb.runtime.clients.ClientHandler;
 import org.corfudb.runtime.clients.ClientMsgHandler;
 import org.corfudb.runtime.clients.IClient;
@@ -41,6 +42,7 @@ public class LogReplicationHandler implements IClient, IHandler<LayoutClient> {
     @ClientHandler(type = CorfuMsgType.PONG)
     private static Object handlePong(CorfuMsg msg, ChannelHandlerContext ctx, IClientRouter r) {
         log.info("PONG");
+        System.out.println("Handler Pong received!!!!!");
         return true;
     }
 
@@ -55,7 +57,7 @@ public class LogReplicationHandler implements IClient, IHandler<LayoutClient> {
     @ClientHandler(type = CorfuMsgType.PING)
     private static Object handlePing(CorfuMsg msg, ChannelHandlerContext ctx, IClientRouter r) {
         log.info("PING");
-        System.out.println("Ping received by Server!!!!!");
+        System.out.println("Handler Ping received by Server!!!!!");
         r.sendResponseToServer(ctx, msg, new CorfuMsg(CorfuMsgType.PONG));
         return null;
     }

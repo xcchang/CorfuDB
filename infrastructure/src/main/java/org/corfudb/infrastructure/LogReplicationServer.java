@@ -5,9 +5,13 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
+import org.corfudb.protocols.wireprotocol.LogReplicationMetadataResponse;
+import org.corfudb.protocols.wireprotocol.LogReplicationQueryLeadershipResponse;
 
 import javax.annotation.Nonnull;
 import java.lang.invoke.MethodHandles;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -55,4 +59,33 @@ public class LogReplicationServer extends AbstractServer {
         log.info("PING received by Replication Server");
         r.sendResponse(ctx, msg, CorfuMsgType.PONG.msg());
     }
+
+    public LogReplicationQueryLeadershipResponse getLeadership() {
+        String ipAddress = null;
+        try {
+            InetAddress inetAddress = InetAddress.getLocalHost();
+            ipAddress = inetAddress.getHostAddress();
+        } catch (UnknownHostException e) {
+            log.error("caught an exception {}", e);
+        }
+
+        return new LogReplicationQueryLeadershipResponse(0, ipAddress);
+    }
+
+    @ServerHandler(type = CorfuMsgType.LOG_REPLICATION_QUERY_LEADERSHIP_REQUEST)
+    private void handleQueryLeadership(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.info("query leadership {}", msg);
+        LogReplicationQueryLeadershipResponse response = getLeadership();
+        r.sendResponse(ctx, msg, CorfuMsgType.LOG_REPLICATION_LEADERSHIP_RESPONSE.payloadMsg(response));
+    }
+
+
+    @ServerHandler(type = CorfuMsgType.LOG_REPLICATION_METADATA_REQUEST)
+    private void handleQueryMetaData(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
+        log.info("query leadership {}", msg);
+        LogReplicationMetadataResponse response = null;
+        // TODO call persistentmetadata api
+        r.sendResponse(ctx, msg, CorfuMsgType.LOG_REPLICATION_METADATA_RESPONSE.payloadMsg(response));
+    }
+
 }
