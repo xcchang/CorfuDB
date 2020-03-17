@@ -3,14 +3,22 @@ package org.corfudb.runtime.object.transactions;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.google.common.reflect.TypeToken;
+import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.collections.CorfuQueue;
 import org.corfudb.runtime.collections.CorfuTable;
+import org.corfudb.runtime.collections.Index;
 import org.corfudb.runtime.exceptions.TransactionAbortedException;
 import org.corfudb.runtime.object.ICorfuSMRProxyInternal;
+import org.corfudb.runtime.view.ObjectsView;
+import org.corfudb.runtime.view.stream.IStreamView;
+import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
 
 /**
@@ -24,7 +32,7 @@ import org.junit.Test;
  * 5) Ensure that the exception correctly reports the offending TX ID, the stream ID and the key.
  */
 public class TransactionAbortedTest extends AbstractTransactionContextTest {
-
+    static final int NUM_KEYS = 10;
     /**
      * In a write after write transaction, concurrent modifications
      * with the same read timestamp should abort.
@@ -76,5 +84,72 @@ public class TransactionAbortedTest extends AbstractTransactionContextTest {
                 return true;
             }
         }).assertResult().isEqualTo(true);
+    }
+
+
+    @Test
+    public void testRemaining() {
+        CorfuRuntime runtime = getDefaultRuntime();
+        runtime.setTransactionLogging(true);
+
+        //String name = ObjectsView.TRANSACTION_STREAM_ID;
+        String name = "Transaction_Stream";
+        System.out.println("\ntransaction stream 0 " + ObjectsView.TRANSACTION_STREAM_ID);
+
+        System.out.println("transaction stream 1 " + UUID.nameUUIDFromBytes(name.getBytes()));
+        name = "span";
+        System.out.println("span stream  " + UUID.nameUUIDFromBytes(name.getBytes()));
+        Map<String, String> map = runtime.getObjectsView()
+                .build()
+                .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                .setStreamName("test0")
+                .open();
+
+        CorfuQueue<String>
+                corfuQueue = new CorfuQueue<>(runtime, "test1", Serializers.JAVA,
+                Index.Registry.empty());
+
+        IStreamView txStream = runtime.getStreamsView().get(ObjectsView.TRANSACTION_STREAM_ID);
+        final String key = "key";
+        final String value = "value";
+
+        for(int i = 0; i < NUM_KEYS; i++) {
+            map.put(key + i, value +i);
+        }
+
+        runtime.getObjectsView().TXBegin();
+        map.put(key, value);
+        runtime.getObjectsView().TXEnd();
+
+            //generate some data do append to table
+        List<ILogData> entries = txStream.remaining();
+        System.out.println("\nnumber of entries " + entries.size() + " txPointer " + txStream.getCurrentGlobalPosition() + " tail " + runtime.getAddressSpaceView().getLogTail());
+
+
+        for(int i = 0; i < NUM_KEYS; i++) {
+            map.put(key + i, value +i);
+        }
+
+        entries = txStream.remaining();
+        System.out.println("\nnumber of entries " + entries.size() + " txPointer " + txStream.getCurrentGlobalPosition() + " tail " + runtime.getAddressSpaceView().getLogTail());
+
+        for (int i = 0; i < 10000; i++) {
+            CorfuQueue.CorfuRecordId idC = corfuQueue.enqueue("val " + i);
+        }
+
+        entries = txStream.remaining();
+        System.out.println("\nnumber of entries " + entries.size() + " txPointer " + txStream.getCurrentGlobalPosition() + " tail " + runtime.getAddressSpaceView().getLogTail());
+
+        entries = txStream.remaining();
+        System.out.println("\nnumber of entries " + entries.size() + " txPointer " + txStream.getCurrentGlobalPosition() + " tail " + runtime.getAddressSpaceView().getLogTail());
+    }
+
+
+    @Test
+    public  void testIntentPath() {
+        String intentPath = "/global-infra/domains/London_Paris/groups/London_paris_grp";
+        String domainPath = "/global-infra/domains/London_Paris";
+        Boolean result = intentPath.startsWith(domainPath);
+        System.out.println(" result " + result);
     }
 }
