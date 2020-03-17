@@ -17,6 +17,8 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -391,6 +393,33 @@ public class CorfuStoreTest extends AbstractViewTest {
                 .setInput(Appliance.newBuilder().setEndpoint("127.0.0.1").build())
                 .setOutput(Appliance.newBuilder().setEndpoint("196.168.0.1").build())
                 .build();
+        FirewallRule rule2 = FirewallRule
+                .newBuilder()
+                .setRuleId(ruleId+1)
+                .setRuleName("TestRule")
+                .setInput(Appliance.newBuilder().setEndpoint("127.0.0.1").build())
+                .setOutput(Appliance.newBuilder().setEndpoint("196.168.0.1").build())
+                .build();
+        FirewallRule rule3 = FirewallRule
+                .newBuilder()
+                .setRuleId(ruleId+3)
+                .setRuleName("TestRule")
+                .setInput(Appliance.newBuilder().setEndpoint("127.0.0.1").build())
+                .setOutput(Appliance.newBuilder().setEndpoint("196.168.0.1").build())
+                .build();
+
+        ArrayList<FirewallRule> rulez = new ArrayList<>();
+        rulez.add(rule3);
+        rulez.add(rule);
+        rulez.add(rule2);
+        Comparator<FirewallRule> compareByRuleIdOnly = (FirewallRule r1, FirewallRule r2) -> {
+            if (r1.getRuleId() == r2.getRuleId()) return 0;
+            if (r1.getRuleId() > r2.getRuleId()) return 1;
+            return -1;
+        };
+        System.out.println("Rules before sort: "+rulez);
+        Collections.sort(rulez, compareByRuleIdOnly);
+        System.out.println("Rules after sort: "+rulez);
 
         Message message = rule;
 
