@@ -503,7 +503,7 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
         // Try to read trimmed addresses
         for(long x = 0; x < numSegments * StreamLogFiles.RECORDS_PER_LOG_FILE; x++) {
             ILogData logData = log.read(x);
-            if(logData.isTrimmed()) {
+            if (logData.isTrimmed()) {
                 trimmedExceptions++;
             }
         }
@@ -743,5 +743,35 @@ public class StreamLogFilesTest extends AbstractCorfuTest {
 
         assertThat(parentSize).isEqualTo(parentDirFilePayloadSize + childDirFilePayloadSize);
         assertThat(childDirSize).isEqualTo(childDirFilePayloadSize);
+    }
+
+    @Test
+    public void readConsistencyTest() throws Exception {
+        StreamLogFiles log = new StreamLogFiles(getContext(), false);
+        final long numSegments = 5;
+        final long numWrites = numSegments * RECORDS_PER_LOG_FILE;
+
+        // Write to log without syncing to secondary storage.
+        for (long address = 0; address < numWrites; address++) {
+            writeToLog(log, address, false);
+        }
+
+        // Verify reader should not see these written entries
+        for (long address = 0; address < numWrites; address++) {
+            assertThat(log.read(address)).isNull();
+        }
+
+        // Verify number of segments to sync.
+        assertThat(log.getSegmentsToSync().size()).isEqualTo(numSegments);
+
+        // Force file sync.
+        log.sync(true);
+
+        // Verify readers can see the entries now.
+        for (long address = 0; address < numWrites; address++) {
+            assertThat(log.read(address)).isNotNull();
+        }
+
+        log.close();
     }
 }
