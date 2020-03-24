@@ -146,10 +146,18 @@ public class PersistedWriterMetadata {
         }
     }
 
+    public long getLastSnapStart() {
+        return writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapStart.getVal());
+    }
+
+    public long getLastSnapTransferDone() {
+        return writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapTransferDone.getVal());
+    }
+
+
     public long getLastSrcBaseSnapshotTimestamp() {
         return writerMetaDataTable.get(PersistedWriterMetadataType.LastSnapApplyDone.getVal());
     }
-
 
     /**
      * This call should be done in a transaction while applying a log entry message.

@@ -100,7 +100,7 @@ public class LogEntryWriter {
             try {
                 rt.getObjectsView().TXBegin();
                 persistTs = persistedWriterMetadata.getLastProcessedLogTimestamp();
-                if (msgTs > persistTs ) {
+                if (msgTs > persistTs || txMessage.getMetadata().getPreviousTimestamp() != persistTs) {
                     for (UUID uuid : opaqueEntry.getEntries().keySet()) {
                         for (SMREntry smrEntry : opaqueEntry.getEntries().get(uuid)) {
                             TransactionalContext.getCurrentContext().logUpdate(uuid, smrEntry);
