@@ -34,9 +34,9 @@ import java.util.UUID;
 public class StreamsSnapshotWriter implements SnapshotWriter {
     private final static int MAX_NUM_TX_RETRY = 4;
     HashMap<UUID, IStreamView> streamViewMap; // It contains all the streams registered for write to.
+    HashMap<UUID, IStreamView> shadowStreamViewMap;
     CorfuRuntime rt;
     private long srcGlobalSnapshot; // The source snapshot timestamp
-    private Set<UUID> streamsDone;
     private long recvSeq;
     private PersistedWriterMetadata persistedWriterMetadata;
 
@@ -60,25 +60,36 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
      * clear all tables registered
      * TODO: replace with stream API
      */
-    void clearTables() {
+    void clearTables(Set<UUID> streamSet) {
         boolean doRetry = true;
         int numRetry = 0;
 
         while (doRetry && numRetry++ < MAX_NUM_TX_RETRY) {
             try {
                 rt.getObjectsView().TXBegin();
-                for (UUID streamID : streamViewMap.keySet()) {
+                for (UUID streamID : streamSet) {
                     SMREntry entry = new SMREntry("clear", new Array[0], Serializers.PRIMITIVE);
                     TransactionalContext.getCurrentContext().logUpdate(streamID, entry);
                 }
 
                 doRetry = false;
-                log.info("Clear tables for streams {} ", streamViewMap.keySet());
+                log.info("Clear tables for streams {} ", streamSet);
             } catch (TransactionAbortedException e) {
                 log.warn("Caught an exception {} will retry {}", e, numRetry);
             } finally {
                 rt.getObjectsView().TXEnd();
             }
+        }
+    }
+
+    UUID shadowStreamUUID(UUID stream, long snapshot) {
+        return CorfuRuntime.getStreamID(stream.toString() + snapshot);
+    }
+
+    void setupShadowStreams(long snapshot) {
+        for (UUID stream : streamViewMap.keySet()) {
+            IStreamView sv = rt.getStreamsView().getUnsafe(shadowStreamUUID(stream, snapshot));
+            shadowStreamViewMap.put(stream, sv);
         }
     }
 
@@ -103,12 +114,12 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
     public void reset(long snapshot) {
        srcGlobalSnapshot = snapshot;
        recvSeq = 0;
-       streamsDone = new HashSet<>();
-       clearTables();
+       clearTables(shadowStreamViewMap.keySet());
+       //clearTables(streamViewMap.keySet());
     }
 
     /**
-     * Convert an OpaqueEntry to an MultiObjectSMREntry and write to log.
+     * Convert an OpaqueEntry to an MultiObjectSMREntry and write to the shadow stream.
      * @param opaqueEntry
      */
     void processOpaqueEntry(LogReplicationEntry entry, OpaqueEntry opaqueEntry) {
@@ -127,7 +138,8 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
                     for (UUID uuid : opaqueEntry.getEntries().keySet()) {
                         for (SMREntry smrEntry : opaqueEntry.getEntries().get(uuid)) {
                             //streamViewMap.get(uuid).append(smrEntry);
-                            TransactionalContext.getCurrentContext().logUpdate(uuid, smrEntry);
+                            TransactionalContext.getCurrentContext().
+                                    logUpdate(shadowStreamUUID(uuid, entry.getMetadata().getSnapshotTimestamp()), smrEntry);
                         }
                     }
                     persistedWriterMetadata.setLastSnapSeqNum(currentSeqNum);
@@ -148,6 +160,12 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
             }
         }
     }
+
+    /**
+     * Todo apply to shawdowStream or real Stream according to the state
+     * @param message
+     */
+
     @Override
     public void apply(LogReplicationEntry message) {
         verifyMetadata(message.getMetadata());
