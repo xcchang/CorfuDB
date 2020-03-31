@@ -11,13 +11,13 @@ import org.corfudb.runtime.object.transactions.TransactionType;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Created by hisundar on 5/30/19.
@@ -30,7 +30,7 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
     }
 
     public void TXBegin(TransactionType type) {
-        switch (type){
+        switch (type) {
             case WRITE_AFTER_WRITE:
                 WWTXBegin();
                 return;
@@ -38,11 +38,11 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
                 OptimisticTXBegin();
                 return;
             default:
-                throw new IllegalArgumentException("Unsupported TXN type:"+type.toString());
+                throw new IllegalArgumentException("Unsupported TXN type:" + type.toString());
         }
     }
 
-    protected final int numIterations = PARAMETERS.NUM_ITERATIONS_LOW;
+    protected final int numIterations = PARAMETERS.NUM_ITERATIONS_MODERATE;
     protected final Long numConflictKeys = 2L;
 
     /**
@@ -88,11 +88,13 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
                     TXBegin(txnType);
                     Long coinToss = new Random().nextLong() % numConflictKeys;
                     conflictMap.put(coinToss, coinToss);
+                    corfuQueue.enqueue(queueData);
+                    // Each transaction may or may not sleep to simulate out of order between enQ & commit
+                    TimeUnit.MILLISECONDS.sleep(coinToss);
                     lock.lock();
-                    CorfuRecordId id = corfuQueue.enqueue(queueData);
                     final long streamOffset = TXEnd();
-                    validator.add(new Record(id, queueData));
-                    log.debug("ENQ:" + id + "=>" + queueData + " at " + streamOffset);
+                    validator.add(new Record(new CorfuRecordId(0,0,i), queueData));
+                    log.debug("ENQ:" + i + "=>" + queueData + " at " + streamOffset);
                     lock.unlock();
                 } catch (TransactionAbortedException txException) {
                     log.debug(queueData + " ---> Abort!!! ");
@@ -103,21 +105,25 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
         });
         executeScheduled(numThreads, PARAMETERS.TIMEOUT_LONG);
 
+        // Re-open the queue to ensure that the ordering is retrieved from a persisted source.
+        CorfuQueue<String>
+                corfuQueue2 = new CorfuQueue<>(getRuntime(), "testQueue");
+
         // After all concurrent transactions are complete, validate that number of Queue entries
         // are the same as the number of successful transactions.
-        List<CorfuQueue.CorfuQueueRecord<String>> records = corfuQueue.entryList();
+        List<CorfuQueue.CorfuQueueRecord<String>> records = corfuQueue2.entryList();
         assertThat(validator.size()).isEqualTo(records.size());
 
         // Also validate that the order of the queue matches that of the commit order.
+        CorfuRecordId testOrder = new CorfuRecordId(0,0,0);
         for (int i = 0; i < validator.size(); i++) {
             log.debug("Entry:" + records.get(i).getRecordId());
-            assertThat(validator.get(i).getId().equals(records.get(i).getRecordId()));
+            CorfuRecordId order = records.get(i).getRecordId();
+            assertThat(testOrder.compareTo(order)).isLessThanOrEqualTo(0);
+            log.debug("queue entry"+i+":"+order);
+            testOrder = order;
             assertThat(validator.get(i).getData()).isEqualTo(records.get(i).getEntry());
         }
-
-        // Validate that one cannot compare ID from enqueue with ID from entryList()
-        assertThatThrownBy(() -> validator.get(0).getId().compareTo(records.get(0).getRecordId())).
-                isExactlyInstanceOf(IllegalArgumentException.class);
     }
 }
 

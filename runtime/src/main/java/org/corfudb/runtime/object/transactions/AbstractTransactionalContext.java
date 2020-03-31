@@ -24,6 +24,8 @@ import org.corfudb.util.MetricsUtils;
 import org.corfudb.util.Utils;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -247,6 +249,17 @@ public abstract class AbstractTransactionalContext implements
      * @param tc The transactional context to merge.
      */
     public abstract void addTransaction(AbstractTransactionalContext tc);
+
+    /**
+     * Add an object that needs extra processing right before commit happens
+     *
+     * @param preCommitListener The context of the object that needs extra processing
+     *                         along with its lambda.
+     */
+    public abstract void addPreCommitListener(TransactionalContext.PreCommitListener preCommitListener);
+
+    @Getter
+    private List<TransactionalContext.PreCommitListener> preCommitListeners = new ArrayList<>();
 
     /**
      * Commit the transaction to the log.
