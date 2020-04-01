@@ -16,6 +16,7 @@ import java.util.Hashtable;
 import java.util.TreeMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.List;
 import java.util.Map;
@@ -82,9 +83,10 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
                 this.data = data;
             }
         }
-        ArrayList<Record> validator = new ArrayList<>(numThreads * numIterations);
-        ReentrantLock lock = new ReentrantLock();
 
+        Hashtable<Long, Record> validator = new Hashtable<>();
+        ReentrantLock lock = new ReentrantLock();
+        AtomicInteger cntAbort = new AtomicInteger(0);
         scheduleConcurrently(numThreads, t ->
         {
             for (Long i = 0L; i < numIterations; i++) {
@@ -96,15 +98,12 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
                     corfuQueue.enqueue(queueData);
                     // Each transaction may or may not sleep to simulate out of order between enQ & commit
                     TimeUnit.MILLISECONDS.sleep(coinToss);
-                    lock.lock();
                     final long streamOffset = TXEnd();
-                    validator.add(new Record(new CorfuRecordId(0,0,i), queueData));
+                    validator.put(streamOffset, new Record(new CorfuRecordId(0,0,i), queueData));
                     log.debug("ENQ:" + i + "=>" + queueData + " at " + streamOffset);
-                    lock.unlock();
                 } catch (TransactionAbortedException txException) {
                     log.debug(queueData + " ---> Abort!!! ");
-                    // Half the transactions are expected to abort
-                    lock.unlock();
+                    cntAbort.addAndGet(1);
                 }
             }
         });
@@ -121,13 +120,16 @@ public class CorfuQueueTxTest extends AbstractTransactionsTest {
 
         // Also validate that the order of the queue matches that of the commit order.
         CorfuRecordId testOrder = new CorfuRecordId(0,0,0);
+        log.info("Total tx " + numIterations + " Aborted tx " + cntAbort);
+        assertThat(validator.size()).isEqualTo(records.size());
         for (int i = 0; i < validator.size(); i++) {
             log.debug("Entry:" + records.get(i).getRecordId());
             CorfuRecordId order = records.get(i).getRecordId();
             assertThat(testOrder.compareTo(order)).isLessThanOrEqualTo(0);
             log.debug("queue entry"+i+":"+order);
             testOrder = order;
-            assertThat(validator.get(i).getData()).isEqualTo(records.get(i).getEntry());
+            long address = order.getSequence();
+            assertThat(validator.get(address).getData()).isEqualTo(records.get(i).getEntry());
         }
     }
 
