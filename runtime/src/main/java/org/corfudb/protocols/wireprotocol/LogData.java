@@ -6,6 +6,9 @@ import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.EnumMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import lombok.Getter;
@@ -18,6 +21,8 @@ import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.WriteSizeException;
 import org.corfudb.util.serializer.Serializers;
 
+import static org.corfudb.util.MetricsUtils.sizeOf;
+
 /**
  * Created by mwei on 8/15/16.
  */
@@ -25,7 +30,7 @@ import org.corfudb.util.serializer.Serializers;
 public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
 
     public static final int NOT_KNOWN = -1;
-
+    public static final int POINTER_SIZE = 8;
     @Getter
     final DataType type;
 
@@ -96,6 +101,7 @@ public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
                             value = actualValue == null ? this.payload : actualValue;
                             this.payload.set(value);
                             lastKnownSize = data.length;
+                            System.out.print("\n2 size " + lastKnownSize);
                         } catch (Throwable throwable) {
                             log.error("Exception caught at address {}, {}, {}",
                                     getGlobalAddress(), getStreams(), getType());
@@ -133,15 +139,72 @@ public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
             serializedCache.retain();
         }
     }
+/*
+    RANK(1, TypeToken.of(DataRank.class)),
+    BACKPOINTER_MAP(3, new TypeToken<Map<UUID, Long>>() {}),
+    GLOBAL_ADDRESS(4, TypeToken.of(Long.class)),
+    CHECKPOINT_TYPE(6, TypeToken.of(CheckpointEntry.CheckpointEntryType.class)),
+    CHECKPOINT_ID(7, TypeToken.of(UUID.class)),
+    CHECKPOINTED_STREAM_ID(8, TypeToken.of(UUID.class)),
+    CHECKPOINTED_STREAM_START_LOG_ADDRESS(9, TypeToken.of(Long.class)),
+    CLIENT_ID(10, TypeToken.of(UUID.class)),
+    THREAD_ID(11, TypeToken.of(Long.class)),
+    EPOCH(12, TypeToken.of(Long.class)),
+    PAYLOAD_CODEC(
+            */
+    static public long getBackpointMapSize(Map<UUID, Long> map) {
+        int size = 0;
+        Set<Map.Entry<UUID, Long>> entrySet = map.entrySet();
+        Map.Entry<UUID, Long> entry = entrySet.iterator().next();
+        size = (int) (map.size() * (sizeOf.deepSizeOf(entry) + POINTER_SIZE));
+        long deepSize = sizeOf.deepSizeOf(map);
+        System.out.print("\nenumMap numElement " + map.size() + " calSize " + size +
+                " deepSize " + deepSize + " diff " + (deepSize - size));
+        return size;
+    }
+
+    static public long getMetadataSize(EnumMap<LogUnitMetadataType, Object> metaMap) {
+        long size = 0;
+        Set<Map.Entry<LogUnitMetadataType, Object>> entries = metaMap.entrySet();
+        for (Map.Entry<LogUnitMetadataType, Object> entry : entries){
+            switch (entry.getKey()) {
+                    case RANK:
+                    case GLOBAL_ADDRESS:
+                    case CHECKPOINT_ID:
+                    case CHECKPOINT_TYPE:
+                    case CHECKPOINTED_STREAM_ID:
+                    case CHECKPOINTED_STREAM_START_LOG_ADDRESS:
+                    case CLIENT_ID:
+                    case THREAD_ID:
+                    case EPOCH:
+                    case PAYLOAD_CODEC:
+                        size += sizeOf.deepSizeOf(entry.getValue()) + 3*POINTER_SIZE;
+                        break;
+                    case BACKPOINTER_MAP:
+                        size += getBackpointMapSize((Map<UUID, Long>)entry.getValue());
+                }
+        }
+
+        int deepSize = (int)sizeOf.deepSizeOf(metaMap);
+        System.out.print("\nmetaMap calSize " + size + " deepSize " + deepSize + " diff " + (deepSize - size));
+        return size;
+    }
 
     @Override
     public int getSizeEstimate() {
         byte[] tempData = data;
-        if (tempData != null) {
-            return tempData.length;
-        } else if (lastKnownSize != NOT_KNOWN) {
-            return lastKnownSize;
+
+        int size = (int)getMetadataSize(metadataMap);
+        System.out.print("\nmetaMap size " + size);
+        if (lastKnownSize != NOT_KNOWN) {
+            size += lastKnownSize;
+        } else if (tempData != null) {
+            size += tempData.length;
         }
+
+        if (size != 0)
+            return size;
+
         log.warn("getSizeEstimate: LogData size estimate is defaulting to 1,"
                 + " this might cause leaks in the cache!");
         return 1;
@@ -265,6 +328,7 @@ public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
 
     void doSerializeInternal(ByteBuf buf) {
         ICorfuPayload.serialize(buf, type);
+        //int startIndex = buf.writerIndex();
         if (type == DataType.DATA) {
             if (data == null) {
                 int lengthIndex = buf.writerIndex();
@@ -288,9 +352,13 @@ public class LogData implements ICorfuPayload<LogData>, IMetadata, ILogData {
             }
         }
 
+
         if (type.isMetadataAware()) {
             ICorfuPayload.serialize(buf, metadataMap);
         }
+
+        //lastKnownSize = buf.writerIndex() - startIndex;
+        //System.out.print("\nserialize size " + lastKnownSize);
     }
 
     private void doCompressInternal(ByteBuf bufData, ByteBuf buf) {

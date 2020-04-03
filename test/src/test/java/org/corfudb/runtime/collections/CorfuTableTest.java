@@ -1,11 +1,15 @@
 package org.corfudb.runtime.collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.corfudb.util.MetricsUtils.sizeOf;
+
 import com.google.common.reflect.TypeToken;
 
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.ConcurrentModificationException;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -14,7 +18,9 @@ import java.util.stream.Stream;
 
 import org.assertj.core.api.Assertions;
 import org.assertj.core.data.MapEntry;
+import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuError;
+import org.corfudb.runtime.object.transactions.TransactionType;
 import org.corfudb.runtime.view.AbstractViewTest;
 import org.junit.Test;
 
@@ -244,5 +250,57 @@ public class CorfuTableTest extends AbstractViewTest {
 
         final Stream<Map.Entry<Integer, Integer>> result = map.entryStream();
         result.forEach(e -> map.put(new Random().nextInt(), 0));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testLogUnitServerCache() {
+        int numTables = 100;
+        CorfuRuntime runtime = getDefaultRuntime();
+
+        for (int j = 1; j < numTables; j++) {
+            HashSet<CorfuTable<String, String>> tableSet = new HashSet<>();
+            for (int i = 0; i < j; i++) {
+                CorfuTable<String, String>
+                        corfuTable = runtime.getObjectsView().build()
+                        .setTypeToken(new TypeToken<CorfuTable<String, String>>() {})
+                        .setArguments(new StringIndexer())
+                        .setStreamName("test" + i)
+                        .open();
+
+                tableSet.add(corfuTable);
+            }
+
+            for (int i = 0; i < 2; i++) {
+                runtime.getObjectsView().TXBuild()
+                        .type(TransactionType.OPTIMISTIC)
+                        .build()
+                        .begin();
+                for (CorfuTable table : tableSet) {
+                    table.put("k1", "a" + i);
+                }
+                runtime.getObjectsView().TXEnd();
+            }
+        }
+        System.out.print("\nnumTables "+ numTables);
+    }
+
+    @Test
+    public void testCaffeinCache() {
+        long maxSize = 1000000;
+
+        for(int valSize = 512; valSize <= 1024; valSize = valSize*2) {
+            TestCaffeinCache testCache = new TestCaffeinCache(maxSize*2000, null);
+            String s = null;
+            for (long i = 0; i < maxSize; i++) {
+                byte[] array = new byte[valSize]; // length is bounded by 7
+                new Random().nextBytes(array);
+                s = new String(array, Charset.forName("UTF-8"));
+                testCache.put(i, s);
+            }
+            long cacheSize = sizeOf.deepSizeOf(testCache);
+            System.out.print("\n*******numElement " + testCache.getSize() + " cacheSize :" + cacheSize + " avg element size " + cacheSize/testCache.getSize() +
+                    " dataSize " + sizeOf.deepSizeOf(testCache.get(maxSize - 1)));
+        }
     }
 }

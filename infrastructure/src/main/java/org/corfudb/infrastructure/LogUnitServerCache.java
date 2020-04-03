@@ -1,5 +1,4 @@
 package org.corfudb.infrastructure;
-
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalCause;
@@ -9,6 +8,8 @@ import org.corfudb.infrastructure.LogUnitServer.LogUnitServerConfig;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
+
+import static org.corfudb.util.MetricsUtils.sizeOf;
 
 /**
  * LogUnit server cache.
@@ -23,6 +24,7 @@ public class LogUnitServerCache {
 
     private final LoadingCache<Long, ILogData> dataCache;
     private final StreamLog streamLog;
+    private long cnt = 0;
 
     public LogUnitServerCache(LogUnitServerConfig config, StreamLog streamLog) {
         this.streamLog = streamLog;
@@ -31,6 +33,7 @@ public class LogUnitServerCache {
                 .maximumWeight(config.getMaxCacheSize())
                 .removalListener(this::handleEviction)
                 .build(this::handleRetrieval);
+        System.out.print("\ninit Deepsize cache " +sizeOf.deepSizeOf(this.dataCache) +" maxWeight " + config.getMaxCacheSize());
     }
 
     /**
@@ -51,6 +54,7 @@ public class LogUnitServerCache {
 
     private void handleEviction(long address, ILogData entry, RemovalCause cause) {
         log.trace("handleEviction: Eviction[{}]: {}", address, cause);
+        System.out.print("evict " + dataCache.estimatedSize());
     }
 
     /**
@@ -92,6 +96,13 @@ public class LogUnitServerCache {
     public void put(long address, ILogData entry) {
         log.trace("LogUnitServerCache.put: Cache write[{} : {}]", address, entry);
         dataCache.put(address, entry);
+        cnt++;
+        if (cnt % 100 == 0) {
+            System.out.print("\nnumEntry " + dataCache.estimatedSize() + " cnt " + cnt +
+                    //" cacheSize " + memSize + " avgSpacePerEntry " + memSize/dataCache.estimatedSize() +
+                    " deepSize(Ilogdata) " + sizeOf.deepSizeOf(entry) + " serializedSize " + entry.getSizeEstimate() +
+                    " metaData deepSize " + sizeOf.deepSizeOf(entry.getMetadataMap()));
+        }
     }
 
     /**
