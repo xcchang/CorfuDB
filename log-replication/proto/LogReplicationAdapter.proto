@@ -1,0 +1,71 @@
+syntax = "proto2";
+
+package org.corfudb.infrastructure.logreplication;
+option java_package = "org.corfudb.infrastructure.logreplication";
+option java_generic_services = true;
+
+import "google/protobuf/descriptor.proto";
+
+
+// Site configuration metadata
+message SiteInfo {
+  optional string uuid = 1;
+  optional string address = 2;
+  optional int32 port = 3;
+  optional string certificate = 4;
+  optional string node_id = 5;
+}
+
+message SiteConfigMsg {
+  repeated SiteInfo siteInfon= 1;;
+}
+
+enum MessageType {
+    LOG_ENTRY_MESSAGE = 1;
+    SNAPSHOT_MESSAGE = 2;
+    SNAPSHOT_START = 3;
+    LOG_ENTRY_REPLICATED = 4;
+    SNAPSHOT_REPLICATED = 5;
+    SNAPSHOT_END = 6;
+}
+
+message UUID {
+  required int64 serialVersionUID = 1;
+  required int64 mostSigBits = 2;
+  required int64 leastSigBits = 3;
+}
+
+message LogReplicationMetaData {
+  required MessageType messageMetadataType = 1;
+  required int64 timestamp = 2;
+  required int64 previousTimestamp = 3;
+  required UUID syncRequestId =4;
+  required int64 snapshotTimestamp = 5;
+  required int64 snapshotSyncSeqNum = 6;
+}
+
+message LogReplicationMsg {
+  required MessageType messageMetadataType = 1;
+  optional bytes payload = 2;
+}
+
+message LogReplicationLeaderMsg {
+  required int64 epoch = 1;
+  required bool isLeader = 2;
+}
+
+message LogReplicationStatusMsg {
+  required int64 snapEpic = 1;
+  required int64 baseSnap = 2;
+  required int64 snapStartTransfer = 3;
+  required int64 snapTransferDone = 4;
+  required int64 snapApplyDone = 5;
+  required int64 snapSeqNum = 6;
+  required int64 lastLogProcessed = 7;
+}
+
+service LogReplicationService {
+  rpc sendLogReplicationMsg(LogReplicationMsg) returns (LogReplicationMetaData) {};
+  rpc queryRemoteLeadership(LogReplicationLeaderMsg) returns (LogReplicationLeaderMsg) {};
+  rpc queryRemoteReplicationStatus(LogReplicationStatusMsg) returns (LogReplicationStatusMsg) {};
+}
