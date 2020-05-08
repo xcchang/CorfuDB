@@ -70,7 +70,7 @@ public class SinkManager implements DataReceiver {
     }
 
     private void init() {
-        persistedWriterMetadata = new PersistedWriterMetadata(runtime, config.getSiteID(), config.getRemoteSiteID());
+        persistedWriterMetadata = new PersistedWriterMetadata(runtime, 0, config.getSiteID(), config.getRemoteSiteID());
         snapshotWriter = new StreamsSnapshotWriter(runtime, config, persistedWriterMetadata);
         logEntryWriter = new LogEntryWriter(runtime, config, persistedWriterMetadata);
         logEntryWriter.setTimestamp(persistedWriterMetadata.getLastSrcBaseSnapshotTimestamp(),

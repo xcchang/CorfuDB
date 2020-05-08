@@ -32,8 +32,12 @@ public class PersistedWriterMetadata {
 
     CorfuRuntime runtime;
 
-    public PersistedWriterMetadata(CorfuRuntime rt, UUID primary, UUID dst) {
+    long epoch;
+
+    public PersistedWriterMetadata(CorfuRuntime rt, long epoch, UUID primary, UUID dst) {
         this.runtime = rt;
+        this.epoch = epoch;
+
         writerMetaDataTable = rt.getObjectsView()
                 .build()
                 .setStreamName(getPersistedWriterMetadataTableName(primary, dst))
