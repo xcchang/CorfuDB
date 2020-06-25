@@ -7,6 +7,8 @@ import org.corfudb.infrastructure.logreplication.infrastructure.NodeDescriptor;
 import org.corfudb.infrastructure.logreplication.infrastructure.TopologyDescriptor;
 import org.corfudb.infrastructure.logreplication.proto.LogReplicationClusterInfo.TopologyConfigurationMsg;
 import org.corfudb.infrastructure.logreplication.proto.LogReplicationClusterInfo.ClusterRole;
+import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
+import org.eclipse.jetty.util.BlockingArrayQueue;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -19,6 +21,9 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import static java.lang.Thread.sleep;
 
@@ -47,7 +52,7 @@ public class DefaultClusterManager extends CorfuReplicationClusterManagerAdapter
     @Getter
     public SiteManagerCallback siteManagerCallback;
 
-    Thread thread = new Thread(siteManagerCallback);
+    private Thread thread;
 
     public void start() {
         siteManagerCallback = new SiteManagerCallback(this);
@@ -58,6 +63,11 @@ public class DefaultClusterManager extends CorfuReplicationClusterManagerAdapter
     @Override
     public void shutdown() {
         ifShutdown = true;
+        try {
+            thread.join();
+        } catch (InterruptedException ie) {
+            throw new UnrecoverableCorfuInterruptedError(ie);
+        }
     }
 
 
@@ -208,23 +218,27 @@ public class DefaultClusterManager extends CorfuReplicationClusterManagerAdapter
      * Testing purpose to generate cluster role change.
      */
     public static class SiteManagerCallback implements Runnable {
-        public boolean siteFlip = false;
+        private LinkedBlockingQueue<Boolean> switchQueue;
         DefaultClusterManager siteManager;
 
         SiteManagerCallback(DefaultClusterManager siteManagerAdapter) {
+            this.switchQueue = new LinkedBlockingQueue<>();
             this.siteManager = siteManagerAdapter;
+        }
+
+        public boolean switchRole() {
+            return switchQueue.add(true);
         }
 
         @Override
         public void run() {
             while (!siteManager.ifShutdown) {
                 try {
-                    sleep(changeInterval);
+                    boolean siteFlip = switchQueue.take();
                     if (siteFlip) {
                         TopologyDescriptor newConfig = changePrimary(siteManager.getTopologyConfig());
                         siteManager.updateTopologyConfig(newConfig.convertToMessage());
                         log.warn("change the cluster config");
-                        siteFlip = false;
                     }
                 } catch (Exception e) {
                     log.error("caught an exception " + e);

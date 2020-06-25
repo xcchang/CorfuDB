@@ -363,9 +363,15 @@ public class CorfuInterClusterReplicationServer implements Runnable {
     public void cleanShutdown() {
         log.info("CleanShutdown: Starting Cleanup.");
         shutdownServer = true;
-        activeServer.close();
-        replicationDiscoveryService.shutdown();
-        siteManagerAdapter.shutdown();
+        if (activeServer != null) {
+            activeServer.close();
+        }
+        if (replicationDiscoveryService != null) {
+            replicationDiscoveryService.shutdown();
+        }
+        if (siteManagerAdapter != null) {
+            siteManagerAdapter.shutdown();
+        }
     }
 
     /**

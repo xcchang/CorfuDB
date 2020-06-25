@@ -97,6 +97,7 @@ public class CorfuReplicationManager {
         for(String clusterId : topologyDescriptor.getStandbyClusters().keySet()) {
             stopLogReplicationRuntime(clusterId);
         }
+        corfuRuntime.shutdown();
     }
 
     /**
@@ -174,7 +175,7 @@ public class CorfuReplicationManager {
         if (logReplicationRuntime != null) {
             log.info("Stop log replication runtime to remote cluster id={}", remoteClusterId);
             logReplicationRuntime.stop();
-            runtimeToRemoteCluster.remove(remoteClusterId);
+            runtimeToRemoteCluster.remove(remoteClusterId).stop();
         } else {
             log.warn("Runtime not found to remote cluster {}", remoteClusterId);
         }

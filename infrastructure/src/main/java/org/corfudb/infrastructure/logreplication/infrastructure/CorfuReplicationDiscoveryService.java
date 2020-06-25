@@ -131,10 +131,8 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
 
             while (shouldRun) {
                 try {
-                    while (true) {
-                        DiscoveryServiceEvent event = eventQueue.take();
-                        processEvent(event);
-                    }
+                    DiscoveryServiceEvent event = eventQueue.take();
+                    processEvent(event);
                 } catch (Exception e) {
                     log.error("Caught an exception. Stop discovery service.", e);
                     shouldRun = false;
@@ -304,8 +302,6 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
 
         boolean activeCluster = localNodeDescriptor.getRoleType() == ClusterRole.ACTIVE;
 
-        updateTopologyConfigId(activeCluster);
-
         if (activeCluster) {
             log.info("Start as Source (sender/replicator) on node {}.", localNodeDescriptor);
             replicationManager = new CorfuReplicationManager(topologyDescriptor, logReplicationConfig,
@@ -320,10 +316,11 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
         }
     }
 
-    private void updateTopologyConfigId(boolean active) {
+    private void updateTopologyConfigId() {
         // TODO (Xiaoqin Ma): can you please add some info on why this is needed.
         logReplicationServer.getSinkManager()
-                .updateSiteConfigID(active, topologyDescriptor.getTopologyConfigId());
+                .updateSiteConfigID(localNodeDescriptor.getRoleType() == ClusterRole.ACTIVE,
+                        topologyDescriptor.getTopologyConfigId());
 
         log.debug("Persist new topologyConfigId {}, status={}", topologyDescriptor.getTopologyConfigId(),
                 localNodeDescriptor.getRoleType());
@@ -335,6 +332,7 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
     private void stopLogReplication() {
         if (localNodeDescriptor.isLeader() && localNodeDescriptor.getRoleType() == ClusterRole.ACTIVE) {
             replicationManager.stop();
+            replicationManager = null;
         }
     }
 
@@ -371,26 +369,29 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
     public void processSiteFlip(TopologyDescriptor newConfig) {
         stopLogReplication();
         //TODO pankti: read the configuration again and refresh the LogReplicationConfig object
-        replicationManager.setTopologyDescriptor(newConfig);
+
+        boolean leaderStatus = localNodeDescriptor.isLeader();
+        topologyDescriptor = newConfig;
+        localNodeDescriptor = topologyDescriptor.getNodeInfo(localEndpoint);
+        localNodeDescriptor.setLeader(leaderStatus);
+        updateTopologyConfigId();
+
         startLogReplication();
     }
 
     public void processSiteChangeNotification(DiscoveryServiceEvent event) {
-        // Stale notification, skip
-        if (event.getTopologyConfig().getTopologyConfigID() < getReplicationManager().getTopologyDescriptor().getTopologyConfigId()) {
-            log.debug("Stale Topology Change Notification, current={}, received={}", topologyDescriptor.getTopologyConfigId(), event.getTopologyConfig());
+        // Skip stale notification
+        if (event.getTopologyConfig().getTopologyConfigID() < topologyDescriptor.getTopologyConfigId()) {
             return;
         }
 
         TopologyDescriptor newConfig = new TopologyDescriptor(clusterManager.fetchTopology());
-        if (newConfig.getTopologyConfigId() == getReplicationManager().getTopologyDescriptor().getTopologyConfigId()) {
-            if (localNodeDescriptor.getRoleType() == ClusterRole.STANDBY) {
-                return;
-            }
-
+        if (newConfig.getTopologyConfigId() == topologyDescriptor.getTopologyConfigId()) {
             // If the current node is active, compare with the current siteConfig, see if there are addition/removal standbys
-            getReplicationManager().processStandbyChange(newConfig);
-        } else {
+            if (localNodeDescriptor.getRoleType() == ClusterRole.ACTIVE) {
+                replicationManager.processStandbyChange(newConfig);
+            }
+        } else if (newConfig.getTopologyConfigId() > topologyDescriptor.getTopologyConfigId()){
             processSiteFlip(newConfig);
         }
     }
@@ -459,13 +460,15 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
     }
 
     /**
-     * Query the current all replication stream log tail and remeber the max
+     * Query the current all replication stream log tail and remember the max
      * and query each standbySite information according to the ackInformation decide all manay total
      * msg needs to send out.
      */
     @Override
     public void prepareSiteRoleChange() {
-        replicationManager.prepareSiteRoleChange();
+        if (replicationManager != null) {
+            replicationManager.prepareSiteRoleChange();
+        }
     }
 
     /**
@@ -474,7 +477,10 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
      */
     @Override
     public int queryReplicationStatus() {
-        return replicationManager.queryReplicationStatus();
+        if (replicationManager != null) {
+            return replicationManager.queryReplicationStatus();
+        }
+        return -1;
     }
 
     public void shutdown() {
