@@ -18,6 +18,7 @@ import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.MultiCheckpointWriter;
 import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.util.serializer.Serializers;
@@ -68,7 +69,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
     static final int CORFU_PORT = 9000;
     static final String TABLE_PREFIX = "test";
 
-    static private final int NUM_KEYS = 4;
+    static private final int NUM_KEYS = 100;
 
     static private final int NUM_KEYS_LARGE = 1000;
     static private final int NUM_KEYS_VERY_LARGE = 20000;
@@ -420,7 +421,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t0);
         crossTables.add(t1);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Snapshot Sync
         startSnapshotSync(crossTables);
@@ -454,7 +455,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         replicateTables.add(t0);
         replicateTables.add(t1);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Snapshot Sync
         startSnapshotSync(replicateTables);
@@ -482,7 +483,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t1);
         crossTables.add(t2);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Snapshot Sync, indicating an empty set of tables to replicate. This is not allowed
         // and we should expect an exception.
@@ -634,7 +635,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t1);
 
         // Writes transactions to t0, t1 and t2 + transactions across 'crossTables'
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Log Entry Sync
         expectedAckMessages = NUM_KEYS * WRITE_CYCLES;
@@ -663,7 +664,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t0);
         crossTables.add(t1);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Log Entry Sync
         expectedAckMessages =  NUM_KEYS*WRITE_CYCLES;
@@ -689,7 +690,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t0);
         crossTables.add(t1);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Log Entry Sync
         expectedAckMessages =  NUM_KEYS*WRITE_CYCLES;
@@ -716,7 +717,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t2);
 
         // Writes transactions to t0, t1 and t2 + transactions across 'crossTables'
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         Set<String> replicateTables = new HashSet<>();
         replicateTables.add(t0);
@@ -760,7 +761,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t2);
 
         // Writes transactions to t0, t1 and t2 + transactions across 'crossTables'
-        testSnapshotSyncCrossTables(crossTables, false);
+        generateDataCrossTables(crossTables, false);
 
         Set<String> replicateTables = new HashSet<>();
         replicateTables.add(t0);
@@ -803,7 +804,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         crossTables.add(t0);
         crossTables.add(t1);
 
-        testSnapshotSyncCrossTables(crossTables, true);
+        generateDataCrossTables(crossTables, true);
 
         // Start Log Entry Sync
         expectedAckMessages =  NUM_KEYS*WRITE_CYCLES;
@@ -1039,12 +1040,37 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         cleanEnv();
     }
 
+    /**
+     *  While doing snapshot apply phase, trim the shadow table:
+     *  1. trim that not causing data loss, snapshot apply continue.
+     *  2. trim that causes data loss, a full snapshot sync will be required.
+     */
+    @Test
+    public void testTrimExceptionShadowTable() throws Exception {
+        // Write data in transaction to t0 and t1
+        Set<String> crossTables = new HashSet<>();
+        crossTables.add(t0);
+        crossTables.add(t1);
+
+        generateDataCrossTables(crossTables, true);
+
+        // Start Snapshot Sync
+        startSnapshotSync(crossTables, new HashSet<>(Arrays.asList(WAIT.ON_SNAPSHOT_TRANSFERRED, WAIT.ON_ACK)));
+
+        // Verify Data on Destination site
+        System.out.println("****** Verify Data on Destination");
+        // Because t2 should not have been replicated remove from expected list
+        srcDataForVerification.get(t2).clear();
+        verifyData(dstCorfuTables, srcDataForVerification);
+
+        cleanEnv();
+    }
 
     /* ********************** AUXILIARY METHODS ********************** */
 
 
     // startCrossTx indicates if we start with a transaction across Tables
-    private void testSnapshotSyncCrossTables(Set<String> crossTableTransactions, boolean startCrossTx) throws Exception {
+    private void generateDataCrossTables(Set<String> crossTableTransactions, boolean startCrossTx) throws Exception {
         // Setup two separate Corfu Servers: source (primary) and destination (standby)
         setupEnv();
 
@@ -1120,6 +1146,17 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         return startSnapshotSync(tablesToReplicate, new HashSet<>(Arrays.asList(waitCondition)));
     }
 
+    private void trimShadowTable(Set<String> tables) {
+        // Insert a checkpoint
+        MultiCheckpointWriter mcw = new MultiCheckpointWriter();
+        mcw.addAllMaps(dstCorfuTables.values());
+        Token checkpointAddress = mcw.appendCheckpoints(dstDataRuntime, "author");
+
+        // Trim the log
+        trim(dstDataRuntime, (int)checkpointAddress.getSequence());
+
+    }
+
     private LogReplicationSourceManager startSnapshotSync(Set<String> tablesToReplicate, Set<WAIT> waitConditions) throws Exception {
 
         // Observe ACKs on LogReplicationSourceManager, to assess when snapshot sync is completed
@@ -1140,7 +1177,14 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         if (waitConditions.contains(WAIT.ON_ERROR)) {
             System.out.print("\n****** blockUnitileExpectedValueReached " + expectedErrors);
             blockUntilExpectedValueReached.acquire();
-        } else {
+        } else if (waitConditions.contains(WAIT.ON_SNAPSHOT_TRANSFERRED)) {
+
+            trimShadowTable(tablesToReplicate);
+
+            System.out.print("\n****** blockUnitilExpectedAckType " + expectedAckMsgType);
+            blockUntilExpectedAckType.acquire();
+        }
+        else {
             System.out.print("\n****** blockUnitilExpectedAckType " + expectedAckMsgType);
             blockUntilExpectedAckType.acquire();
         }
@@ -1340,6 +1384,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         ON_ACK,
         ON_ACK_TS,
         ON_ERROR,
+        ON_SNAPSHOT_TRANSFERRED,
         ON_DATA_CONTROL_CALL,
         ON_RESCHEDULE_SNAPSHOT_SYNC,
         ON_SINK_RECEIVE,

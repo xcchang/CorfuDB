@@ -12,6 +12,7 @@ import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuStoreMetadata;
 import org.corfudb.runtime.collections.TxBuilder;
+import org.corfudb.runtime.exceptions.TrimmedException;
 import org.corfudb.runtime.view.Address;
 import org.corfudb.runtime.view.StreamOptions;
 import org.corfudb.runtime.view.stream.OpaqueStream;
@@ -215,16 +216,29 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
                 .cacheEntries(false)
                 .build();
 
-        //Can we do a seek after open to ignore all entries that are earlier
-        Stream shadowStream = (new OpaqueStream(rt, rt.getStreamsView().get(shadowUUID, options))).streamUpTo(snapshot);
+        long version = 0;
+        Stream shadowStream = null;
 
-        Iterator<OpaqueEntry> iterator = shadowStream.iterator();
-        while (iterator.hasNext()) {
-            OpaqueEntry opaqueEntry = iterator.next();
-            if (opaqueEntry.getVersion() > shadowStreamStartAddress) {
-                processOpaqueEntry(opaqueEntry.getEntries().get(shadowUUID), seqNum, uuid);
-                seqNum = seqNum + 1;
+        try {
+            //Can we do a seek after open to ignore all entries that are earlier
+            shadowStream = (new OpaqueStream(rt, rt.getStreamsView().get(shadowUUID, options))).streamUpTo(snapshot);
+        } catch (TrimmedException e) {
+            log.warn("Caught a trimmed exception while open the shadowStream {}. Exception {}", shadowMap.get(shadowUUID), e);
+        }
+
+        try {
+            Iterator<OpaqueEntry> iterator = shadowStream.iterator();
+            while (iterator.hasNext()) {
+                OpaqueEntry opaqueEntry = iterator.next();
+                version = opaqueEntry.getVersion();
+                if (opaqueEntry.getVersion() > shadowStreamStartAddress) {
+                    processOpaqueEntry(opaqueEntry.getEntries().get(shadowUUID), seqNum, uuid);
+                    seqNum = seqNum + 1;
+                }
             }
+        } catch (TrimmedException e) {
+            log.warn("While accessing shadowStream {} .next for version {} , caught an trimmed exception {}",
+                    shadowMap.get(shadowUUID), version, e);
         }
 
         return seqNum;
