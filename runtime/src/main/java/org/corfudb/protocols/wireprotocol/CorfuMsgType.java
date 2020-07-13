@@ -123,6 +123,7 @@ public enum CorfuMsgType {
     LOG_REPLICATION_QUERY_LEADERSHIP(204, TypeToken.of(CorfuMsg.class), true, true),
     LOG_REPLICATION_QUERY_LEADERSHIP_RESPONSE(205, new TypeToken<CorfuPayloadMsg<LogReplicationQueryLeaderShipResponse>>(){}, true, true),
     LOG_REPLICATION_LEADERSHIP_LOSS(206, new TypeToken<CorfuPayloadMsg<LogReplicationLeadershipLoss>>(){}, true, true),
+    LOG_REPLICATION_ACK_MESSAGE(207, new TypeToken<CorfuPayloadMsg<LogReplicationEntry>>() {}, true, true),
     ;
 
 

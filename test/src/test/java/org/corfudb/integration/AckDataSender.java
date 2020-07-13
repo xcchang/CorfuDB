@@ -4,6 +4,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.logreplication.DataSender;
 import org.corfudb.infrastructure.logreplication.replication.LogReplicationSourceManager;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationError;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
@@ -30,11 +31,11 @@ public class AckDataSender implements DataSender {
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(LogReplicationEntry message) {
+    public CompletableFuture<LogReplicationAckMessage> send(LogReplicationEntry message) {
         // Emulate it was sent over the wire and arrived on the source side
         // channel.execute(() -> sourceManager.receive(message));
-        final CompletableFuture<LogReplicationEntry> cf = new CompletableFuture<>();
-        LogReplicationEntry entry = sourceManager.receive(message);
+        final CompletableFuture<LogReplicationAckMessage> cf = new CompletableFuture<>();
+        LogReplicationAckMessage entry = sourceManager.receive(message);
         if (entry != null) {
             cf.complete(entry);
         }
@@ -42,8 +43,8 @@ public class AckDataSender implements DataSender {
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(List<LogReplicationEntry> messages) {
-        CompletableFuture<LogReplicationEntry> ackCF = new CompletableFuture<>();
+    public CompletableFuture<LogReplicationAckMessage> send(List<LogReplicationEntry> messages) {
+        CompletableFuture<LogReplicationAckMessage> ackCF = new CompletableFuture<>();
         messages.forEach(msg -> send(msg));
         return ackCF;
     }

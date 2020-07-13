@@ -1,6 +1,7 @@
 package org.corfudb.infrastructure.logreplication.replication.fsm;
 
 import lombok.Data;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 
 import java.util.Observable;
@@ -15,14 +16,14 @@ import java.util.Observable;
 public class ObservableAckMsg extends Observable
 {
     int msgCnt;
-    LogReplicationEntry dataMessage;
+    LogReplicationAckMessage dataMessage;
 
     public ObservableAckMsg() {
         this.msgCnt = 0;
         this.dataMessage = null;
     }
 
-    public void setValue(LogReplicationEntry dataMessage)
+    public void setValue(LogReplicationAckMessage dataMessage)
     {
         if (dataMessage != null) {
             this.dataMessage = dataMessage;

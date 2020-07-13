@@ -11,6 +11,7 @@ import org.corfudb.infrastructure.logreplication.replication.receive.LogReplicat
 import org.corfudb.infrastructure.logreplication.replication.LogReplicationSourceManager;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationError;
 import org.corfudb.infrastructure.logreplication.replication.fsm.ObservableAckMsg;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
@@ -71,7 +72,7 @@ public class SourceForwardingDataSender implements DataSender {
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(LogReplicationEntry message) {
+    public CompletableFuture<LogReplicationAckMessage> send(LogReplicationEntry message) {
         // System.out.println("Send message: " + message.getMetadata().getMessageMetadataType() + " for:: " + message.getMetadata().getTimestamp());
         if (ifDropMsg > 0 && message.getMetadata().timestamp == firstDrop) {
             // System.out.println("****** Drop log entry " + message.getMetadata().timestamp);
@@ -82,10 +83,10 @@ public class SourceForwardingDataSender implements DataSender {
             return new CompletableFuture<>();
         }
 
-        final CompletableFuture<LogReplicationEntry> cf = new CompletableFuture<>();
+        final CompletableFuture<LogReplicationAckMessage> cf = new CompletableFuture<>();
 
         // Emulate Channel by directly accepting from the destination, whatever is sent by the source manager
-        LogReplicationEntry ack = destinationLogReplicationManager.receive(message);
+        LogReplicationAckMessage ack = destinationLogReplicationManager.receive(message);
         if (ack != null) {
             cf.complete(ack);
         }
@@ -94,9 +95,9 @@ public class SourceForwardingDataSender implements DataSender {
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(List<LogReplicationEntry> messages) {
-        CompletableFuture<LogReplicationEntry> lastAckMessage = null;
-        CompletableFuture<LogReplicationEntry> tmp;
+    public CompletableFuture<LogReplicationAckMessage> send(List<LogReplicationEntry> messages) {
+        CompletableFuture<LogReplicationAckMessage> lastAckMessage = null;
+        CompletableFuture<LogReplicationAckMessage> tmp;
 
         for (LogReplicationEntry message :  messages) {
             tmp = send(message);
@@ -108,7 +109,7 @@ public class SourceForwardingDataSender implements DataSender {
 
         try {
             if (lastAckMessage != null) {
-                LogReplicationEntry entry = lastAckMessage.get();
+                LogReplicationAckMessage entry = lastAckMessage.get();
                 ackMessages.setValue(entry);
             }
         } catch (Exception e) {

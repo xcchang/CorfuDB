@@ -9,6 +9,7 @@ import org.corfudb.common.util.ObservableValue;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.infrastructure.ServerThreadFactory;
 import org.corfudb.infrastructure.logreplication.LogReplicationConfig;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntryMetadata;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
@@ -206,7 +207,7 @@ public class LogReplicationSinkManager implements DataReceiver {
      * @return
      */
     @Override
-    public LogReplicationEntry receive(LogReplicationEntry message) {
+    public LogReplicationAckMessage receive(LogReplicationEntry message) {
         rxMessageCounter++;
         rxMessageCount.setValue(rxMessageCounter);
 
@@ -237,7 +238,7 @@ public class LogReplicationSinkManager implements DataReceiver {
                 log.warn("Sink Manager in state {} and received message {}. Resending the ACK for SNAPSHOT_END.", rxState,
                         message.getMetadata());
                 LogReplicationEntryMetadata metadata = snapshotSinkBufferManager.makeAckMessage(message);
-                return new LogReplicationEntry(metadata, new byte[0]);
+                return new LogReplicationAckMessage(metadata);
             }
 
             // Invalid message and drop it.

@@ -2,10 +2,13 @@ package org.corfudb.infrastructure.logreplication.replication.send;
 
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.logreplication.DataSender;
+import org.corfudb.infrastructure.logreplication.proto.LogReplicationMetadata;
 import org.corfudb.infrastructure.logreplication.runtime.LogReplicationClient;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
+import org.corfudb.runtime.Messages;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -22,16 +25,16 @@ public class CorfuDataSender implements DataSender {
 
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(LogReplicationEntry message) {
-        log.info("Send single log entry for request {}", message.getMetadata());
+    public CompletableFuture<LogReplicationAckMessage> send(LogReplicationEntry message) {
+        log.info("Send single log entry for request {}", message);
         return client.sendLogEntry(message);
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(List<LogReplicationEntry> messages) {
+    public CompletableFuture<LogReplicationAckMessage> send(List<LogReplicationEntry> messages) {
         log.trace("Send multiple log entries [{}] for request {}", messages.size(), messages.get(0).getMetadata().getSyncRequestId());
-        CompletableFuture<LogReplicationEntry> lastSentMessage = new CompletableFuture<>();
-        CompletableFuture<LogReplicationEntry> tmp;
+        CompletableFuture<LogReplicationAckMessage> lastSentMessage = new CompletableFuture<>();
+        CompletableFuture<LogReplicationAckMessage> tmp;
 
         for (LogReplicationEntry message :  messages) {
             tmp = send(message);

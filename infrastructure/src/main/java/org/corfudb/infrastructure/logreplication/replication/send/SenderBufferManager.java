@@ -5,6 +5,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.logreplication.DataSender;
 import org.corfudb.infrastructure.logreplication.infrastructure.plugins.DefaultClusterConfig;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.runtime.view.Address;
 
@@ -82,7 +83,7 @@ public abstract class SenderBufferManager {
      */
     @Getter
     @Setter
-    Map<Long, CompletableFuture<LogReplicationEntry>> pendingCompletableFutureForAcks;
+    Map<Long, CompletableFuture<LogReplicationAckMessage>> pendingCompletableFutureForAcks;
 
     /**
      * Constructor
@@ -136,12 +137,12 @@ public abstract class SenderBufferManager {
      * @throws ExecutionException
      * @throws TimeoutException
      */
-    public LogReplicationEntry processAcks() throws InterruptedException, ExecutionException, TimeoutException {
+    public LogReplicationAckMessage processAcks() throws InterruptedException, ExecutionException, TimeoutException {
         if (pendingCompletableFutureForAcks.isEmpty()) {
             return null;
         }
 
-        LogReplicationEntry ack = (LogReplicationEntry) CompletableFuture.anyOf(pendingCompletableFutureForAcks
+        LogReplicationAckMessage ack = (LogReplicationAckMessage) CompletableFuture.anyOf(pendingCompletableFutureForAcks
                 .values().toArray(new CompletableFuture<?>[pendingCompletableFutureForAcks.size()])).get(timeoutTimer, TimeUnit.MILLISECONDS);
 
         if (ack == null) {
@@ -158,9 +159,9 @@ public abstract class SenderBufferManager {
     /**
      * This is used by SnapshotStart, SnapshotEnd marker messages as those messages don't have a sequence number.
      */
-    public CompletableFuture<LogReplicationEntry> sendWithoutBuffering(LogReplicationEntry entry) {
+    public CompletableFuture<LogReplicationAckMessage> sendWithoutBuffering(LogReplicationEntry entry) {
         entry.getMetadata().setSnapshotSyncSeqNum(maxAckedMsgSeqNum++);
-        CompletableFuture<LogReplicationEntry> cf = dataSender.send(entry);
+        CompletableFuture<LogReplicationAckMessage> cf = dataSender.send(entry);
         int retry = 0;
         boolean result = false;
 
@@ -181,12 +182,12 @@ public abstract class SenderBufferManager {
      *
      * @param message
      */
-    public CompletableFuture<LogReplicationEntry> sendWithBuffering(LogReplicationEntry message) {
+    public CompletableFuture<LogReplicationAckMessage> sendWithBuffering(LogReplicationEntry message) {
         //todo need to be removed.
         message.getMetadata().setSnapshotSyncSeqNum(maxAckedMsgSeqNum++);
         pendingMessages.append(message);
         log.info("Send messsage {}", message.getMetadata());
-        CompletableFuture<LogReplicationEntry> cf = dataSender.send(message);
+        CompletableFuture<LogReplicationAckMessage> cf = dataSender.send(message);
         addCFToAcked(message, cf);
         return cf;
     }
@@ -206,9 +207,9 @@ public abstract class SenderBufferManager {
      * @return it returns false if there is an entry has been resent MAX_RETRY and timeout again.
      * Otherwise it returns true.
      */
-    public LogReplicationEntry resend() {
+    public LogReplicationAckMessage resend() {
         //Enforce a resend or not
-        LogReplicationEntry ack = null;
+        LogReplicationAckMessage ack = null;
         boolean force = false;
         log.debug("processAcks {} and pendingMessage size {}", pendingCompletableFutureForAcks.keySet(), pendingMessages.getSize());
 
@@ -239,7 +240,7 @@ public abstract class SenderBufferManager {
 
                 entry.retry();
                 log.debug("Resend message {}", entry.getData().getMetadata());
-                CompletableFuture<LogReplicationEntry> cf = dataSender.send(entry.getData());
+                CompletableFuture<LogReplicationAckMessage> cf = dataSender.send(entry.getData());
                 addCFToAcked(entry.getData(), cf);
             } else {
                 log.info("Skip resending message {} with timer {} ", entry.getData().getMetadata(), msgTimer);
@@ -262,14 +263,14 @@ public abstract class SenderBufferManager {
         pendingCompletableFutureForAcks.clear();
     }
 
-    public abstract void addCFToAcked(LogReplicationEntry message, CompletableFuture<LogReplicationEntry> cf);
+    public abstract void addCFToAcked(LogReplicationEntry message, CompletableFuture<LogReplicationAckMessage> cf);
     /**
      * Update the last ackTimestamp and evict all entries whose timestamp is less or equal to the ackTimestamp
      * @param newAck
      */
     public abstract void updateAck(Long newAck);
 
-    public abstract void updateAck(LogReplicationEntry entry);
+    public abstract void updateAck(LogReplicationAckMessage entry);
 
     public void onError(LogReplicationError error) {
         dataSender.onError(error);

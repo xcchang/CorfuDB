@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBuf;
 import lombok.Data;
 import org.corfudb.protocols.wireprotocol.ICorfuPayload;
 import org.corfudb.runtime.Messages;
-
 import java.util.UUID;
 
 /**
@@ -14,36 +13,33 @@ import java.util.UUID;
  * @author annym
  */
 @Data
-public class LogReplicationEntry implements ICorfuPayload<LogReplicationEntry> {
+public class LogReplicationAckMessage implements ICorfuPayload<LogReplicationAckMessage> {
 
     private LogReplicationEntryMetadata metadata;
 
-    private byte[] payload;
-
-    public LogReplicationEntry(LogReplicationEntryMetadata metadata, byte[] payload) {
-        this.payload = payload;
+    public LogReplicationAckMessage(LogReplicationEntryMetadata metadata) {
         this.metadata = metadata;
     }
 
-    public LogReplicationEntry(MessageType type, long epoch, UUID syncRequestId, long entryTS, long preTS, long snapshot, long sequence,
-                               byte[] payload) {
+    public LogReplicationAckMessage(MessageType type, long epoch, UUID syncRequestId, long entryTS, long preTS, long snapshot, long sequence) {
         this.metadata = new LogReplicationEntryMetadata(type, epoch, syncRequestId, entryTS, preTS, snapshot, sequence);
-        this.payload = payload;
     }
 
-    public LogReplicationEntry(ByteBuf buf) {
+    public LogReplicationAckMessage(ByteBuf buf) {
         metadata = ICorfuPayload.fromBuffer(buf, LogReplicationEntryMetadata.class);
-        payload = ICorfuPayload.fromBuffer(buf, byte[].class);
     }
 
-    public static LogReplicationEntry fromProto(Messages.LogReplicationEntry proto) {
+    public static LogReplicationAckMessage generateAck(LogReplicationEntryMetadata metadata) {
+        return new LogReplicationAckMessage(metadata);
+    }
+
+    public static LogReplicationAckMessage fromProto(Messages.LogReplicationEntry proto) {
         LogReplicationEntryMetadata metadata = LogReplicationEntryMetadata.fromProto(proto.getMetadata());
-        return new LogReplicationEntry(metadata, proto.getData().toByteArray());
+        return new LogReplicationAckMessage(metadata);
     }
 
     @Override
     public void doSerialize(ByteBuf buf) {
         ICorfuPayload.serialize(buf, metadata);
-        ICorfuPayload.serialize(buf, payload);
     }
 }

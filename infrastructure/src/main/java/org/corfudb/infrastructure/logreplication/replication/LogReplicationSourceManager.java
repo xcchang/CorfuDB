@@ -16,6 +16,7 @@ import org.corfudb.infrastructure.logreplication.replication.send.CorfuDataSende
 import org.corfudb.infrastructure.logreplication.replication.send.logreader.DefaultReadProcessor;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationEventMetadata;
 import org.corfudb.infrastructure.logreplication.replication.send.logreader.ReadProcessor;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
@@ -238,11 +239,11 @@ public class LogReplicationSourceManager implements DataReceiver {
     }
 
     @Override
-    public LogReplicationEntry receive(LogReplicationEntry message) {
+    public LogReplicationAckMessage receive(LogReplicationEntry message) {
         log.trace("Data Message received on source");
 
         countACKs++;
-        ackMessages.setValue(message);
+        ackMessages.setValue(new LogReplicationAckMessage(message.getMetadata()));
 
         // Process ACKs from Application, for both, log entry and snapshot sync.
         if(message.getMetadata().getMessageMetadataType() == MessageType.LOG_ENTRY_REPLICATED) {

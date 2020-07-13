@@ -41,6 +41,11 @@ message LogReplicationEntry {
     bytes data = 2;
 }
 
+// Used by ACK
+message LogReplicationACKMessage {
+    LogReplicationEntryMetadata metadata = 1;
+}
+
 message LogReplicationQueryMetadataResponse {
     uint64 siteConfigID = 1;
     string version = 2;

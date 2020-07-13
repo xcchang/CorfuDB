@@ -7,7 +7,9 @@ import org.corfudb.infrastructure.logreplication.proto.LogReplicationMetadata;
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntryMetadata;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
 import org.corfudb.runtime.clients.AbstractClient;
 import org.corfudb.runtime.clients.IClientRouter;
@@ -45,10 +47,17 @@ public class LogReplicationClient extends AbstractClient {
                     new CorfuMsg(CorfuMsgType.LOG_REPLICATION_QUERY_METADATA_REQUEST).setEpoch(0));
     }
 
-    public CompletableFuture<LogReplicationEntry> sendLogEntry(LogReplicationEntry logReplicationEntry) {
+    public CompletableFuture<LogReplicationAckMessage> sendLogEntry(LogReplicationEntry logReplicationEntry) {
         CorfuMsg msg = new CorfuPayloadMsg<>(CorfuMsgType.LOG_REPLICATION_ENTRY, logReplicationEntry).setEpoch(0);
         return getRouter().sendMessageAndGetCompletable(msg);
     }
+
+
+   /* public CompletableFuture<LogReplicationAckMessage> sendLogAckMessage(LogReplicationEntryMetadata logReplicationMetadata) {
+        LogReplicationAckMessage ackMessage = new LogReplicationAckMessage(logReplicationMetadata);
+        CorfuMsg msg = new CorfuPayloadMsg<>(CorfuMsgType.LOG_REPLICATION_ACK_MESSAGE, ackMessage).setEpoch(0);
+        return getRouter().sendMessageAndGetCompletable(msg);
+    }*/
 
     @Override
     public void setRouter(IClientRouter router) {

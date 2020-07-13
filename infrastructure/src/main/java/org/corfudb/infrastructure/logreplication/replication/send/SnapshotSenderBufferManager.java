@@ -2,6 +2,7 @@ package org.corfudb.infrastructure.logreplication.replication.send;
 
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.infrastructure.logreplication.DataSender;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 
 import java.util.concurrent.CompletableFuture;
@@ -37,7 +38,7 @@ public class SnapshotSenderBufferManager extends SenderBufferManager {
      * @param entry
      */
     @Override
-    public void updateAck(LogReplicationEntry entry) {
+    public void updateAck(LogReplicationAckMessage entry) {
         updateAck(entry.getMetadata().getSnapshotSyncSeqNum());
     }
 
@@ -48,7 +49,7 @@ public class SnapshotSenderBufferManager extends SenderBufferManager {
      * @param cf
      */
     @Override
-    public void addCFToAcked(LogReplicationEntry message, CompletableFuture<LogReplicationEntry> cf) {
+    public void addCFToAcked(LogReplicationEntry message, CompletableFuture<LogReplicationAckMessage> cf) {
         pendingCompletableFutureForAcks.put(message.getMetadata().getSnapshotSyncSeqNum(), cf);
     }
 }

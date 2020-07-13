@@ -2,8 +2,8 @@ package org.corfudb.infrastructure.logreplication;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.logreplication.DataSender;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationError;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
@@ -28,7 +28,7 @@ public class TestDataSender implements DataSender {
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(LogReplicationEntry message) {
+    public CompletableFuture<LogReplicationAckMessage> send(LogReplicationEntry message) {
         if (message != null && message.getPayload() != null) {
             if (message.getMetadata().getMessageMetadataType().equals(MessageType.SNAPSHOT_MESSAGE) ||
                     message.getMetadata().getMessageMetadataType().equals(MessageType.LOG_ENTRY_MESSAGE)) {
@@ -38,20 +38,20 @@ public class TestDataSender implements DataSender {
             }
         }
 
-        CompletableFuture<LogReplicationEntry> cf = new CompletableFuture<>();
-        LogReplicationEntry ack = LogReplicationEntry.generateAck(message.getMetadata());
+        CompletableFuture<LogReplicationAckMessage> cf = new CompletableFuture<>();
+        LogReplicationAckMessage ack = LogReplicationAckMessage.generateAck(message.getMetadata());
         cf.complete(ack);
 
         return cf;
     }
 
     @Override
-    public CompletableFuture<LogReplicationEntry> send(List<LogReplicationEntry> messages) {
+    public CompletableFuture<LogReplicationAckMessage> send(List<LogReplicationEntry> messages) {
 
-        CompletableFuture<LogReplicationEntry> lastSentMessage = new CompletableFuture<>();
+        CompletableFuture<LogReplicationAckMessage> lastSentMessage = new CompletableFuture<>();
 
         if (messages != null && !messages.isEmpty()) {
-            CompletableFuture<LogReplicationEntry> tmp;
+            CompletableFuture<LogReplicationAckMessage> tmp;
 
             for (LogReplicationEntry message : messages) {
                 tmp = send(message);

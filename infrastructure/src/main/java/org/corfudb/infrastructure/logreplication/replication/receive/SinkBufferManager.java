@@ -2,6 +2,7 @@ package org.corfudb.infrastructure.logreplication.replication.receive;
 
 import lombok.extern.slf4j.Slf4j;
 
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntryMetadata;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
@@ -131,7 +132,7 @@ public abstract class SinkBufferManager {
      * If the message is not the expected message, put the entry into the buffer if there is space.
      * @param dataMessage
      */
-    public LogReplicationEntry processMsgAndBuffer(LogReplicationEntry dataMessage) {
+    public LogReplicationAckMessage processMsgAndBuffer(LogReplicationEntry dataMessage) {
 
         if (verifyMessageType(dataMessage) == false)
            return null;
@@ -157,7 +158,7 @@ public abstract class SinkBufferManager {
          */
         if (shouldAck(dataMessage)) {
             LogReplicationEntryMetadata metadata = makeAckMessage(dataMessage);
-            return new LogReplicationEntry(metadata, new byte[0]);
+            return new LogReplicationAckMessage(metadata);
         }
 
         return null;

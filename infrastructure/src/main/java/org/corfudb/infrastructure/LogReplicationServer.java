@@ -9,6 +9,7 @@ import org.corfudb.infrastructure.logreplication.replication.receive.LogReplicat
 import org.corfudb.protocols.wireprotocol.CorfuMsg;
 import org.corfudb.protocols.wireprotocol.CorfuMsgType;
 import org.corfudb.protocols.wireprotocol.CorfuPayloadMsg;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationAckMessage;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationLeadershipLoss;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationQueryMetadataResponse;
@@ -89,7 +90,7 @@ public class LogReplicationServer extends AbstractServer {
 
         if (isLeader(msg, r)) {
             // Forward the received message to the Sink Manager for apply
-            LogReplicationEntry ack = sinkManager.receive(msg.getPayload());
+            LogReplicationAckMessage ack = sinkManager.receive(msg.getPayload());
 
             if (ack != null) {
                 long ts = ack.getMetadata().getMessageMetadataType().equals(MessageType.LOG_ENTRY_REPLICATED) ?
