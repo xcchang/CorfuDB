@@ -583,8 +583,11 @@ public class CorfuRuntime {
     private volatile Layout latestLayout = null;
 
     @Getter
-    private static final MetricRegistry defaultMetrics = new MetricRegistry();
-
+    private static MetricRegistry defaultMetrics;
+    static {
+        if (defaultMetrics == null)
+            defaultMetrics = new MetricRegistry();
+    }
     /**
      * Register SystemDownHandler.
      * Please use CorfuRuntimeParameters builder to register this.

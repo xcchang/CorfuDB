@@ -29,6 +29,7 @@ import javax.annotation.Nonnull;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * A view of the objects inside a Corfu instance.
@@ -36,6 +37,39 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 public class ObjectsView extends AbstractView {
+
+    public void executeTx(Runnable runnable) {
+        boolean nestedTx = TXActive();
+
+        if (!nestedTx) {
+            TXBegin();
+        }
+        try {
+            runnable.run();
+        } finally {
+            if (!nestedTx) {
+                TXEnd();
+            }
+        }
+    }
+
+    public <R> R executeTx(Supplier<R> supplier) {
+        boolean nestedTx = TXActive();
+        R result;
+
+        if (!nestedTx) {
+            TXBegin();
+        }
+        try {
+            result = supplier.get();
+        } finally {
+            if (!nestedTx) {
+                TXEnd();
+            }
+        }
+
+        return result;
+    }
 
     private static final String TXN_COMMIT_TIMER_NAME =
             CorfuComponent.OBJECT.toString() + "txn-commit-duration";

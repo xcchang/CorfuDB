@@ -114,15 +114,6 @@ public class AddressSpaceView extends AbstractView {
                 .removalListener(this::handleEviction)
                 .recordStats()
                 .build();
-
-        MetricRegistry metrics = CorfuRuntime.getDefaultMetrics();
-        final String pfx = String.format("%s0x%x.cache.", CorfuComponent.ADDRESS_SPACE_VIEW.toString(),
-                this.hashCode());
-        metrics.register(pfx + "cache-size", (Gauge<Long>) readCache::size);
-        metrics.register(pfx + "evictions", (Gauge<Long>) () -> readCache.stats().evictionCount());
-        metrics.register(pfx + "hit-rate", (Gauge<Double>) () -> readCache.stats().hitRate());
-        metrics.register(pfx + "hits", (Gauge<Long>) () -> readCache.stats().hitCount());
-        metrics.register(pfx + "misses", (Gauge<Long>) () -> readCache.stats().missCount());
     }
 
     private void handleEviction(RemovalNotification<Long, ILogData> notification) {

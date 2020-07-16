@@ -250,7 +250,10 @@ public class UniverseManager {
 
             DefaultDockerClient docker;
             try {
-                docker = DefaultDockerClient.fromEnv().build();
+                docker = DefaultDockerClient.fromEnv()
+                        .connectionPoolSize(10_000)
+                        .readTimeoutMillis(100)
+                        .connectTimeoutMillis(100).build();
             } catch (DockerCertificateException e) {
                 throw new UniverseException("Can't initialize docker client");
             }
