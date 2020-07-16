@@ -1,5 +1,8 @@
 package org.corfudb.infrastructure;
 
+import static org.corfudb.util.MetricsUtils.sizeOf;
+
+
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalCause;
@@ -9,8 +12,6 @@ import org.corfudb.infrastructure.LogUnitServer.LogUnitServerConfig;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.LogData;
-
-import static org.corfudb.util.MetricsUtils.sizeOf;
 
 /**
  * LogUnit server cache.
@@ -37,6 +38,7 @@ public class LogUnitServerCache {
         this.dataCache = Caffeine.newBuilder()
                 .<Long, ILogData>weigher((addr, logData) -> getLogDataTotalSize(logData))
                 .maximumWeight(config.getMaxCacheSize())
+                .executor(Runnable::run)
                 .removalListener(this::handleEviction)
                 .build(this::handleRetrieval);
     }
