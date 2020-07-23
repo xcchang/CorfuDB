@@ -36,13 +36,13 @@ public class TestSerializer implements ISerializer {
     }
 
     @Override
-    public Long deserialize(ByteBuf b, CorfuRuntime rt) {
-        return b.readLong();
+    public String deserialize(ByteBuf b, CorfuRuntime rt) {
+        return (String) delegate.deserialize(b, rt);
     }
 
     @Override
     public void serialize(Object object, ByteBuf buffer) {
-        buffer.writeLong((Long)object);
+        delegate.serialize(object, buffer);
 
     }
 }

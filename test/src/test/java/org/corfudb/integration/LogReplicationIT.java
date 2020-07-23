@@ -18,6 +18,7 @@ import org.corfudb.protocols.wireprotocol.Token;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
+import org.corfudb.runtime.MultiCheckpointWriter;
 import org.corfudb.runtime.collections.CorfuTable;
 import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.util.serializer.Serializers;
@@ -42,7 +43,7 @@ import static java.lang.Thread.sleep;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import static org.corfudb.integration.ReplicationReaderWriterIT.ckStreamsAndTrim;
+import static org.corfudb.integration.ReplicationReaderWriterIT.trimAlone;
 
 /**
  * Test the core components of log replication, namely, Snapshot Sync and Log Entry Sync,
@@ -1400,6 +1401,23 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         System.out.println("\nlastLogProcessed " + lastLogProcessed + " expectedTimestamp " + expectedAckTimestamp);
         assertThat(expectedAckTimestamp == lastLogProcessed).isTrue();
     }
+
+    /**
+     * enforce checkpoint entries at the streams.
+     */
+    private static Token ckStreamsAndTrim(CorfuRuntime rt, HashMap<String, CorfuTable<Long, Long>> tables) {
+        MultiCheckpointWriter mcw1 = new MultiCheckpointWriter();
+        for (CorfuTable map : tables.values()) {
+            mcw1.addMap(map);
+        }
+
+        Token checkpointAddress = mcw1.appendCheckpoints(rt, "test");
+
+        // Trim the log
+        trimAlone(checkpointAddress.getSequence(), rt);
+        return checkpointAddress;
+    }
+
 
     public enum WAIT {
         ON_ACK,
