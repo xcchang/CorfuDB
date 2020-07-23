@@ -1493,4 +1493,105 @@ public class StateTransferTest extends AbstractViewTest {
             }
         }
     }
+
+    private CompletableFuture<Void> runWriter(String endpoint,
+                                              int numWrites,
+                                              Duration durationBetweenWrites) {
+        return CompletableFuture.runAsync(() -> {
+            CorfuRuntime rt = getNewRuntime(CorfuRuntime.CorfuRuntimeParameters
+                    .builder()
+                    .build())
+                    .parseConfigurationString(endpoint);
+            try {
+               rt.connect();
+               rt.getLayoutView().layoutHelper(rl -> {
+                   LogUnitClient logUnitClient = rl.getLogUnitClient(endpoint);
+                   for (int i = 0; i < numWrites; i++) {
+                       LogData data = new LogData(DataType.DATA, "write".getBytes());
+                       logUnitClient.write(data);
+                       System.out.println("Writer: " + i);
+                       Sleep.sleepUninterruptibly(durationBetweenWrites);
+                   }
+                   return null;
+               });
+            }
+            catch (Exception e) {
+                System.out.println("Error happened: " + e);
+            }
+            finally {
+                rt.shutdown();
+            }
+        });
+    }
+
+    /**
+     * Deploy 3 individual 1 node clusters.
+     */
+    @Test
+    @SuppressWarnings("checkstyle:magicnumber")
+    public void clusterIdChangeAfterRuntimeIsConnectedDoesNotThrowException() {
+        try(AutoClosableTempDirs dirs = new AutoClosableTempDirs(3)) {
+            String firstNodeClusterId = "00000000-0000-0000-0000-000000000001";
+            String secondNodeClusterId = "00000000-0000-0000-0000-000000000002";
+            String thirdNodeClusterId = "00000000-0000-0000-0000-000000000003";
+
+            List<File> tempDirs = dirs.getTempDirs();
+
+            ServerContext sc0 = new ServerContextBuilder()
+                    .setSingle(true)
+                    .setClusterId(firstNodeClusterId)
+                    .setServerRouter(new TestServerRouter(SERVERS.PORT_0))
+                    .setPort(SERVERS.PORT_0)
+                    .setMemory(false)
+                    .setLogPath(tempDirs.get(0).getAbsolutePath())
+                    .build();
+            addServer(SERVERS.PORT_0, sc0);
+            Layout currentLayout1 = sc0.getCurrentLayout();
+
+            bootstrapAllServers(currentLayout1);
+
+            ServerContext sc1 = new ServerContextBuilder()
+                    .setSingle(true)
+                    .setClusterId(secondNodeClusterId)
+                    .setServerRouter(new TestServerRouter(SERVERS.PORT_1))
+                    .setPort(SERVERS.PORT_1)
+                    .setMemory(false)
+                    .setLogPath(tempDirs.get(1).getAbsolutePath())
+                    .build();
+            addServer(SERVERS.PORT_1, sc1);
+
+            bootstrapServer(SERVERS.ENDPOINT_1, sc1.getCurrentLayout());
+
+            ServerContext sc2 = new ServerContextBuilder()
+                    .setSingle(true)
+                    .setClusterId(thirdNodeClusterId)
+                    .setServerRouter(new TestServerRouter(SERVERS.PORT_2))
+                    .setPort(SERVERS.PORT_2)
+                    .setMemory(false)
+                    .setLogPath(tempDirs.get(2).getAbsolutePath())
+                    .build();
+
+            addServer(SERVERS.PORT_2, sc2);
+
+            bootstrapServer(SERVERS.ENDPOINT_2, sc2.getCurrentLayout());
+
+//            runWriter(SERVERS.ENDPOINT_2, 10, Duration.ofSeconds(1)).join();
+//            CorfuRuntime rt = getRuntime(currentLayout1);
+//
+//            try {
+//                rt.connect();
+//                rt.getManagementView()
+//                        .addNode(SERVERS.ENDPOINT_1, 3,
+//                                Duration.ofMinutes(1L), Duration.ofSeconds(3));
+//
+//                rt.getManagementView()
+//                        .addNode(SERVERS.ENDPOINT_2, 3,
+//                                Duration.ofMinutes(1L), Duration.ofSeconds(3));
+//
+//            }
+//            finally {
+//                rt.shutdown();
+//            }
+        }
+    }
 }

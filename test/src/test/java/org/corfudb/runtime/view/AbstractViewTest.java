@@ -45,6 +45,7 @@ import org.junit.Before;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -302,6 +303,25 @@ public abstract class AbstractViewTest extends AbstractCorfuTest {
                         primarySequencerNode.serverRouter);
     }
 
+    public void bootstrapServer(String endpoint, Layout l) {
+        Optional<TestServer> server = testServerMap
+                .entrySet()
+                .stream().filter(e -> e.getKey().equals(endpoint))
+                .map(Map.Entry::getValue)
+                .findFirst();
+
+        if (!server.isPresent()) {
+            throw new IllegalStateException("Server " + endpoint + " is not present.");
+        }
+
+        server.ifPresent(s -> {
+            s.layoutServer.handleMessage(CorfuMsgType.LAYOUT_BOOTSTRAP.payloadMsg(new LayoutBootstrapRequest(l)),
+                    null, s.serverRouter);
+            s.managementServer
+                    .handleMessage(CorfuMsgType.MANAGEMENT_BOOTSTRAP_REQUEST.payloadMsg(l),
+                            null, s.serverRouter);
+        });
+    }
 
     /**
      * Set aggressive timeouts for the detectors.
