@@ -11,13 +11,13 @@ import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
+import org.corfudb.common.compression.Codec;
 import org.corfudb.format.Types;
 import org.corfudb.format.Types.LogEntry;
 import org.corfudb.format.Types.LogHeader;
 import org.corfudb.format.Types.Metadata;
 import org.corfudb.infrastructure.ResourceQuota;
 import org.corfudb.infrastructure.ServerContext;
-import org.corfudb.common.compression.Codec;
 import org.corfudb.protocols.logprotocol.CheckpointEntry;
 import org.corfudb.protocols.wireprotocol.ILogData;
 import org.corfudb.protocols.wireprotocol.IMetadata;
@@ -60,6 +60,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 
 import static org.corfudb.infrastructure.utils.Persistence.syncDirectory;
@@ -91,6 +94,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     private ConcurrentMap<String, SegmentHandle> writeChannels;
     private final Set<FileChannel> channelsToSync;
     private final MultiReadWriteLock segmentLocks = new MultiReadWriteLock();
+    private final ReadWriteLock resetLock = new ReentrantReadWriteLock();
 
     //=================Log Metadata=================
     // TODO(Maithem) this should effectively be final, but it is used
@@ -405,18 +409,25 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             return;
         }
 
-        // Close segments before deleting their corresponding log files
-        closeSegmentHandlers(endSegment);
+        Lock lock = resetLock.writeLock();
+        lock.lock();
 
-        deleteFilesMatchingFilter(file -> {
-            try {
-                String segmentStr = file.getName().split("\\.")[0];
-                return Long.parseLong(segmentStr) <= endSegment;
-            } catch (Exception e) {
-                log.warn("trimPrefix: ignoring file {}", file.getName());
-                return false;
-            }
-        });
+        try {
+            // Close segments before deleting their corresponding log files
+            closeSegmentHandlers(endSegment);
+
+            deleteFilesMatchingFilter(file -> {
+                try {
+                    String segmentStr = file.getName().split("\\.")[0];
+                    return Long.parseLong(segmentStr) <= endSegment;
+                } catch (Exception e) {
+                    log.warn("trimPrefix: ignoring file {}", file.getName());
+                    return false;
+                }
+            });
+        } finally {
+            lock.unlock();
+        }
 
         log.info("trimPrefix: completed, end segment {}", endSegment);
     }
@@ -643,43 +654,51 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @param segment Object containing state for the segment to be read
      */
     private void readAddressSpace(SegmentHandle segment) throws IOException {
-        FileChannel fileChannel = segment.getWriteChannel();
-        fileChannel.position(0);
 
-        LogHeader header = parseHeader(fileChannel, segment.getFileName());
-        if (header == null) {
-            log.warn("Couldn't find log header for {}, creating new header.", segment.getFileName());
-            writeHeader(fileChannel, VERSION, verify);
-            return;
-        }
+        Lock lock = resetLock.readLock();
+        lock.lock();
 
-        while (fileChannel.size() - fileChannel.position() > 0) {
-            long channelOffset = fileChannel.position();
-            Metadata metadata = parseMetadata(fileChannel, segment.getFileName());
-            LogEntry entry = parseEntry(fileChannel, metadata, segment.getFileName());
+        try {
+            FileChannel fileChannel = segment.getWriteChannel();
+            fileChannel.position(0);
 
-            if (entry == null) {
-                // Metadata or Entry were partially written
-                log.warn("Malformed entry, metadata {} in file {}", metadata, segment.getFileName());
-
-                // Note that after rewinding the channel pointer, it is important to truncate
-                // any bytes that were written. This is required to avoid an ambiguous case
-                // where a subsequent write (after a failed write) succeeds but writes less
-                // bytes than the partially written buffer. In that case, the log unit can't
-                // determine if the bytes correspond to a partially written buffer that needs
-                // to be ignored, or if the bytes correspond to a corrupted metadata field.
-                fileChannel.truncate(fileChannel.position());
-                fileChannel.force(true);
+            LogHeader header = parseHeader(fileChannel, segment.getFileName());
+            if (header == null) {
+                log.warn("Couldn't find log header for {}, creating new header.", segment.getFileName());
+                writeHeader(fileChannel, VERSION, verify);
                 return;
             }
 
-            AddressMetaData addressMetadata = new AddressMetaData(
-                    metadata.getPayloadChecksum(),
-                    metadata.getLength(),
-                    channelOffset + METADATA_SIZE
-            );
+            while (fileChannel.size() - fileChannel.position() > 0) {
+                long channelOffset = fileChannel.position();
+                Metadata metadata = parseMetadata(fileChannel, segment.getFileName());
+                LogEntry entry = parseEntry(fileChannel, metadata, segment.getFileName());
 
-            segment.getKnownAddresses().put(entry.getGlobalAddress(), addressMetadata);
+                if (entry == null) {
+                    // Metadata or Entry were partially written
+                    log.warn("Malformed entry, metadata {} in file {}", metadata, segment.getFileName());
+
+                    // Note that after rewinding the channel pointer, it is important to truncate
+                    // any bytes that were written. This is required to avoid an ambiguous case
+                    // where a subsequent write (after a failed write) succeeds but writes less
+                    // bytes than the partially written buffer. In that case, the log unit can't
+                    // determine if the bytes correspond to a partially written buffer that needs
+                    // to be ignored, or if the bytes correspond to a corrupted metadata field.
+                    fileChannel.truncate(fileChannel.position());
+                    fileChannel.force(true);
+                    return;
+                }
+
+                AddressMetaData addressMetadata = new AddressMetaData(
+                        metadata.getPayloadChecksum(),
+                        metadata.getLength(),
+                        channelOffset + METADATA_SIZE
+                );
+
+                segment.getKnownAddresses().put(entry.getGlobalAddress(), addressMetadata);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -691,22 +710,30 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      * @return The log unit entry at that address, or NULL if there was no entry.
      */
     private LogData readRecord(SegmentHandle segment, long address) throws IOException {
-        FileChannel fileChannel = segment.getReadChannel();
 
-        AddressMetaData metaData = segment.getKnownAddresses().get(address);
-        if (metaData == null) {
-            return null;
-        }
+        Lock lock = resetLock.readLock();
+        lock.lock();
 
         try {
-            ByteBuffer entryBuf = ByteBuffer.allocate(metaData.length);
-            fileChannel.read(entryBuf, metaData.offset);
-            return getLogData(LogEntry.parseFrom(entryBuf.array()));
-        } catch (InvalidProtocolBufferException e) {
-            String errorMessage = getDataCorruptionErrorMessage("Invalid entry",
-                    fileChannel, segment.getFileName()
-            );
-            throw new DataCorruptionException(errorMessage, e);
+            FileChannel fileChannel = segment.getReadChannel();
+
+            AddressMetaData metaData = segment.getKnownAddresses().get(address);
+            if (metaData == null) {
+                return null;
+            }
+
+            try {
+                ByteBuffer entryBuf = ByteBuffer.allocate(metaData.length);
+                fileChannel.read(entryBuf, metaData.offset);
+                return getLogData(LogEntry.parseFrom(entryBuf.array()));
+            } catch (InvalidProtocolBufferException e) {
+                String errorMessage = getDataCorruptionErrorMessage("Invalid entry",
+                        fileChannel, segment.getFileName()
+                );
+                throw new DataCorruptionException(errorMessage, e);
+            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -903,36 +930,44 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
         List<Metadata> metadataList = new ArrayList<>();
 
-        for (LogData curr : entries) {
-            LogEntry logEntry = getLogEntry(curr.getGlobalAddress(), curr);
-            Metadata metadata = getMetadata(logEntry);
-            metadataList.add(metadata);
-            ByteBuffer record = getByteBuffer(metadata, logEntry);
-            totalBytes += record.limit();
-            entryBuffs.add(record);
-        }
+        Lock lock = resetLock.readLock();
+        lock.lock();
 
-        ByteBuffer allRecordsBuf = ByteBuffer.allocate(totalBytes);
+        try {
 
-        try (MultiReadWriteLock.AutoCloseableLock ignored =
-                     segmentLocks.acquireWriteLock(segment.getSegment())) {
-            for (int ind = 0; ind < entryBuffs.size(); ind++) {
-                long channelOffset = segment.getWriteChannel().position()
-                        + allRecordsBuf.position() + METADATA_SIZE;
-                allRecordsBuf.put(entryBuffs.get(ind));
-                Metadata metadata = metadataList.get(ind);
-                recordsMap.put(entries.get(ind).getGlobalAddress(),
-                        new AddressMetaData(metadata.getPayloadChecksum(),
-                                metadata.getLength(), channelOffset));
+            for (LogData curr : entries) {
+                LogEntry logEntry = getLogEntry(curr.getGlobalAddress(), curr);
+                Metadata metadata = getMetadata(logEntry);
+                metadataList.add(metadata);
+                ByteBuffer record = getByteBuffer(metadata, logEntry);
+                totalBytes += record.limit();
+                entryBuffs.add(record);
             }
 
-            allRecordsBuf.flip();
-            writeByteBuffer(segment.getWriteChannel(), allRecordsBuf);
-            channelsToSync.add(segment.getWriteChannel());
-            // Sync the global and stream tail(s)
-            // TODO(Maithem): on ioexceptions the StreamLogFiles needs to be reinitialized
-            syncTailSegment(entries.get(entries.size() - 1).getGlobalAddress());
-            logMetadata.update(entries);
+            ByteBuffer allRecordsBuf = ByteBuffer.allocate(totalBytes);
+
+            try (MultiReadWriteLock.AutoCloseableLock ignored =
+                         segmentLocks.acquireWriteLock(segment.getSegment())) {
+                for (int ind = 0; ind < entryBuffs.size(); ind++) {
+                    long channelOffset = segment.getWriteChannel().position()
+                            + allRecordsBuf.position() + METADATA_SIZE;
+                    allRecordsBuf.put(entryBuffs.get(ind));
+                    Metadata metadata = metadataList.get(ind);
+                    recordsMap.put(entries.get(ind).getGlobalAddress(),
+                            new AddressMetaData(metadata.getPayloadChecksum(),
+                                    metadata.getLength(), channelOffset));
+                }
+
+                allRecordsBuf.flip();
+                writeByteBuffer(segment.getWriteChannel(), allRecordsBuf);
+                channelsToSync.add(segment.getWriteChannel());
+                // Sync the global and stream tail(s)
+                // TODO(Maithem): on ioexceptions the StreamLogFiles needs to be reinitialized
+                syncTailSegment(entries.get(entries.size() - 1).getGlobalAddress());
+                logMetadata.update(entries);
+            }
+        } finally {
+            lock.unlock();
         }
 
         return recordsMap;
@@ -966,22 +1001,28 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
      */
     private AddressMetaData writeRecord(SegmentHandle segment, long address,
                                         LogData entry) throws IOException {
-        LogEntry logEntry = getLogEntry(address, entry);
-        Metadata metadata = getMetadata(logEntry);
+        Lock lock = resetLock.readLock();
+        lock.lock();
 
-        ByteBuffer record = getByteBuffer(metadata, logEntry);
-        long channelOffset;
+        try {
+            LogEntry logEntry = getLogEntry(address, entry);
+            Metadata metadata = getMetadata(logEntry);
 
-        try (MultiReadWriteLock.AutoCloseableLock ignored =
-                     segmentLocks.acquireWriteLock(segment.getSegment())) {
-            channelOffset = segment.getWriteChannel().position() + METADATA_SIZE;
-            writeByteBuffer(segment.getWriteChannel(), record);
-            channelsToSync.add(segment.getWriteChannel());
-            syncTailSegment(address);
-            logMetadata.update(entry, false);
+            ByteBuffer record = getByteBuffer(metadata, logEntry);
+            long channelOffset;
+
+            try (MultiReadWriteLock.AutoCloseableLock ignored =
+                         segmentLocks.acquireWriteLock(segment.getSegment())) {
+                channelOffset = segment.getWriteChannel().position() + METADATA_SIZE;
+                writeByteBuffer(segment.getWriteChannel(), record);
+                channelsToSync.add(segment.getWriteChannel());
+                syncTailSegment(address);
+                logMetadata.update(entry, false);
+            }
+            return new AddressMetaData(metadata.getPayloadChecksum(), metadata.getLength(), channelOffset);
+        } finally {
+            lock.unlock();
         }
-
-        return new AddressMetaData(metadata.getPayloadChecksum(), metadata.getLength(), channelOffset);
     }
 
     private long getSegment(LogData entry) {
@@ -1264,23 +1305,30 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         long endSegment = Math.max(logMetadata.getGlobalTail(), 0L) / RECORDS_PER_LOG_FILE;
         log.warn("Global Tail:{}, endSegment={}", logMetadata.getGlobalTail(), endSegment);
 
-        // Close segments before deleting their corresponding log files
-        closeSegmentHandlers(endSegment);
+        Lock lock = resetLock.writeLock();
+        lock.lock();
 
-        deleteFilesMatchingFilter(file -> {
-            try {
-                String segmentStr = file.getName().split("\\.")[0];
-                return Long.parseLong(segmentStr) <= endSegment;
-            } catch (Exception e) {
-                log.warn("reset: ignoring file {}", file.getName());
-                return false;
-            }
-        });
+        try {
+            // Close segments before deleting their corresponding log files
+            closeSegmentHandlers(endSegment);
 
-        dataStore.resetStartingAddress();
-        dataStore.resetTailSegment();
-        logMetadata = new LogMetadata();
-        writeChannels.clear();
+            deleteFilesMatchingFilter(file -> {
+                try {
+                    String segmentStr = file.getName().split("\\.")[0];
+                    return Long.parseLong(segmentStr) <= endSegment;
+                } catch (Exception e) {
+                    log.warn("reset: ignoring file {}", file.getName());
+                    return false;
+                }
+            });
+
+            dataStore.resetStartingAddress();
+            dataStore.resetTailSegment();
+            logMetadata = new LogMetadata();
+            writeChannels.clear();
+        } finally {
+            lock.unlock();
+        }
         logSizeQuota = new ResourceQuota("LogSizeQuota", logSizeLimit);
         log.info("reset: Completed, end segment {}", endSegment);
     }
