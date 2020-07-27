@@ -415,6 +415,7 @@ public class LogUnitServer extends AbstractServer {
         executor.shutdown();
         logCleaner.shutdown();
         batchWriter.close();
+        streamLog.close();
     }
 
     @VisibleForTesting
