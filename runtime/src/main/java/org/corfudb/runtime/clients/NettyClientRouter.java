@@ -412,7 +412,7 @@ public class NettyClientRouter extends SimpleChannelInboundHandler<CorfuMsg>
         // If timed out, return a exceptionally completed with the timeout.
         try {
             connectionFuture
-                .get(parameters.getConnectionTimeout().toMillis(), TimeUnit.MILLISECONDS);
+                .get(Duration.ofMillis(500_000).toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             throw new UnrecoverableCorfuInterruptedError(e);
         } catch (TimeoutException te) {

@@ -7,13 +7,13 @@ import static org.mockito.Mockito.mock;
 import com.codahale.metrics.MetricRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.AbstractCorfuTest;
-import org.corfudb.infrastructure.LogUnitServer.LogUnitLock;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.util.MetricsUtils;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @Slf4j
 public class StreamLogCompactionTest extends AbstractCorfuTest {
@@ -48,7 +48,7 @@ public class StreamLogCompactionTest extends AbstractCorfuTest {
 
         final long initialCompactionCounter = getCompactionCounter();
         StreamLogCompaction compaction = new StreamLogCompaction(
-                streamLog, new LogUnitLock(),
+                streamLog, new ReentrantReadWriteLock(),
                 initialDelay, period, TimeUnit.MILLISECONDS, PARAMETERS.TIMEOUT_VERY_SHORT
         );
 

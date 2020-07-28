@@ -3,8 +3,6 @@ package org.corfudb.infrastructure.log;
 import com.codahale.metrics.Timer;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.extern.slf4j.Slf4j;
-import org.corfudb.infrastructure.LogUnitServer;
-import org.corfudb.infrastructure.LogUnitServer.LogUnitLock;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
 import org.corfudb.util.CorfuComponent;
@@ -16,6 +14,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
 
 /**
  * Scheduled log compaction manager.
@@ -43,18 +43,21 @@ public class StreamLogCompaction {
     private final ScheduledFuture<?> compactor;
     private final Duration shutdownTimer;
 
-    private final LogUnitLock logUnitLock;
-
-    public StreamLogCompaction(StreamLog streamLog, LogUnitLock logUnitLock,
+    public StreamLogCompaction(StreamLog streamLog, ReadWriteLock resetLock,
                                long initialDelay, long period, TimeUnit timeUnit,
                                Duration shutdownTimer) {
         this.shutdownTimer = shutdownTimer;
-        this.logUnitLock = logUnitLock;
 
         Runnable task = () -> {
             log.debug("Start log compaction.");
             try (Timer.Context context = MetricsUtils.getConditionalContext(compactionTimer)){
-                logUnitLock.acquireWriteLockAndExecuteSync(streamLog::compact);
+                //Lock lock = resetLock.writeLock();
+                //lock.lock();
+                try{
+                    streamLog.compact();
+                } finally {
+                    //lock.unlock();
+                }
             } catch (Exception ex) {
                 log.error("Can't compact stream log.", ex);
             }

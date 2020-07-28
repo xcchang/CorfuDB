@@ -676,7 +676,9 @@ public class CheckpointSmokeTest extends AbstractViewTest {
         Map<String, Long> mA = instantiateMap(streamA);
         Map<String, Long> mB = instantiateMap(streamB);
         final String author = "CPWriter";
-        final int iter = 1000;
+        final int iter = 1;
+
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 11111111111");
 
         for (int x = 0; x < iter; x++) {
             mA.put(Integer.toString(x), (long) x);
@@ -687,15 +689,24 @@ public class CheckpointSmokeTest extends AbstractViewTest {
             mA.remove(key);
         }
 
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 222222222222");
+
         MultiCheckpointWriter mcw1 = new MultiCheckpointWriter();
         mcw1.addMap((CorfuTable) mA);
         mcw1.addMap((CorfuTable) mB);
         Token trimAddress = mcw1.appendCheckpoints(r, author);
 
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 333333333");
+
         r.getAddressSpaceView().prefixTrim(trimAddress);
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 444444444");
         r.getAddressSpaceView().gc();
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 55555555");
         r.getAddressSpaceView().invalidateServerCaches();
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 66666666");
         r.getAddressSpaceView().invalidateClientCache();
+
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 777777");
 
         CorfuRuntime rt2 = getNewRuntime(getDefaultNode()).connect();
 

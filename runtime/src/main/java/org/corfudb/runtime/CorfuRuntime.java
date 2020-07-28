@@ -268,7 +268,7 @@ public class CorfuRuntime {
          * This is the duration after which the reader hole fills the address.
          */
         @Default
-        Duration requestTimeout = Duration.ofSeconds(5);
+        Duration requestTimeout = Duration.ofSeconds(5000);
 
         /**
          * This timeout (in seconds) is used to detect servers that
@@ -289,13 +289,13 @@ public class CorfuRuntime {
          * {@link Duration} before connections timeout.
          */
         @Default
-        Duration connectionTimeout = Duration.ofMillis(500);
+        Duration connectionTimeout = Duration.ofMillis(500000);
 
         /**
          * {@link Duration} before reconnecting to a disconnected node.
          */
         @Default
-        Duration connectionRetryRate = Duration.ofSeconds(1);
+        Duration connectionRetryRate = Duration.ofSeconds(1000);
 
         /**
          * The period at which the runtime will run garbage collection

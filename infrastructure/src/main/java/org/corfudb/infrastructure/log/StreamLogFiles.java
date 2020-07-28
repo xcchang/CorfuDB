@@ -396,6 +396,8 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
     }
 
     private void trimPrefix() {
+        System.out.println("!!!!!!!!!!!!!!!!!! prefix trim!!!!!!!!!!!!");
+
         // Trim all segments up till the segment that contains the starting address
         // (i.e. trim only complete segments)
         long endSegment = getStartingSegment() - 1;

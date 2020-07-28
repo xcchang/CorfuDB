@@ -2,6 +2,7 @@ package org.corfudb.infrastructure;
 
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelHandlerContext;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -40,17 +41,18 @@ import org.corfudb.util.Utils;
 import java.lang.invoke.MethodHandles;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-import java.util.function.Supplier;
 
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.PREFIX_TRIM;
@@ -108,7 +110,17 @@ public class LogUnitServer extends AbstractServer {
 
     private ExecutorService executor;
 
-    private final LogUnitLock logUnitLock = new LogUnitLock();
+    private static final ReadWriteLock resetLock = new CorfuReentrantReadWriteLock();
+
+    private final Set<LockOp> locks = ConcurrentHashMap.newKeySet();
+    private final Set<LockOp> unLocks = ConcurrentHashMap.newKeySet();
+
+    //@EqualsAndHashCode
+    @AllArgsConstructor
+    static class LockOp {
+        final long id = new Random().nextLong();
+        final String name;
+    }
 
     /**
      * Returns a new LogUnitServer.
@@ -139,7 +151,7 @@ public class LogUnitServer extends AbstractServer {
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
 
         logCleaner = new StreamLogCompaction(
-                streamLog, logUnitLock, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER
+                streamLog, resetLock, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER
         );
     }
 
@@ -234,7 +246,13 @@ public class LogUnitServer extends AbstractServer {
             msg.setPriorityLevel(PriorityLevel.HIGH);
         }
 
-        logUnitLock.acquireReadLockAndExecute(() -> batchWriter
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("write");
+        locks.add(op);
+
+        batchWriter
                 .addTask(WRITE, msg)
                 .thenRunAsync(() -> {
                     dataCache.put(msg.getPayload().getGlobalAddress(), logData);
@@ -244,7 +262,11 @@ public class LogUnitServer extends AbstractServer {
                     handleException(ex, ctx, msg, r);
                     return null;
                 })
-        );
+                .thenRun(() -> {
+                    System.out.println("WRITE UNLOCK!!!!!!!!!");
+                    unLocks.add(op);
+                    lock.unlock();
+                });
     }
 
     /**
@@ -257,14 +279,25 @@ public class LogUnitServer extends AbstractServer {
         log.debug("rangeWrite: Writing {} entries [{}-{}]", range.size(),
                 range.get(0).getGlobalAddress(), range.get(range.size() - 1).getGlobalAddress());
 
-        logUnitLock.acquireReadLockAndExecute(() -> batchWriter
+        System.out.println("LOGUNITWRITE RANGE. READ lock!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("write_range");
+        locks.add(op);
+
+        batchWriter
                 .addTask(RANGE_WRITE, msg)
                 .thenRun(() -> r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg()))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
                 })
-        );
+                .whenComplete((empty, ex) -> {
+                    unLocks.add(op);
+                    lock.unlock();
+                });
     }
 
     /**
@@ -293,7 +326,13 @@ public class LogUnitServer extends AbstractServer {
         boolean cacheable = msg.getPayload().isCacheReadResult();
         log.trace("read: {}, cacheable: {}", msg.getPayload().getAddress(), cacheable);
 
-        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("read_request");
+        locks.add(op);
+
+        try {
             ReadResponse rr = new ReadResponse();
             try {
                 ILogData logData = dataCache.get(address, cacheable);
@@ -307,7 +346,10 @@ public class LogUnitServer extends AbstractServer {
                 log.error("Data corruption exception while reading address {}", address, e);
                 r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.payloadMsg(address));
             }
-        });
+        } finally {
+            unLocks.add(op);
+            lock.unlock();
+        }
     }
 
     @ServerHandler(type = CorfuMsgType.MULTIPLE_READ_REQUEST)
@@ -315,7 +357,13 @@ public class LogUnitServer extends AbstractServer {
         boolean cacheable = msg.getPayload().isCacheReadResult();
         log.trace("multiRead: {}, cacheable: {}", msg.getPayload().getAddresses(), cacheable);
 
-        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("multiple_read");
+        locks.add(op);
+
+        try {
             ReadResponse rr = new ReadResponse();
             try {
                 for (Long address : msg.getPayload().getAddresses()) {
@@ -330,7 +378,10 @@ public class LogUnitServer extends AbstractServer {
             } catch (DataCorruptionException e) {
                 r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.msg());
             }
-        });
+        } finally {
+            unLocks.add(op);
+            lock.unlock();
+        }
     }
 
     /**
@@ -341,7 +392,13 @@ public class LogUnitServer extends AbstractServer {
     private void getKnownAddressesInRange(CorfuPayloadMsg<KnownAddressRequest> msg,
                                           ChannelHandlerContext ctx, IServerRouter r) {
 
-        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("known_addr");
+        locks.add(op);
+
+        try {
             KnownAddressRequest request = msg.getPayload();
             try {
                 Set<Long> knownAddresses = streamLog
@@ -351,17 +408,38 @@ public class LogUnitServer extends AbstractServer {
             } catch (Exception e) {
                 handleException(e, ctx, msg, r);
             }
-        });
+        } finally {
+            unLocks.add(op);
+            lock.unlock();
+        }
     }
 
     @ServerHandler(type = CorfuMsgType.COMPACT_REQUEST)
     private void handleCompactRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
         log.debug("handleCompactRequest: received a compact request {}", msg);
 
-        logUnitLock.acquireWriteLockAndExecuteSync(() -> {
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! COMPACT_REQUEST aquire writelock");
+
+        System.out.println("UNLOKS and LOCKS!!!!! " + unLocks.equals(locks));
+
+        Lock lock = resetLock.writeLock();
+        lock.lock();
+
+        System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! COMPACT LOCK AQUIRED !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+        LockOp op = new LockOp("compact");
+        locks.add(op);
+
+        try {
+            //WE NEVER GET HERE
+            System.out.println("Compact!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! ");
             streamLog.compact();
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
-        });
+        } finally {
+            System.out.println("RELEASE COMPACT lock!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            unLocks.add(op);
+            lock.unlock();
+        }
     }
 
     @ServerHandler(type = CorfuMsgType.FLUSH_CACHE)
@@ -425,7 +503,13 @@ public class LogUnitServer extends AbstractServer {
         // epoch to prevent stale reset requests from wiping out the data.
         serverContext.setLogUnitEpochWaterMark(msg.getPayload());
 
-        logUnitLock.acquireWriteLockAndExecute(() -> batchWriter
+        Lock lock = resetLock.readLock();
+        lock.lock();
+
+        LockOp op = new LockOp("reset");
+        locks.add(op);
+
+        batchWriter
                 .addTask(RESET, msg)
                 .thenRun(() -> {
                     dataCache.invalidateAll();
@@ -436,7 +520,10 @@ public class LogUnitServer extends AbstractServer {
                     handleException(ex, ctx, msg, r);
                     return null;
                 })
-        );
+                .whenComplete((empty, ex) -> {
+                    unLocks.add(op);
+                    lock.unlock();
+                });
     }
 
     /**
@@ -508,56 +595,20 @@ public class LogUnitServer extends AbstractServer {
         }
     }
 
-    public static class LogUnitLock {
-        private final ReadWriteLock resetLock = new ReentrantReadWriteLock();
+    static class CorfuReentrantReadWriteLock extends ReentrantReadWriteLock {
 
-        private void acquireReadLockAndExecuteSync(Runnable action) {
+        private final AtomicInteger counter = new AtomicInteger();
 
-            acquireReadLock()
-                    .thenApply(lock -> {
-                        action.run();
-                        return lock;
-                    })
-                    .whenComplete((lock, err) -> lock.unlock());
+        @Override
+        public WriteLock writeLock() {
+            System.out.println("WITE LOCK!!!!!!!!!!!!!!");
+            return super.writeLock();
         }
 
-        public void acquireWriteLockAndExecuteSync(Runnable action) {
-            acquireWriteLock()
-                    .thenApply(lock -> {
-                        action.run();
-                        return lock;
-                    })
-                    .whenComplete((lock, err) -> lock.unlock());
-        }
-
-        private <T> void acquireWriteLockAndExecute(Supplier<CompletableFuture<T>> action) {
-            acquireWriteLock()
-                    .thenCompose(lock -> action.get().thenApply(data -> lock))
-                    .whenComplete((lock, err) -> lock.unlock());
-        }
-
-        private <T> void acquireReadLockAndExecute(Supplier<CompletableFuture<T>> action) {
-            acquireReadLock()
-                    .thenCompose(lock -> action.get().thenApply(data -> lock))
-                    .whenComplete((lock, err) -> lock.unlock());
-        }
-
-        private CompletableFuture<Lock> acquireWriteLock() {
-            return CompletableFuture
-                    .supplyAsync(() -> {
-                        Lock lock = resetLock.writeLock();
-                        lock.lock();
-                        return lock;
-                    });
-        }
-
-        private CompletableFuture<Lock> acquireReadLock() {
-            return CompletableFuture
-                    .supplyAsync(() -> {
-                        Lock lock = resetLock.readLock();
-                        lock.lock();
-                        return lock;
-                    });
+        @Override
+        public ReadLock readLock() {
+            counter.incrementAndGet();
+            return super.readLock();
         }
     }
 }

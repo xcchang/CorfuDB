@@ -253,6 +253,7 @@ public class LogUnitClient extends AbstractClient {
      * Send a compact request that will delete the trimmed parts of the log.
      */
     public CompletableFuture<Void> compact() {
+        System.out.println("!!!!!!!!!!!!!!  send  compact request");
         return sendMessageWithFuture(CorfuMsgType.COMPACT_REQUEST.msg());
     }
 
