@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import com.codahale.metrics.MetricRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.AbstractCorfuTest;
+import org.corfudb.infrastructure.LogUnitServer.LogUnitLock;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.util.MetricsUtils;
 import org.junit.BeforeClass;
@@ -46,11 +47,10 @@ public class StreamLogCompactionTest extends AbstractCorfuTest {
         doThrow(new RuntimeException("err")).when(streamLog).compact();
 
         final long initialCompactionCounter = getCompactionCounter();
-        StreamLogCompaction compaction = new StreamLogCompaction(streamLog,
-                                                                 initialDelay,
-                                                                 period,
-                                                                 TimeUnit.MILLISECONDS,
-                                                                 PARAMETERS.TIMEOUT_VERY_SHORT);
+        StreamLogCompaction compaction = new StreamLogCompaction(
+                streamLog, new LogUnitLock(),
+                initialDelay, period, TimeUnit.MILLISECONDS, PARAMETERS.TIMEOUT_VERY_SHORT
+        );
 
         // If metrics are enabled, set an expectation of two compactions more than current
         // compaction count
