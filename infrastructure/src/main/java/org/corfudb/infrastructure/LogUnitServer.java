@@ -5,6 +5,7 @@ import io.netty.channel.ChannelHandlerContext;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.infrastructure.ServerThreadFactory.ExceptionHandler;
 import org.corfudb.infrastructure.log.InMemoryStreamLog;
 import org.corfudb.infrastructure.log.StreamLog;
 import org.corfudb.infrastructure.log.StreamLogCompaction;
@@ -41,10 +42,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Supplier;
 
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.LOG_ADDRESS_SPACE_QUERY;
 import static org.corfudb.infrastructure.BatchWriterOperation.Type.PREFIX_TRIM;
@@ -102,6 +108,8 @@ public class LogUnitServer extends AbstractServer {
 
     private ExecutorService executor;
 
+    private final LogUnitLock logUnitLock = new LogUnitLock();
+
     /**
      * Returns a new LogUnitServer.
      *
@@ -110,8 +118,10 @@ public class LogUnitServer extends AbstractServer {
     public LogUnitServer(ServerContext serverContext) {
         this.serverContext = serverContext;
         this.config = LogUnitServerConfig.parse(serverContext.getServerConfig());
-        executor = Executors.newFixedThreadPool(serverContext.getLogunitThreadCount(),
-                new ServerThreadFactory("LogUnit-", new ServerThreadFactory.ExceptionHandler()));
+        executor = Executors.newFixedThreadPool(
+                serverContext.getLogunitThreadCount(),
+                new ServerThreadFactory("LogUnit-", new ExceptionHandler())
+        );
 
         if (config.isMemoryMode()) {
             log.warn("Log unit opened in-memory mode (Maximum size={}). "
@@ -128,7 +138,9 @@ public class LogUnitServer extends AbstractServer {
         dataCache = new LogUnitServerCache(config, streamLog);
         batchWriter = new BatchProcessor(streamLog, serverContext.getServerEpoch(), !config.isNoSync());
 
-        logCleaner = new StreamLogCompaction(streamLog, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER);
+        logCleaner = new StreamLogCompaction(
+                streamLog, logUnitLock, 10, 45, TimeUnit.MINUTES, ServerContext.SHUTDOWN_TIMER
+        );
     }
 
 
@@ -144,7 +156,9 @@ public class LogUnitServer extends AbstractServer {
     public void handleTailRequest(CorfuPayloadMsg<TailsRequest> msg, ChannelHandlerContext ctx, IServerRouter r) {
         log.debug("handleTailRequest: received a tail request {}", msg);
         batchWriter.<TailsResponse>addTask(TAILS_QUERY, msg)
-                .thenAccept(tailsResp -> r.sendResponse(ctx, msg, CorfuMsgType.TAIL_RESPONSE.payloadMsg(tailsResp)))
+                .thenAccept(tailsResp -> {
+                    r.sendResponse(ctx, msg, CorfuMsgType.TAIL_RESPONSE.payloadMsg(tailsResp));
+                })
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
@@ -162,7 +176,8 @@ public class LogUnitServer extends AbstractServer {
         log.trace("handleLogAddressSpaceRequest: received a log address space request {}", msg);
         batchWriter.<StreamsAddressResponse>addTask(LOG_ADDRESS_SPACE_QUERY, payloadMsg)
                 .thenAccept(tailsResp -> r.sendResponse(ctx, msg,
-                        CorfuMsgType.LOG_ADDRESS_SPACE_RESPONSE.payloadMsg(tailsResp)))
+                        CorfuMsgType.LOG_ADDRESS_SPACE_RESPONSE.payloadMsg(tailsResp))
+                )
                 .exceptionally(ex -> {
                     handleException(ex, ctx, payloadMsg, r);
                     return null;
@@ -219,14 +234,17 @@ public class LogUnitServer extends AbstractServer {
             msg.setPriorityLevel(PriorityLevel.HIGH);
         }
 
-        batchWriter.addTask(WRITE, msg)
+        logUnitLock.acquireReadLockAndExecute(() -> batchWriter
+                .addTask(WRITE, msg)
                 .thenRunAsync(() -> {
                     dataCache.put(msg.getPayload().getGlobalAddress(), logData);
                     r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg());
-                }, executor).exceptionally(ex -> {
-            handleException(ex, ctx, msg, r);
-            return null;
-        });
+                }, executor)
+                .exceptionally(ex -> {
+                    handleException(ex, ctx, msg, r);
+                    return null;
+                })
+        );
     }
 
     /**
@@ -239,12 +257,14 @@ public class LogUnitServer extends AbstractServer {
         log.debug("rangeWrite: Writing {} entries [{}-{}]", range.size(),
                 range.get(0).getGlobalAddress(), range.get(range.size() - 1).getGlobalAddress());
 
-        batchWriter.addTask(RANGE_WRITE, msg)
+        logUnitLock.acquireReadLockAndExecute(() -> batchWriter
+                .addTask(RANGE_WRITE, msg)
                 .thenRun(() -> r.sendResponse(ctx, msg, CorfuMsgType.WRITE_OK.msg()))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
                     return null;
-                });
+                })
+        );
     }
 
     /**
@@ -258,7 +278,8 @@ public class LogUnitServer extends AbstractServer {
     private void prefixTrim(CorfuPayloadMsg<TrimRequest> msg, ChannelHandlerContext ctx,
                             IServerRouter r) {
         log.debug("prefixTrim: trimming prefix to {}", msg.getPayload().getAddress());
-        batchWriter.addTask(PREFIX_TRIM, msg)
+        batchWriter
+                .addTask(PREFIX_TRIM, msg)
                 .thenRun(() -> r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg()))
                 .exceptionally(ex -> {
                     handleException(ex, ctx, msg, r);
@@ -272,19 +293,21 @@ public class LogUnitServer extends AbstractServer {
         boolean cacheable = msg.getPayload().isCacheReadResult();
         log.trace("read: {}, cacheable: {}", msg.getPayload().getAddress(), cacheable);
 
-        ReadResponse rr = new ReadResponse();
-        try {
-            ILogData logData = dataCache.get(address, cacheable);
-            if (logData == null) {
-                rr.put(address, LogData.getEmpty(address));
-            } else {
-                rr.put(address, (LogData) logData);
+        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+            ReadResponse rr = new ReadResponse();
+            try {
+                ILogData logData = dataCache.get(address, cacheable);
+                if (logData == null) {
+                    rr.put(address, LogData.getEmpty(address));
+                } else {
+                    rr.put(address, (LogData) logData);
+                }
+                r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(rr));
+            } catch (DataCorruptionException e) {
+                log.error("Data corruption exception while reading address {}", address, e);
+                r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.payloadMsg(address));
             }
-            r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(rr));
-        } catch (DataCorruptionException e) {
-            log.error("Data corruption exception while reading address {}", address, e);
-            r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.payloadMsg(address));
-        }
+        });
     }
 
     @ServerHandler(type = CorfuMsgType.MULTIPLE_READ_REQUEST)
@@ -292,20 +315,22 @@ public class LogUnitServer extends AbstractServer {
         boolean cacheable = msg.getPayload().isCacheReadResult();
         log.trace("multiRead: {}, cacheable: {}", msg.getPayload().getAddresses(), cacheable);
 
-        ReadResponse rr = new ReadResponse();
-        try {
-            for (Long address : msg.getPayload().getAddresses()) {
-                ILogData logData = dataCache.get(address, cacheable);
-                if (logData == null) {
-                    rr.put(address, LogData.getEmpty(address));
-                } else {
-                    rr.put(address, (LogData) logData);
+        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+            ReadResponse rr = new ReadResponse();
+            try {
+                for (Long address : msg.getPayload().getAddresses()) {
+                    ILogData logData = dataCache.get(address, cacheable);
+                    if (logData == null) {
+                        rr.put(address, LogData.getEmpty(address));
+                    } else {
+                        rr.put(address, (LogData) logData);
+                    }
                 }
+                r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(rr));
+            } catch (DataCorruptionException e) {
+                r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.msg());
             }
-            r.sendResponse(ctx, msg, CorfuMsgType.READ_RESPONSE.payloadMsg(rr));
-        } catch (DataCorruptionException e) {
-            r.sendResponse(ctx, msg, CorfuMsgType.ERROR_DATA_CORRUPTION.msg());
-        }
+        });
     }
 
     /**
@@ -316,22 +341,27 @@ public class LogUnitServer extends AbstractServer {
     private void getKnownAddressesInRange(CorfuPayloadMsg<KnownAddressRequest> msg,
                                           ChannelHandlerContext ctx, IServerRouter r) {
 
-        KnownAddressRequest request = msg.getPayload();
-        try {
-            Set<Long> knownAddresses = streamLog
-                    .getKnownAddressesInRange(request.getStartRange(), request.getEndRange());
-            r.sendResponse(ctx, msg,
-                    CorfuMsgType.KNOWN_ADDRESS_RESPONSE.payloadMsg(knownAddresses));
-        } catch (Exception e) {
-            handleException(e, ctx, msg, r);
-        }
+        logUnitLock.acquireReadLockAndExecuteSync(() -> {
+            KnownAddressRequest request = msg.getPayload();
+            try {
+                Set<Long> knownAddresses = streamLog
+                        .getKnownAddressesInRange(request.getStartRange(), request.getEndRange());
+                r.sendResponse(ctx, msg,
+                        CorfuMsgType.KNOWN_ADDRESS_RESPONSE.payloadMsg(knownAddresses));
+            } catch (Exception e) {
+                handleException(e, ctx, msg, r);
+            }
+        });
     }
 
     @ServerHandler(type = CorfuMsgType.COMPACT_REQUEST)
     private void handleCompactRequest(CorfuMsg msg, ChannelHandlerContext ctx, IServerRouter r) {
         log.debug("handleCompactRequest: received a compact request {}", msg);
-        streamLog.compact();
-        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+
+        logUnitLock.acquireWriteLockAndExecuteSync(() -> {
+            streamLog.compact();
+            r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+        });
     }
 
     @ServerHandler(type = CorfuMsgType.FLUSH_CACHE)
@@ -383,27 +413,31 @@ public class LogUnitServer extends AbstractServer {
     private synchronized void resetLogUnit(CorfuPayloadMsg<Long> msg,
                                            ChannelHandlerContext ctx, IServerRouter r) {
 
-        // Check if the reset request is with an epoch greater than the last reset epoch seen to
-        // prevent multiple reset in the same epoch. and should be equal to the current router
-        // epoch to prevent stale reset requests from wiping out the data.
-        if (msg.getPayload() > serverContext.getLogUnitEpochWaterMark()
-                && msg.getPayload() == serverContext.getServerEpoch()) {
-            serverContext.setLogUnitEpochWaterMark(msg.getPayload());
-            batchWriter.addTask(RESET, msg)
-                    .thenRun(() -> {
-                        dataCache.invalidateAll();
-                        log.info("LogUnit Server Reset.");
-                        r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
-                    }).exceptionally(ex -> {
-                handleException(ex, ctx, msg, r);
-                return null;
-            });
-        } else {
+        if (msg.getPayload() <= serverContext.getLogUnitEpochWaterMark()
+                || msg.getPayload() != serverContext.getServerEpoch()) {
             log.info("LogUnit Server Reset request received but reset already done.");
             r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+            return;
         }
-    }
 
+        // Check if the reset request is with an epoch greater than the last reset epoch seen to
+        // prevent multiple reset in the same epoch and should be equal to the current router
+        // epoch to prevent stale reset requests from wiping out the data.
+        serverContext.setLogUnitEpochWaterMark(msg.getPayload());
+
+        logUnitLock.acquireWriteLockAndExecute(() -> batchWriter
+                .addTask(RESET, msg)
+                .thenRun(() -> {
+                    dataCache.invalidateAll();
+                    log.info("LogUnit Server Reset.");
+                    r.sendResponse(ctx, msg, CorfuMsgType.ACK.msg());
+                })
+                .exceptionally(ex -> {
+                    handleException(ex, ctx, msg, r);
+                    return null;
+                })
+        );
+    }
 
     /**
      * Shutdown the server.
@@ -471,6 +505,59 @@ public class LogUnitServer extends AbstractServer {
                     .noVerify((Boolean) opts.get("--no-verify"))
                     .noSync((Boolean) opts.get("--no-sync"))
                     .build();
+        }
+    }
+
+    public static class LogUnitLock {
+        private final ReadWriteLock resetLock = new ReentrantReadWriteLock();
+
+        private void acquireReadLockAndExecuteSync(Runnable action) {
+
+            acquireReadLock()
+                    .thenApply(lock -> {
+                        action.run();
+                        return lock;
+                    })
+                    .whenComplete((lock, err) -> lock.unlock());
+        }
+
+        public void acquireWriteLockAndExecuteSync(Runnable action) {
+            acquireWriteLock()
+                    .thenApply(lock -> {
+                        action.run();
+                        return lock;
+                    })
+                    .whenComplete((lock, err) -> lock.unlock());
+        }
+
+        private <T> void acquireWriteLockAndExecute(Supplier<CompletableFuture<T>> action) {
+            acquireWriteLock()
+                    .thenCompose(lock -> action.get().thenApply(data -> lock))
+                    .whenComplete((lock, err) -> lock.unlock());
+        }
+
+        private <T> void acquireReadLockAndExecute(Supplier<CompletableFuture<T>> action) {
+            acquireReadLock()
+                    .thenCompose(lock -> action.get().thenApply(data -> lock))
+                    .whenComplete((lock, err) -> lock.unlock());
+        }
+
+        private CompletableFuture<Lock> acquireWriteLock() {
+            return CompletableFuture
+                    .supplyAsync(() -> {
+                        Lock lock = resetLock.writeLock();
+                        lock.lock();
+                        return lock;
+                    });
+        }
+
+        private CompletableFuture<Lock> acquireReadLock() {
+            return CompletableFuture
+                    .supplyAsync(() -> {
+                        Lock lock = resetLock.readLock();
+                        lock.lock();
+                        return lock;
+                    });
         }
     }
 }

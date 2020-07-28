@@ -3,6 +3,8 @@ package org.corfudb.infrastructure.log;
 import com.codahale.metrics.Timer;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.extern.slf4j.Slf4j;
+import org.corfudb.infrastructure.LogUnitServer;
+import org.corfudb.infrastructure.LogUnitServer.LogUnitLock;
 import org.corfudb.infrastructure.ServerContext;
 import org.corfudb.runtime.exceptions.unrecoverable.UnrecoverableCorfuInterruptedError;
 import org.corfudb.util.CorfuComponent;
@@ -41,13 +43,18 @@ public class StreamLogCompaction {
     private final ScheduledFuture<?> compactor;
     private final Duration shutdownTimer;
 
-    public StreamLogCompaction(StreamLog streamLog, long initialDelay, long period, TimeUnit timeUnit,
+    private final LogUnitLock logUnitLock;
+
+    public StreamLogCompaction(StreamLog streamLog, LogUnitLock logUnitLock,
+                               long initialDelay, long period, TimeUnit timeUnit,
                                Duration shutdownTimer) {
         this.shutdownTimer = shutdownTimer;
+        this.logUnitLock = logUnitLock;
+
         Runnable task = () -> {
             log.debug("Start log compaction.");
             try (Timer.Context context = MetricsUtils.getConditionalContext(compactionTimer)){
-                streamLog.compact();
+                logUnitLock.acquireWriteLockAndExecuteSync(streamLog::compact);
             } catch (Exception ex) {
                 log.error("Can't compact stream log.", ex);
             }
