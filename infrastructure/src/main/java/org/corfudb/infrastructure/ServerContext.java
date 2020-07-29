@@ -217,7 +217,6 @@ public class ServerContext implements AutoCloseable {
         if (logDirPath == null) {
             return;
         }
-
         File logDir = new File(logDirPath);
         Set<String> prefixesToClean = getDsFilePrefixesForCleanup();
         int numRetention = Integer.parseInt(getServerConfig(String.class, "--metadata-retention"));
@@ -227,10 +226,10 @@ public class ServerContext implements AutoCloseable {
                 .forEach(prefix -> {
                     File[] foundFiles = logDir.listFiles((dir, name) -> name.startsWith(prefix));
                     if (foundFiles == null || foundFiles.length <= numRetention) {
-                        log.debug("DataStore cleanup not started for prefix: {}.", prefix);
+                        log.info("DataStore cleanup not started for prefix: {}.", prefix);
                         return;
                     }
-                    log.debug("Start cleaning up DataStore files with prefix: {}.", prefix);
+                    log.info("Start cleaning up DataStore files with prefix: {}.", prefix);
                     Arrays.stream(foundFiles)
                             .sorted(Comparator.comparingInt(file -> {
                                 // Extract epoch number from file name and cast to int for comparision

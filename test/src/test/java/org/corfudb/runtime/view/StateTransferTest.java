@@ -1546,9 +1546,8 @@ public class StateTransferTest extends AbstractViewTest {
                     .setLogPath(tempDirs.get(0).getAbsolutePath())
                     .build();
             addServer(SERVERS.PORT_0, sc0);
-            Layout currentLayout1 = sc0.getCurrentLayout();
 
-            bootstrapAllServers(currentLayout1);
+            bootstrapServer(SERVERS.ENDPOINT_0, sc0.getCurrentLayout());
 
             ServerContext sc1 = new ServerContextBuilder()
                     .setSingle(true)
@@ -1575,23 +1574,29 @@ public class StateTransferTest extends AbstractViewTest {
 
             bootstrapServer(SERVERS.ENDPOINT_2, sc2.getCurrentLayout());
 
+            Sleep.sleepUninterruptibly(Duration.ofSeconds(10));
+
 //            runWriter(SERVERS.ENDPOINT_2, 10, Duration.ofSeconds(1)).join();
-//            CorfuRuntime rt = getRuntime(currentLayout1);
-//
-//            try {
-//                rt.connect();
-//                rt.getManagementView()
-//                        .addNode(SERVERS.ENDPOINT_1, 3,
-//                                Duration.ofMinutes(1L), Duration.ofSeconds(3));
+            CorfuRuntime rt = getRuntime(sc0.getCurrentLayout());
+
+            try {
+                rt.connect();
+                boolean resetSecondNodeHappened =
+                        rt.getLayoutView().getRuntimeLayout().getBaseClient(SERVERS.ENDPOINT_1)
+                                .reset().join();
+                assertThat(resetSecondNodeHappened).isTrue();
+                rt.getManagementView()
+                        .addNode(SERVERS.ENDPOINT_1, 3,
+                                Duration.ofMinutes(1L), Duration.ofSeconds(3));
 //
 //                rt.getManagementView()
 //                        .addNode(SERVERS.ENDPOINT_2, 3,
 //                                Duration.ofMinutes(1L), Duration.ofSeconds(3));
-//
-//            }
-//            finally {
-//                rt.shutdown();
-//            }
+
+            }
+            finally {
+                rt.shutdown();
+            }
         }
     }
 }
