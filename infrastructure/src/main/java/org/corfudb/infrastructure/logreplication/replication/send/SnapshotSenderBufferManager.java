@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 public class SnapshotSenderBufferManager extends SenderBufferManager {
+
     public SnapshotSenderBufferManager(DataSender dataSender) {
         super(dataSender);
     }
@@ -23,13 +24,13 @@ public class SnapshotSenderBufferManager extends SenderBufferManager {
      */
     @Override
     public void updateAck(Long newAck) {
-        if (maxAckForLogEntrySync > newAck)
-            return;
-        maxAckForLogEntrySync = newAck;
-        pendingMessages.evictAccordingToSeqNum(maxAckForLogEntrySync);
-        pendingCompletableFutureForAcks = pendingCompletableFutureForAcks.entrySet().stream()
-                .filter(entry -> entry.getKey() > maxAckForLogEntrySync)
-                .collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue()));
+        if (maxAckTimestamp < newAck) {
+            maxAckTimestamp = newAck;
+            pendingMessages.evictAccordingToSeqNum(maxAckTimestamp);
+            pendingCompletableFutureForAcks = pendingCompletableFutureForAcks.entrySet().stream()
+                    .filter(entry -> entry.getKey() > maxAckTimestamp)
+                    .collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue()));
+        }
     }
 
     /**

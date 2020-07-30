@@ -37,21 +37,20 @@ public class LogEntrySenderBufferManager extends SenderBufferManager {
     @Override
     public void updateAck(Long newAck) {
         /*
-         * If the newAck is not larger than the current maxAckForLogEntrySync, ignore it.
+         * If the newAck is not larger than the current maxAckTimestamp, ignore it.
          */
-        if (newAck <= maxAckForLogEntrySync) {
+        if (newAck <= maxAckTimestamp) {
             return;
         }
 
+        maxAckTimestamp = newAck;
 
-        maxAckForLogEntrySync = newAck;
+        // Remove pending messages that have been ACKed.
+        pendingMessages.evictAccordingToTimestamp(maxAckTimestamp);
 
-        //Remove pending messages has been ACKed.
-        pendingMessages.evictAccordingToTimestamp(maxAckForLogEntrySync);
-
-        //Remove CompletableFutures for Acks that has received.
+        // Remove CompletableFutures for Acks that has received.
         pendingCompletableFutureForAcks = pendingCompletableFutureForAcks.entrySet().stream()
-                .filter(entry -> entry.getKey() > maxAckForLogEntrySync)
+                .filter(entry -> entry.getKey() > maxAckTimestamp)
                 .collect(Collectors.toMap(x -> x.getKey(), x -> x.getValue()));
     }
 

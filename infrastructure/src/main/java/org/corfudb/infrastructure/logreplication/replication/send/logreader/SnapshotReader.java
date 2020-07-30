@@ -8,7 +8,7 @@ import java.util.UUID;
 /**
  * An Interface for snapshot logreader.
  *
- * A snapshot logreader provides the functionality for reading data from Corfu.
+ * A snapshot reader provides the functionality for reading data from Corfu.
  */
 public interface SnapshotReader {
 
@@ -23,7 +23,7 @@ public interface SnapshotReader {
     SnapshotReadMessage read(UUID snapshotRequestId);
 
     /**
-     * Reset logreader in between snapshot syncs.
+     * Reset reader in between snapshot syncs.
      *
      * @param snapshotTimestamp new snapshot timestamp.
      */

@@ -8,7 +8,6 @@ import org.corfudb.infrastructure.LogReplicationRuntimeParameters;
 import org.corfudb.infrastructure.logreplication.DataSender;
 import org.corfudb.infrastructure.logreplication.LogReplicationConfig;
 import org.corfudb.infrastructure.logreplication.replication.fsm.ObservableAckMsg;
-import org.corfudb.infrastructure.logreplication.replication.receive.DataReceiver;
 import org.corfudb.infrastructure.logreplication.replication.fsm.LogReplicationEvent;
 import org.corfudb.infrastructure.logreplication.replication.fsm.LogReplicationFSM;
 import org.corfudb.infrastructure.logreplication.runtime.LogReplicationClient;
@@ -16,8 +15,6 @@ import org.corfudb.infrastructure.logreplication.replication.send.CorfuDataSende
 import org.corfudb.infrastructure.logreplication.replication.send.logreader.DefaultReadProcessor;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationEventMetadata;
 import org.corfudb.infrastructure.logreplication.replication.send.logreader.ReadProcessor;
-import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
-import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.CorfuRuntime.CorfuRuntimeParameters;
 import org.corfudb.infrastructure.logreplication.replication.fsm.LogReplicationEvent.LogReplicationEventType;
@@ -37,7 +34,7 @@ import java.util.concurrent.Executors;
  **/
 @Data
 @Slf4j
-public class LogReplicationSourceManager implements DataReceiver {
+public class LogReplicationSourceManager {
 
     private CorfuRuntime runtime;
     /*
@@ -235,29 +232,5 @@ public class LogReplicationSourceManager implements DataReceiver {
 
         log.info("Shutdown Log Replication.");
         this.runtime.shutdown();
-    }
-
-    @Override
-    public LogReplicationEntry receive(LogReplicationEntry message) {
-        log.trace("Data Message received on source");
-
-        countACKs++;
-        ackMessages.setValue(message);
-
-        // Process ACKs from Application, for both, log entry and snapshot sync.
-        if(message.getMetadata().getMessageMetadataType() == MessageType.LOG_ENTRY_REPLICATED) {
-            log.debug("Log entry sync ACK received on timestamp {}", message.getMetadata().getTimestamp());
-            logReplicationFSM.input(new LogReplicationEvent(LogReplicationEventType.LOG_ENTRY_SYNC_REPLICATED,
-                new LogReplicationEventMetadata(message.getMetadata().getSyncRequestId(), message.getMetadata().getTimestamp())));
-        } else if (message.getMetadata().getMessageMetadataType() == MessageType.SNAPSHOT_REPLICATED) {
-            log.debug("Snapshot sync ACK received on base timestamp {}", message.getMetadata().getSnapshotTimestamp());
-            logReplicationFSM.input(new LogReplicationEvent(LogReplicationEventType.SNAPSHOT_SYNC_COMPLETE,
-                    new LogReplicationEventMetadata(message.getMetadata().getSyncRequestId(), message.getMetadata().getTimestamp(),
-                            message.getMetadata().getTimestamp())));
-        } else {
-            log.debug("Received data message of type {} not an ACK", message.getMetadata().getMessageMetadataType());
-        }
-
-        return null;
     }
 }
