@@ -25,6 +25,8 @@ import org.corfudb.util.retry.RetryNeededException;
 import org.corfudb.utils.lock.Lock;
 import org.corfudb.utils.lock.LockClient;
 import org.corfudb.utils.lock.LockListener;
+import org.corfudb.utils.lock.states.HasLeaseState;
+import org.corfudb.utils.lock.states.LockState;
 
 import javax.annotation.Nonnull;
 import java.time.Duration;
@@ -363,6 +365,9 @@ public class CorfuReplicationDiscoveryService implements Runnable, CorfuReplicat
         try {
 
             Lock.setLeaseDuration(serverContext.getLockLeaseDuration());
+            LockState.setDurationBetweenLeaseRenewals(serverContext.getLockLeaseDuration()/2);
+            LockClient.setDurationBetweenLockMonitorRuns(serverContext.getLockLeaseDuration()/2);
+            HasLeaseState.setDURATION_BETWEEN_LEASE_CHECKS(6);
 
             IRetry.build(IntervalRetry.class, () -> {
                 try {
