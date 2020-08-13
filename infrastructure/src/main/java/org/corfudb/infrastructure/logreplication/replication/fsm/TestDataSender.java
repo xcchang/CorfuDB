@@ -5,6 +5,7 @@ import org.corfudb.infrastructure.logreplication.DataSender;
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationError;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntryMetadata;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationMetadataResponse;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 
 import java.util.LinkedList;
@@ -21,9 +22,6 @@ public class TestDataSender implements DataSender {
 
     @Getter
     private Queue<LogReplicationEntry> entryQueue = new LinkedList<>();
-
-    public TestDataSender() {
-    }
 
     @Override
     public CompletableFuture<LogReplicationEntry> send(LogReplicationEntry message) {
@@ -75,7 +73,12 @@ public class TestDataSender implements DataSender {
 
         return lastSentMessage;
     }
-    
+
+    @Override
+    public CompletableFuture<LogReplicationMetadataResponse> sendMetadataRequest() {
+        return new CompletableFuture<>();
+    }
+
     public void reset() {
         entryQueue.clear();
     }

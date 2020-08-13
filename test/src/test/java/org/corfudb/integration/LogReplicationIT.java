@@ -16,11 +16,9 @@ import java.util.Observable;
 import java.util.Observer;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeoutException;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +43,6 @@ import org.corfudb.runtime.view.ObjectsView;
 import org.corfudb.util.Utils;
 import org.corfudb.util.serializer.Serializers;
 import org.junit.Test;
-import org.junit.jupiter.api.Assertions;
 
 /**
  * Test the core components of log replication, namely, Snapshot Sync and Log Entry Sync,
@@ -91,10 +88,6 @@ public class LogReplicationIT extends AbstractIT implements Observer {
 
     // Number of messages per batch
     static private final int BATCH_SIZE = 4;
-
-    // each snapshot entry is 33 bytes
-    // log entry size is 66 bytes or more according to how many streams in one transactions
-    static private final int MSG_SIZE = 524288;
 
     static private final int SMALL_MSG_SIZE = 200;
 
@@ -821,7 +814,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         // Verify Destination
         verifyData(dstCorfuTables, srcDataForVerification);
         expectedAckTimestamp = srcDataRuntime.getAddressSpaceView().getLogTail();
-        assertThat(expectedAckTimestamp).isEqualTo(logReplicationMetadataManager.getLastProcessedLogTimestamp());
+        assertThat(expectedAckTimestamp).isEqualTo(logReplicationMetadataManager.getLastProcessedLogEntryTimestamp());
         verifyPersistedSnapshotMetadata();
         verifyPersistedLogEntryMetadata();
 
@@ -1128,10 +1121,10 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         log.debug("\n****** Wait until wait condition is met " + waitConditions);
 
         if (waitConditions.contains(WAIT.ON_ERROR)) {
-            log.debug("\n****** blockUnitileExpectedValueReached " + expectedErrors);
+            log.debug("\n****** blockUntilExpectedValueReached " + expectedErrors);
             blockUntilExpectedValueReached.acquire();
         } else {
-            log.debug("\n****** blockUnitilExpectedAckType " + expectedAckMsgType);
+            log.debug("\n****** blockUntilExpectedAckType " + expectedAckMsgType);
             blockUntilExpectedAckType.acquire();
         }
 
@@ -1170,7 +1163,7 @@ public class LogReplicationIT extends AbstractIT implements Observer {
         // Start Log Entry Sync
         log.debug("****** Start Log Entry Sync with src tail " + srcDataRuntime.getAddressSpaceView().getLogTail()
                 + " dst tail " + dstDataRuntime.getAddressSpaceView().getLogTail());
-        logReplicationSourceManager.startReplication(new LogReplicationEvent(LogReplicationEvent.LogReplicationEventType.REPLICATION_START,
+        logReplicationSourceManager.startReplication(new LogReplicationEvent(LogReplicationEvent.LogReplicationEventType.LOG_ENTRY_SYNC_REQUEST,
                 new LogReplicationEventMetadata(UUID.randomUUID(), -1, -1)));
 
         // Start TX's in parallel, while log entry sync is running
@@ -1319,15 +1312,15 @@ public class LogReplicationIT extends AbstractIT implements Observer {
     }
 
     private void verifyPersistedSnapshotMetadata() {
-        long lastSnapStart = logReplicationMetadataManager.getLastSnapStartTimestamp();
-        long lastSnapDone = logReplicationMetadataManager.getLastAppliedBaseSnapshotTimestamp();
+        long lastSnapStart = logReplicationMetadataManager.getLastStartedSnapshotTimestamp();
+        long lastSnapDone = logReplicationMetadataManager.getLastAppliedSnapshotTimestamp();
 
         log.debug("\nlastSnapStart " + lastSnapStart + " lastSnapDone " + lastSnapDone);
         assertThat(lastSnapStart == lastSnapDone).isTrue();
     }
 
     private void verifyPersistedLogEntryMetadata() {
-        long lastLogProcessed = logReplicationMetadataManager.getLastProcessedLogTimestamp();
+        long lastLogProcessed = logReplicationMetadataManager.getLastProcessedLogEntryTimestamp();
 
         log.debug("\nlastLogProcessed " + lastLogProcessed + " expectedTimestamp " + expectedAckTimestamp);
         assertThat(expectedAckTimestamp == lastLogProcessed).isTrue();

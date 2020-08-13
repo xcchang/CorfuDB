@@ -23,7 +23,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
@@ -53,6 +52,8 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
     @Getter
     private LogReplicationMetadataManager logReplicationMetadataManager;
     private HashMap<UUID, UUID> uuidMap;
+
+    @Getter
     private Phase phase;
 
     public StreamsSnapshotWriter(CorfuRuntime rt, LogReplicationConfig config, LogReplicationMetadataManager logReplicationMetadataManager) {
@@ -103,7 +104,7 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
         CorfuStoreMetadata.Timestamp timestamp = logReplicationMetadataManager.getTimestamp();
         long persistedTopologyConfigId = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.TOPOLOGY_CONFIG_ID);
         long persistedSnapshotStart = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_STARTED);
-        long persistedSequenceNum = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_SEQ_NUM);
+        long persistedSequenceNum = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_TRANSFERRED_SEQUENCE_NUMBER);
 
         // For transfer phase start
         if (topologyConfigId != persistedTopologyConfigId || srcGlobalSnapshot != persistedSnapshotStart ||
@@ -212,7 +213,7 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
         CorfuStoreMetadata.Timestamp timestamp = logReplicationMetadataManager.getTimestamp();
         long persistedTopologyConfigId = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.TOPOLOGY_CONFIG_ID);
         long persistedSnapshotStart = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_STARTED);
-        long persistedSequenceNum = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_SEQ_NUM);
+        long persistedSequenceNum = logReplicationMetadataManager.query(timestamp, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_TRANSFERRED_SEQUENCE_NUMBER);
 
         if (topologyConfigId != persistedTopologyConfigId || srcGlobalSnapshot != persistedSnapshotStart || currentSeqNum != (persistedSequenceNum + 1)) {
             log.warn("Skip processing opaque entry. Current topologyConfigId={} srcGlobalSnapshot={}, currentSeqNum={}, " +
@@ -223,7 +224,7 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
 
         logReplicationMetadataManager.appendUpdate(txBuilder, LogReplicationMetadataManager.LogReplicationMetadataType.TOPOLOGY_CONFIG_ID, topologyConfigId);
         logReplicationMetadataManager.appendUpdate(txBuilder, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_STARTED, srcGlobalSnapshot);
-        logReplicationMetadataManager.appendUpdate(txBuilder, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_SEQ_NUM, currentSeqNum);
+        logReplicationMetadataManager.appendUpdate(txBuilder, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_TRANSFERRED_SEQUENCE_NUMBER, currentSeqNum);
         for (SMREntry smrEntry : smrEntries) {
             txBuilder.logUpdate(shadowStreamUuid, smrEntry);
         }
@@ -339,10 +340,10 @@ public class StreamsSnapshotWriter implements SnapshotWriter {
         topologyConfigId = entry.getMetadata().getTopologyConfigId();
 
         // Update the metadata
-        logReplicationMetadataManager.setLastSnapTransferDoneTimestamp(topologyConfigId, ts);
+        logReplicationMetadataManager.setLastSnapshotTransferCompleteTimestamp(topologyConfigId, ts);
 
         // Get the number of entries to apply
-        long seqNum = logReplicationMetadataManager.query(null, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_SEQ_NUM);
+        long seqNum = logReplicationMetadataManager.query(null, LogReplicationMetadataManager.LogReplicationMetadataType.LAST_SNAPSHOT_TRANSFERRED_SEQUENCE_NUMBER);
 
         // Only if there is data to be applied
         if (seqNum != Address.NON_ADDRESS) {

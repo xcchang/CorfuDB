@@ -12,6 +12,8 @@ import org.corfudb.infrastructure.logreplication.replication.LogReplicationSourc
 import org.corfudb.infrastructure.logreplication.replication.send.LogReplicationError;
 import org.corfudb.infrastructure.logreplication.replication.fsm.ObservableAckMsg;
 import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntry;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationEntryMetadata;
+import org.corfudb.protocols.wireprotocol.logreplication.LogReplicationMetadataResponse;
 import org.corfudb.protocols.wireprotocol.logreplication.MessageType;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.integration.DefaultDataControl.DefaultDataControlConfig;
@@ -19,8 +21,17 @@ import org.corfudb.integration.DefaultDataControl.DefaultDataControlConfig;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * This is an implementation of the DataSender (data path layer) used for testing purposes.
+ *
+ * It emulates the channel by directly forwarding messages to the destination log replication sink manager
+ * (for processing).
+ */
 @Slf4j
 public class SourceForwardingDataSender implements DataSender {
+
+    private final static int DROP_INCREMENT = 4;
+
     // Runtime to remote/destination Corfu Server
     private CorfuRuntime runtime;
 
@@ -46,9 +57,7 @@ public class SourceForwardingDataSender implements DataSender {
      */
     final public static int DROP_MSG_ONCE = 1;
 
-    private int ifDropMsg = 0;
-
-    final static int DROP_INCREMENT = 4;
+    private int ifDropMsg;
 
     private int droppingNum = 2;
 
@@ -119,10 +128,24 @@ public class SourceForwardingDataSender implements DataSender {
     }
 
     @Override
+    public CompletableFuture<LogReplicationMetadataResponse> sendMetadataRequest() {
+        // In test implementation emulate the apply has succeeded and return a LogReplicationMetadataResponse
+        CompletableFuture<LogReplicationMetadataResponse> completableFuture = new CompletableFuture<>();
+        long baseSnapshotTimestamp = destinationDataSender.getSourceManager().getLogReplicationFSM().getBaseSnapshot();
+        LogReplicationMetadataResponse response = new LogReplicationMetadataResponse(0, "version", baseSnapshotTimestamp,
+                baseSnapshotTimestamp, baseSnapshotTimestamp, baseSnapshotTimestamp);
+        completableFuture.complete(response);
+        // Enforce a SNAPSHOT_END marker, used by tests to determine completeness of snapshot sync
+        ackMessages.setValue(new LogReplicationEntry(new LogReplicationEntryMetadata(MessageType.SNAPSHOT_END, 0,
+                destinationDataSender.getSnapshotSyncRequestId(), baseSnapshotTimestamp, baseSnapshotTimestamp)));
+        return completableFuture;
+    }
+
+    @Override
     public void onError(LogReplicationError error) {
         errorCount++;
         errors.setValue(errorCount);
-        log.trace("\nSourceFowardingDataSender got an error " + error);
+        log.trace("OnError :: code={}, description={}", error.getCode(), error.getDescription());
     }
 
     /*
@@ -136,10 +159,6 @@ public class SourceForwardingDataSender implements DataSender {
     // Used for testing purposes to access the LogReplicationSinkManager in Test
     public LogReplicationSinkManager getSinkManager() {
         return destinationLogReplicationManager;
-    }
-
-    public CorfuRuntime getWriterRuntime() {
-        return this.runtime;
     }
 
     public void shutdown() {

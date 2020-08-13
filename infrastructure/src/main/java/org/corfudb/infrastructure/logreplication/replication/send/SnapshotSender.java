@@ -46,6 +46,8 @@ public class SnapshotSender {
     private SnapshotReader snapshotReader;
     private SenderBufferManager dataSenderBufferManager;
     private LogReplicationFSM fsm;
+
+    @Getter
     private long baseSnapshotTimestamp;
 
     // The max number of message can be sent over in burst for a snapshot cycle.
@@ -126,7 +128,7 @@ public class SnapshotSender {
                         // Snapshot Sync Completed
                         log.info("Snapshot sync completed for {} on timestamp={}, ack={}", snapshotSyncEventId,
                                 baseSnapshotTimestamp, ack.getMetadata());
-                        snapshotSyncComplete(snapshotSyncEventId);
+                        snapshotSyncTransferComplete(snapshotSyncEventId);
                     } else {
                         log.warn("Expected ack for {}, but received for a different snapshot {}", baseSnapshotTimestamp,
                                 ack.getMetadata());
@@ -159,7 +161,7 @@ public class SnapshotSender {
                 dataSenderBufferManager.sendWithBuffering(getSnapshotSyncStartMarker(snapshotSyncEventId));
                 snapshotSyncAck = dataSenderBufferManager.sendWithBuffering(getSnapshotSyncEndMarker(snapshotSyncEventId));
                 snapshotSyncAck.get(DEFAULT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                snapshotSyncComplete(snapshotSyncEventId);
+                snapshotSyncTransferComplete(snapshotSyncEventId);
             } catch (Exception e) {
                 //todo: generate an event for discovery service
                 log.warn("While sending data, caught an exception. Will notify discovery service");
@@ -211,14 +213,14 @@ public class SnapshotSender {
     }
 
     /**
-     * Complete Snapshot Sync, insert completion event in the FSM queue.
+     * Complete Snapshot Sync transfer, insert completion event in the FSM queue.
      *
      * @param snapshotSyncEventId unique identifier for the completed snapshot sync.
      */
-    private void snapshotSyncComplete(UUID snapshotSyncEventId) {
+    public void snapshotSyncTransferComplete(UUID snapshotSyncEventId) {
         // We need to bind the internal event (COMPLETE) to the snapshotSyncEventId that originated it, this way
         // the state machine can correlate to the corresponding state (in case of delayed events)
-        fsm.input(new LogReplicationEvent(LogReplicationEventType.SNAPSHOT_SYNC_COMPLETE,
+        fsm.input(new LogReplicationEvent(LogReplicationEventType.SNAPSHOT_TRANSFER_COMPLETE,
                 new LogReplicationEventMetadata(snapshotSyncEventId, baseSnapshotTimestamp, baseSnapshotTimestamp)));
     }
 

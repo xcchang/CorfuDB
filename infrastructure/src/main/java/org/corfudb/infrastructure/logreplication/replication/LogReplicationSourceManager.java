@@ -129,7 +129,7 @@ public class LogReplicationSourceManager {
     public UUID startSnapshotSync() {
         // Enqueue snapshot sync request into Log Replication FSM
         LogReplicationEvent snapshotSyncRequest = new LogReplicationEvent(LogReplicationEventType.SNAPSHOT_SYNC_REQUEST);
-        log.info("Start Snapshot Sync for request: {}", snapshotSyncRequest.getEventID());
+        log.info("Start Snapshot Sync, requestId={}", snapshotSyncRequest.getEventID());
         logReplicationFSM.input(snapshotSyncRequest);
         return snapshotSyncRequest.getEventID();
     }
@@ -187,5 +187,20 @@ public class LogReplicationSourceManager {
         log.info("Shutdown Log Replication.");
         ackReader.shutdown();
         this.runtime.shutdown();
+    }
+
+    /**
+     * Resume a snapshot sync that is in progress.
+     *
+     * To resume a snapshot sync means that the data transfer has completed,
+     * and we're waiting for the apply to complete on the receiver's end.
+     *
+     * If a past snapshot sync transfer has not finished, a new snapshot sync is started.
+     *
+     * @param metadata
+     */
+    public void resumeSnapshotSync(LogReplicationEventMetadata metadata) {
+        LogReplicationEvent replicationEvent = new LogReplicationEvent(LogReplicationEventType.SNAPSHOT_TRANSFER_COMPLETE, metadata);
+        logReplicationFSM.input(replicationEvent);
     }
 }
