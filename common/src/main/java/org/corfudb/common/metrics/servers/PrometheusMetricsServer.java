@@ -40,7 +40,7 @@ public class PrometheusMetricsServer implements MetricsServer {
         ServletContextHandler contextHandler = new ServletContextHandler();
         contextHandler.setContextPath("/");
         server.setHandler(contextHandler);
-        contextHandler.addServlet(new ServletHolder(new MetricsServlet()), "/metrics");
+        contextHandler.addServlet(new ServletHolder(new PrometheusMetricsServerlet()), "/metrics");
         try {
             server.start();
             log.info("setupMetrics: reporting metrics on port {}", config.getPort());

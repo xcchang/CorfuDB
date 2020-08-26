@@ -62,6 +62,7 @@ public class ServerContextBuilder {
                 .put("--sequencer-cache-size", seqCache)
                 .put("--log-size-quota-percentage", logSizeLimitPercentage)
                 .put("--batch-size", batchSize)
+                        .put("--metrics", true)
                 .put("--metadata-retention", retention);
         if (logPath != null) {
          builder.put("--log-path", logPath);
