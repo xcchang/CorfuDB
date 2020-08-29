@@ -34,4 +34,9 @@ public abstract class Worker implements Runnable {
      */
     protected final Recorder recorder = new Recorder(TimeUnit.HOURS.toMillis(1), 5);
 
+    /**
+     * Total number of items to produce
+     */
+    protected final int numItems;
+
 }

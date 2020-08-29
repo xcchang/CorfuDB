@@ -1,4 +1,4 @@
-package org.corfudb.perf;
+package org.corfudb.perf.utils;
 
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
@@ -33,7 +33,7 @@ public class FormCluster {
             System.exit(0);
         }
 
-        Layout layout = new Layout(
+        final Layout layout = new Layout(
                 arguments.nodes,
                 arguments.nodes,
                 Collections.singletonList(new Layout.LayoutSegment(

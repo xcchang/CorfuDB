@@ -9,19 +9,13 @@ import org.corfudb.runtime.view.stream.IStreamView;
 public class Producer extends Worker {
 
     /**
-     * Total number of items to produce
-     */
-    private final int numItems;
-
-    /**
      * The payload to write to the stream on each "produce"
      */
     private final byte[] payload;
 
     public Producer(final UUID id, final CorfuRuntime runtime, long statusUpdateMs,
                     final int numItems, final byte[] payload) {
-        super(id, runtime, statusUpdateMs, 0);
-        this.numItems = numItems;
+        super(id, runtime, statusUpdateMs, 0, numItems);
         this.payload = payload;
     }
 
@@ -40,12 +34,12 @@ public class Producer extends Worker {
 
     @Override
     public void run() {
-        log.debug("starting {}", id);
-
-        IStreamView stream = runtime.getStreamsView().get(id);
+        log.debug("Producer[{}] started", id);
+        final long startTime = System.currentTimeMillis();
+        final IStreamView stream = runtime.getStreamsView().get(id);
 
         for (int taskNum = 0; taskNum < numItems; taskNum++) {
-            long startTimestamp = System.nanoTime();
+            final long startTimestamp = System.nanoTime();
             stream.append(payload);
             recorder.recordValue(System.nanoTime() - startTimestamp);
 
@@ -53,5 +47,8 @@ public class Producer extends Worker {
                 updateStatus(taskNum);
             }
         }
+
+        final double totalTimeInSeconds =  (System.currentTimeMillis() - startTime * 1.0) / 10e3;
+        log.debug("Producer[{}] completed {} in {} seconds", id, numItems, totalTimeInSeconds);
     }
 }
