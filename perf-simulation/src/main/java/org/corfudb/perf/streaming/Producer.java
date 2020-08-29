@@ -1,21 +1,12 @@
 package org.corfudb.perf.streaming;
 
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.HdrHistogram.Recorder;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.view.stream.IStreamView;
 
 @Slf4j
-@AllArgsConstructor
-public class Producer implements Runnable {
-
-    /**
-     * Id of this producer
-     */
-    private final UUID id;
+public class Producer extends Worker {
 
     /**
      * Total number of items to produce
@@ -27,34 +18,23 @@ public class Producer implements Runnable {
      */
     private final byte[] payload;
 
-    /**
-     * Runtime to use.
-     */
-    private final CorfuRuntime runtime;
+    public Producer(final UUID id, final CorfuRuntime runtime, long statusUpdateMs,
+                    final int numItems, final byte[] payload) {
+        super(id, runtime, statusUpdateMs, 0);
+        this.numItems = numItems;
+        this.payload = payload;
+    }
 
-    /**
-     * How often to log this producers status (i.e. number of elements produced)
-     */
-    private final long statusUpdateMs;
-
-    /**
-     * Last time the status was updated
-     */
-    private long lastUpdateTimestamp;
-
-    /**
-     * Recorder to track latency stats
-     */
-    private final Recorder recorder = new Recorder(TimeUnit.HOURS.toMillis(1), 5);
 
     /**
      * Logs the number of tasks this producer completed so far.
      * @param itemsCompleted number of completed tasks
      */
-    private void updateStatus(int itemsCompleted) {
-        long currentTimestamp = System.currentTimeMillis();
+    private void updateStatus(final int itemsCompleted) {
+        final long currentTimestamp = System.currentTimeMillis();
         if (currentTimestamp - lastUpdateTimestamp > statusUpdateMs) {
             log.info("Producer[{}] completed {}", id, itemsCompleted);
+            lastUpdateTimestamp = currentTimestamp;
         }
     }
 
