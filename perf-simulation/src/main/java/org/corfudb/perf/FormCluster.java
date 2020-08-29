@@ -1,8 +1,5 @@
 package org.corfudb.perf;
 
-import static java.time.temporal.ChronoUnit.SECONDS;
-
-
 import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import java.time.Duration;
@@ -52,7 +49,7 @@ public class FormCluster {
 
         log.info("Bootstrapping {} with {}", arguments.nodes, layout);
         final int retry = 3;
-        BootstrapUtil.bootstrap(layout, retry, Duration.of(10, SECONDS));
+        BootstrapUtil.bootstrap(layout, retry, Duration.ofSeconds(10));
         log.info("Done!");
     }
 }
