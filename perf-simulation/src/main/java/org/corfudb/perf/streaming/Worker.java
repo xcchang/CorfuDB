@@ -32,7 +32,7 @@ public abstract class Worker implements Runnable {
     /**
      * Recorder to track latency stats
      */
-    protected final Recorder recorder = new Recorder(TimeUnit.HOURS.toMillis(1), 5);
+    protected final Recorder recorder = new Recorder(TimeUnit.HOURS.toNanos(1), 5);
 
     /**
      * Total number of items to produce

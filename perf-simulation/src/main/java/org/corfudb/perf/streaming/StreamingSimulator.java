@@ -1,5 +1,8 @@
 package org.corfudb.perf.streaming;
 
+import static org.corfudb.perf.Utils.wrapRunnable;
+
+
 import com.beust.jcommander.Parameter;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.util.ArrayList;
@@ -30,10 +33,10 @@ public class StreamingSimulator {
         @Parameter(names = {"--num-consumers"}, description = "Number of consumers", required = true)
         int numConsumers;
 
-        @Parameter(names = {"--poll-period"}, description = "Consumer poll period", required = true)
+        @Parameter(names = {"--poll-period"}, description = "Consumer poll period", required = false)
         int pollPeriod = 10;
 
-        @Parameter(names = {"--num-threads"}, description = "Number of producers", required = true)
+        @Parameter(names = {"--num-producers"}, description = "Number of producers", required = true)
         int numProducers;
 
         @Parameter(names = {"--num-tasks"}, description = "Total number of tasks to create" +
@@ -154,14 +157,14 @@ public class StreamingSimulator {
                         .build());
         final ExecutorService consumersPool = Executors.newFixedThreadPool(
                 arguments.numConsumers, new ThreadFactoryBuilder()
-                        .setNameFormat("producer-%d")
+                        .setNameFormat("consumer-%d")
                         .setUncaughtExceptionHandler(StreamingSimulator::handleUncaughtException)
                         .setDaemon(true)
                         .build());
 
         // Start the producers before the consumers and wait till they consumers are done
-        producers.forEach(producersPool::submit);
-        consumers.forEach(consumersPool::submit);
+        producers.forEach(producer -> producersPool.submit(wrapRunnable(producer)));
+        consumers.forEach(consumer-> consumersPool.submit(wrapRunnable(consumer)));
 
         producersPool.shutdown();
         consumersPool.shutdown();

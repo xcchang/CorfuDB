@@ -4,5 +4,5 @@ import com.beust.jcommander.Parameter;
 
 public abstract class SimulatorArguments {
     @Parameter(names = { "-h", "--help" }, description = "help message", help = true)
-    public boolean help;
+    protected boolean help;
 }

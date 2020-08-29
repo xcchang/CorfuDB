@@ -49,6 +49,6 @@ public class Producer extends Worker {
         }
 
         final double totalTimeInSeconds =  (System.currentTimeMillis() - startTime * 1.0) / 10e3;
-        log.debug("Producer[{}] completed {} in {} seconds", id, numItems, totalTimeInSeconds);
+        log.info("Producer[{}] completed {} in {} seconds", id, numItems, totalTimeInSeconds);
     }
 }

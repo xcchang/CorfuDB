@@ -234,6 +234,8 @@ public abstract class AbstractQueuedStreamView extends
                     // Request a new token, informing the sequencer we were
                     // overwritten.
                     tokenResponse = runtime.getSequencerView().next(id);
+                } catch (Exception e) {
+                    log.debug("wuut");
                 }
             }
 
