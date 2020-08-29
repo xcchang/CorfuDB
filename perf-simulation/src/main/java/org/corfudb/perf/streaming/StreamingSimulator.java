@@ -5,6 +5,7 @@ import static org.corfudb.perf.Utils.wrapRunnable;
 
 import com.beust.jcommander.Parameter;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -19,6 +20,10 @@ import org.corfudb.perf.SimulatorArguments;
 import org.corfudb.perf.Utils;
 import org.corfudb.runtime.CorfuRuntime;
 
+/**
+ * Sample usage: java -jar target/streaming-sim.jar --duration 1 --endpoint localhost:9000 --num-consumers
+ * 4 --num-runtime 4 --num-tasks 1000 --num-producers 8 --payload-size 100 --update-interval 2000
+ */
 @Slf4j
 public class StreamingSimulator {
 
@@ -93,14 +98,13 @@ public class StreamingSimulator {
             return Collections.emptyList();
         }
 
-        if (arguments.numConsumers < arguments.numProducers) {
-            throw new IllegalArgumentException("Not enough consumers!");
-        }
-
         final List<Consumer> consumers = new ArrayList<>(arguments.numConsumers);
         IntStream.range(0, arguments.numConsumers)
                 .forEach(idx -> {
-                    String name = "consumer" + idx % arguments.numProducers;
+                    // Since the consumer has to consume the same producer stream
+                    // we need to use the same stream name used by the producer
+                    // to generate a consistent UUID
+                    String name = "producer" + idx % arguments.numProducers;
                     final UUID id = CorfuRuntime.getStreamID(name);
                     final CorfuRuntime runtime = rts.get(idx % rts.size());
                     consumers.add(new Consumer(id, runtime, arguments.statusUpdateMs,
@@ -169,9 +173,17 @@ public class StreamingSimulator {
         producersPool.shutdown();
         consumersPool.shutdown();
 
-        final boolean consumersComplete = consumersPool.awaitTermination(arguments.duration,
-                TimeUnit.MINUTES);
-        log.info("Consumers completed: {}" , consumersComplete);
+        final long startTime = System.currentTimeMillis();
+        producersPool.awaitTermination(arguments.duration, TimeUnit.MINUTES);
+        final long producerEndTime = System.currentTimeMillis();
+
+        // There could be situations where consumers finish before producers, or vice-versa, so
+        // we need to make sure we wait on both executors, not just one of them
+        if (producerEndTime - startTime < Duration.ofMinutes(arguments.duration).toMillis()) {
+            consumersPool.awaitTermination(producerEndTime - startTime, TimeUnit.MILLISECONDS);
+        }
+
+        log.info("Consumers completed: {}", consumersPool.isTerminated());
         log.info("Producers completed: {}" , producersPool.isTerminated());
 
     }

@@ -33,7 +33,7 @@ public class Consumer extends Worker {
 
     @Override
     public void run() {
-        log.debug("Consumer[{}] starting", id);
+        log.info("Consumer[{}] starting", id);
         final long startTime = System.currentTimeMillis();
         final IStreamView stream = runtime.getStreamsView().get(id);
         int totalItemsConsumed = 0;
@@ -58,7 +58,7 @@ public class Consumer extends Worker {
         }
 
         final double totalTimeInSeconds =  (System.currentTimeMillis() - startTime * 1.0) / 10e3;
-        log.debug("Consumer[{}] consumed {} items and {} bytes in {} seconds", id, numItems,
+        log.info("Consumer[{}] consumed {} items and {} bytes in {} seconds", id, numItems,
                 totalBytesConsumed, totalTimeInSeconds);
     }
 }
