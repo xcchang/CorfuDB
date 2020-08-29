@@ -11,7 +11,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
-import javax.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
 import org.corfudb.perf.SimulatorArguments;
 import org.corfudb.perf.Utils;
@@ -22,7 +21,7 @@ public class StreamingSimulator {
 
     static class Arguments extends SimulatorArguments {
         @Parameter(names = {"--endpoint"}, description = "Cluster endpoint", required = true)
-        private List<String> connectionString = new ArrayList<>();
+        private List<String> endpoints = new ArrayList<>();
 
         @Parameter(names = {"--num-runtime"}, description = "Number of corfu runtimes to use",
                 required = true)
@@ -61,7 +60,7 @@ public class StreamingSimulator {
      * @return A list of producers
      */
     private static List<Producer> createProducers(final Arguments arguments,
-                                                  final CorfuRuntime[] rts) {
+                                                  final List<CorfuRuntime> rts) {
         if (arguments.numProducers <= 0) {
             throw new IllegalArgumentException("Not enough producers!");
         }
@@ -72,7 +71,7 @@ public class StreamingSimulator {
         IntStream.range(0, arguments.numProducers)
                 .forEach(idx -> {
                     final UUID id = CorfuRuntime.getStreamID("producer" + idx);
-                    final CorfuRuntime runtime = rts[idx % rts.length];
+                    final CorfuRuntime runtime = rts.get(idx % rts.size());
                     producers.add(new Producer(id, runtime, arguments.statusUpdateMs,
                             arguments.numTasks, payload));
                 });
@@ -86,7 +85,7 @@ public class StreamingSimulator {
      * @return a list of consumers
      */
     private static List<Consumer> createConsumers(final Arguments arguments,
-                                                  final CorfuRuntime[] rts) {
+                                                  final List<CorfuRuntime> rts) {
         if (arguments.numConsumers == 0) {
             return Collections.emptyList();
         }
@@ -100,7 +99,7 @@ public class StreamingSimulator {
                 .forEach(idx -> {
                     String name = "consumer" + idx % arguments.numProducers;
                     final UUID id = CorfuRuntime.getStreamID(name);
-                    final CorfuRuntime runtime = rts[idx % rts.length];
+                    final CorfuRuntime runtime = rts.get(idx % rts.size());
                     consumers.add(new Consumer(id, runtime, arguments.statusUpdateMs,
                             arguments.numTasks, arguments.pollPeriod));
                 });
@@ -113,11 +112,27 @@ public class StreamingSimulator {
      * @param thread    The thread which terminated.
      * @param throwable The throwable which caused the thread to terminate.
      */
-    private static void handleUncaughtException(@Nonnull Thread thread, @Nonnull Throwable throwable) {
+    private static void handleUncaughtException(final Thread thread, final Throwable throwable) {
         log.error("handleUncaughtThread: {} terminated with throwable of type {}",
                     thread.getName(),
                     throwable.getClass().getSimpleName(),
                     throwable);
+    }
+
+    /**
+     * Creates and connects a list of different CorfuRuntimes
+     * @param arguments arguments to use
+     * @return a list of connected CorfuRuntimes
+     */
+    private static List<CorfuRuntime> initializeRuntimes(final Arguments arguments) {
+        List<CorfuRuntime> runtimes = new ArrayList<>(arguments.numRuntime);
+        String connectionString = String.join(",", arguments.endpoints);
+        for (int rtIdx = 0; rtIdx < arguments.numRuntime; rtIdx++) {
+            runtimes.add(new CorfuRuntime(connectionString)
+                    .setCacheDisabled(true)
+                    .connect());
+        }
+        return Collections.unmodifiableList(runtimes);
     }
 
     public static void main(String[] stringArgs) throws Exception {
@@ -126,8 +141,10 @@ public class StreamingSimulator {
 
         //TODO(Maithem): enable multiple producers to create tasks for the same underlying stream
 
-        final List<Consumer> consumers = createConsumers(arguments, null);
-        final List<Producer> producers = createProducers(arguments, null);
+        final List<CorfuRuntime> rts = initializeRuntimes(arguments);
+
+        final List<Consumer> consumers = createConsumers(arguments, rts);
+        final List<Producer> producers = createProducers(arguments, rts);
 
         final ExecutorService producersPool = Executors.newFixedThreadPool(
                 arguments.numProducers, new ThreadFactoryBuilder()

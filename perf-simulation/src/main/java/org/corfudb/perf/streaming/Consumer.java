@@ -41,6 +41,8 @@ public class Consumer extends Worker {
 
         while (totalItemsConsumed < numItems) {
 
+            // Keep consuming the stream until there's nothing left and then sleep
+            // till there are more items to consume
             final ILogData item = stream.next();
             if (item == null) {
                 if (log.isDebugEnabled()) {
