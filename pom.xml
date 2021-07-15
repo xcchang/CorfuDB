@@ -42,6 +42,9 @@
 
         <!-- Dependency versions -->
         <junit.jupiter.version>5.4.2</junit.jupiter.version>
+        <sonar.projectKey>xcchang_CorfuDB</sonar.projectKey>
+        <sonar.organization>testorgname</sonar.organization>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
     </properties>
 
     <scm>
